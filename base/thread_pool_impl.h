@@ -27,11 +27,11 @@ public:
   class task_impl final : public task {
   private:
     task_body body_;
+    std::size_t shard_count_;
+    // How many workers can start working on this loop. Decremented as workers begin working.
+    std::atomic<int> max_workers_;
 
     alignas(cache_line_size) std::atomic<std::size_t> todo_;
-
-    // How many workers can start working on this loop. Decremented as workers begin working.
-    alignas(cache_line_size) std::atomic<int> max_workers_;
 
     struct shard {
       // i is the next iteration to run.
@@ -40,9 +40,8 @@ public:
       // One past the last iteration to run in this shard.
       std::size_t end;
     };
-    std::size_t shard_count_;
     // This memory follows the task_impl object.
-    shard shards_[0];
+    shard shards_[1];
 
     // Set up a parallel for loop over `n` items.
     task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers);

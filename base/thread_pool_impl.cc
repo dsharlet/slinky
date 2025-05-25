@@ -10,7 +10,7 @@
 namespace slinky {
 
 thread_pool_impl::task_impl::task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers)
-    : body_(std::move(body)), todo_(n), max_workers_(max_workers), shard_count_(shard_count) {
+    : body_(std::move(body)), shard_count_(shard_count), max_workers_(max_workers), todo_(n) {
   std::size_t begin = 0;
   // Divide the work evenly among the shards we have.
   for (std::size_t i = 0; i < shard_count_; ++i) {
@@ -21,15 +21,21 @@ thread_pool_impl::task_impl::task_impl(std::size_t shard_count, std::size_t n, t
   }
 }
 
+struct cache_line {
+  alignas(cache_line_size) char data[cache_line_size];
+};
+
 slinky::ref_count<thread_pool_impl::task_impl> thread_pool_impl::task_impl::make(
     std::size_t shard_count, std::size_t n, task_body body, int max_workers) {
-  void* memory = aligned_alloc(cache_line_size, sizeof(task_impl) + sizeof(shard) * shard_count);
+  static_assert(sizeof(cache_line) == cache_line_size);
+  static_assert(sizeof(shard) == cache_line_size, "");
+  cache_line* memory = new cache_line[sizeof(task_impl) / cache_line_size + (shard_count - 1)];
   return new (memory) task_impl(shard_count, n, std::move(body), max_workers);
 }
 
 void thread_pool_impl::task_impl::destroy() {
   this->~task_impl();
-  free(this);
+  delete[] reinterpret_cast<cache_line*>(this);
 }
 
 bool thread_pool_impl::task_impl::work(std::size_t worker) {
