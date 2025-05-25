@@ -62,6 +62,7 @@ bool thread_pool_impl::task_impl::work() {
 }
 
 bool thread_pool_impl::task_impl::all_work_started() const {
+  if (done()) return true;
   for (std::size_t i = 0; i < shard_count_; ++i) {
     const shard& s = shards_[i];
     if (s.i < s.end) return false;
@@ -102,23 +103,26 @@ thread_local std::vector<const thread_pool::task*> task_stack;
 ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
     ref_count<task_impl>& loop = *i;
-    if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
-      // Don't run the same loop multiple times on the same thread.
-      ++i;
-      continue;
-    }
-    // We want to work on this loop, find out which worker we will be.
-    worker = loop->allocate_worker();
-    if (worker < 0 || loop->all_work_started()) {
+    if (loop->all_work_started()) {
       // No more threads can start working on this loop.
       i = task_queue_.erase(i);
-    } else if (worker == 0) {
-      // This is the last worker for this loop.
-      auto result = std::move(loop);
-      i = task_queue_.erase(i);
-      return result;
+    } else if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
+      // Don't run the same loop multiple times on the same thread.
+      ++i;
     } else {
-      return loop;
+      // We want to work on this loop, find out which worker we will be.
+      worker = loop->allocate_worker();
+      if (worker < 0) {
+        // No more threads can start working on this loop.
+        i = task_queue_.erase(i);
+      } else if (worker == 0) {
+        // This is the last worker for this loop.
+        auto result = std::move(loop);
+        i = task_queue_.erase(i);
+        return result;
+      } else {
+        return loop;
+      }
     }
   }
   return nullptr;
@@ -132,12 +136,12 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
   std::unique_lock l(mutex_);
   while (!condition()) {
     int worker;
-    if (auto loop = dequeue(worker)) {
+    if (auto task = dequeue(worker)) {
       l.unlock();
 
       // Run the task.
-      task_stack.push_back(&*loop);
-      bool completed = loop->work(worker);
+      task_stack.push_back(&*task);
+      bool completed = task->work(worker);
       task_stack.pop_back();
 
       // We did a task, reset the spin counter.
