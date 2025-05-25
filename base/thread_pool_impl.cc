@@ -38,22 +38,31 @@ void thread_pool_impl::task_impl::destroy() {
   delete[] reinterpret_cast<cache_line*>(this);
 }
 
+std::size_t thread_pool_impl::task_impl::shard::work(task_body& body) {
+  std::size_t done = 0;
+  while (true) {
+    std::size_t i = this->i++;
+    if (i >= end) {
+      // There are no more iterations to run.
+      break;
+    }
+    body(i);
+    ++done;
+  }
+  return done;
+}
+
 bool thread_pool_impl::task_impl::work(std::size_t worker) {
   task_body body = body_;
   std::size_t done = 0;
   // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
   // stealing work from other workers.
-  for (std::size_t i = 0; i < shard_count_; ++i) {
-    shard& s = shards_[(i + worker) % shard_count_];
-    while (true) {
-      std::size_t i = s.i++;
-      if (i >= s.end) {
-        // There are no more iterations to run.
-        break;
-      }
-      body(i);
-      ++done;
-    }
+  const std::size_t i0 = worker % shard_count_;
+  for (std::size_t i = i0; i < shard_count_; ++i) {
+    done += shards_[i].work(body);
+  }
+  for (std::size_t i = 0; i < i0; ++i) {
+    done += shards_[i].work(body);
   }
   return done > 0 && (todo_ -= done) == 0;
 }

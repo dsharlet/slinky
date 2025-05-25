@@ -39,6 +39,9 @@ public:
 
       // One past the last iteration to run in this shard.
       std::size_t end;
+
+      // Execute the body on each work item in this shard.
+      std::size_t work(task_body& body);
     };
     // This memory follows the task_impl object.
     shard shards_[1];
