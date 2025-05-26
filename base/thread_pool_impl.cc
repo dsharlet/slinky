@@ -113,6 +113,15 @@ namespace {
 
 thread_local std::vector<const thread_pool::task*> task_stack;
 
+template <typename... Args>
+bool work_on_task(thread_pool_impl::task_impl* t, Args... args) {
+  assert(std::find(task_stack.begin(), task_stack.end(), t) == task_stack.end());
+  task_stack.push_back(&*t);
+  bool completed = t->work(args...);
+  task_stack.pop_back();
+  return completed;
+}
+
 }  // namespace
 
 ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
@@ -155,9 +164,7 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
       l.unlock();
 
       // Run the task.
-      task_stack.push_back(&*task);
-      bool completed = task->work(worker);
-      task_stack.pop_back();
+      bool completed = work_on_task(task, worker);
 
       // We did a task, reset the spin counter.
       spins = spin_count;
@@ -210,10 +217,7 @@ ref_count<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body 
 
 void thread_pool_impl::wait_for(task* t) {
   task_impl* task = reinterpret_cast<task_impl*>(t);
-  assert(std::find(task_stack.begin(), task_stack.end(), task) == task_stack.end());
-  task_stack.push_back(task);
-  bool completed = task->work();
-  task_stack.pop_back();
+  bool completed = work_on_task(task);
   if (!completed || !task->done()) {
     // The loop isn't done, work on other tasks while waiting for it to complete.
     wait_for([&]() { return task->done(); });
