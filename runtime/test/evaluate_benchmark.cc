@@ -224,7 +224,7 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize, nanoseco
 
   eval_context eval_ctx;
   eval_config config;
-  thread_pool_impl t(workers);
+  thread_pool_impl t(workers - 1);
   config.thread_pool = &t;
   eval_ctx.config = &config;
 

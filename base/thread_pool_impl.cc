@@ -186,18 +186,19 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
 }
 
 ref_count<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
+  constexpr int max_shards = 8;
+
   // If the number of workers is less than "infinite", we assume the caller wants a single loop counter.
   // TODO: This is a hack that should be removed when we remove pipelined loops.
   const bool ordered = max_workers < std::numeric_limits<int>::max();
 
-  max_workers = std::min(max_workers, thread_count());
-
-  constexpr int max_shards = 8;
-  const std::size_t shard_count = ordered ? 1 : std::min<std::size_t>(n, std::min(max_shards, max_workers));
+  // Don't try to run more workers than there are work items.
+  max_workers = std::min<std::size_t>(n, max_workers);
+  const std::size_t shard_count = ordered ? 1 : std::min(max_shards, max_workers);
   auto loop = task_impl::make(shard_count, n, std::move(t), max_workers);
   std::unique_lock l(mutex_);
   task_queue_.push_back(loop);
-  if (n == 1 || max_workers == 1) {
+  if (max_workers == 1) {
     cv_worker_.notify_one();
     cv_helper_.notify_one();
   } else {
