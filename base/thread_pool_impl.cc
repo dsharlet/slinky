@@ -219,6 +219,14 @@ void thread_pool_impl::wait_for(task* t) {
   task_impl* task = reinterpret_cast<task_impl*>(t);
   bool completed = work_on_task(task);
   if (!completed || !task->done()) {
+    // We want to spin a few times before letting the OS take over. This spinning is especially useful because we don't
+    // need to lock the mutex.
+    const int spin_count = 1000;
+    for (int i = 0; i < spin_count; ++i) {
+      std::this_thread::yield();
+      if (task->done()) return;
+    }
+
     // The loop isn't done, work on other tasks while waiting for it to complete.
     wait_for([&]() { return task->done(); });
   }
