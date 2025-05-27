@@ -27,6 +27,8 @@ cc_library(
     hdrs = [
         "thread_pool.h",
         "function_ref.h",
+        "ref_count.h",
+        "util.h"
     ],
     deps = [":base"],
     visibility = ["//visibility:public"],
@@ -38,6 +40,8 @@ cc_library(
     hdrs = [
         "thread_pool_impl.h",
         "function_ref.h",
+        "ref_count.h",
+        "util.h"
     ],
     deps = [":thread_pool"],
     visibility = ["//visibility:public"],
