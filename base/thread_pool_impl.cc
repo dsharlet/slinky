@@ -21,6 +21,8 @@ thread_pool_impl::task_impl::task_impl(std::size_t shard_count, std::size_t n, t
   }
 }
 
+// We want to allocate memory and use placement new, that is aligned to a cache line. To do that, we'll allocate an
+// array of this struct, and then placement new into that array.
 struct cache_line {
   alignas(cache_line_size) char data[cache_line_size];
 };
