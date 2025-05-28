@@ -28,6 +28,7 @@ enum class stmt_node_type {
   slice_buffer,
   slice_dim,
   transpose,
+  async,
   check,
 };
 
@@ -237,6 +238,19 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };
 
+class async : public stmt_node<async> {
+public:
+  var sym;
+  stmt task;
+  stmt body;
+
+  void accept(stmt_visitor* v) const override;
+
+  static stmt make(var sym, stmt task, stmt body);
+
+  static constexpr stmt_node_type static_type = stmt_node_type::async;
+};
+
 // Allocates memory and creates a buffer pointing to that memory. When control flow exits `body`, the buffer is freed.
 // `sym` refers to a pointer to a `raw_buffer` object, the fields are initialized by the corresponding expressions in
 // this node (`rank` is the size of `dims`).
@@ -424,6 +438,7 @@ public:
   virtual void visit(const slice_buffer*) = 0;
   virtual void visit(const slice_dim*) = 0;
   virtual void visit(const transpose*) = 0;
+  virtual void visit(const async*) = 0;
   virtual void visit(const check*) = 0;
 };
 
@@ -464,6 +479,7 @@ public:
   void visit(const slice_buffer* op) override;
   void visit(const slice_dim* op) override;
   void visit(const transpose* op) override;
+  void visit(const async* op) override;
   void visit(const check* op) override;
 };
 
@@ -481,6 +497,7 @@ inline void crop_dim::accept(stmt_visitor* v) const { v->visit(this); }
 inline void slice_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void slice_dim::accept(stmt_visitor* v) const { v->visit(this); }
 inline void transpose::accept(stmt_visitor* v) const { v->visit(this); }
+inline void async::accept(stmt_visitor* v) const { v->visit(this); }
 inline void check::accept(stmt_visitor* v) const { v->visit(this); }
 
 }  // namespace slinky

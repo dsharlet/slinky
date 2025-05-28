@@ -64,6 +64,7 @@ public:
   void visit(const call_stmt* op) override;
   void visit(const copy_stmt* op) override;
   void visit(const clone_buffer* op) override;
+  void visit(const async* op) override;
 
   // Silences a weird warning on clang. It seems like this should be in the base class (and it is).
   using node_mutator::visit;

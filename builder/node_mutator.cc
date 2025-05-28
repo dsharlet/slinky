@@ -70,6 +70,7 @@ stmt clone_with(const slice_dim* op, var sym, stmt new_body) {
 stmt clone_with(const transpose* op, var sym, stmt new_body) {
   return transpose::make(sym, op->src, op->dims, std::move(new_body));
 }
+stmt clone_with(const async* op, var sym, stmt new_body) { return async::make(sym, op->task, std::move(new_body)); }
 
 stmt clone_with(const let_stmt* op, stmt new_body) {
   return let_stmt::make(op->lets, std::move(new_body), op->is_closure);
@@ -85,6 +86,7 @@ stmt clone_with(const crop_dim* op, stmt new_body) { return clone_with(op, op->s
 stmt clone_with(const slice_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const slice_dim* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const transpose* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const async* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 
 void stmt_mutator::visit(const block* op) {
   std::vector<stmt> stmts;
@@ -130,6 +132,15 @@ void stmt_mutator::visit(const crop_dim* op) { set_result(mutate_decl(this, op))
 void stmt_mutator::visit(const slice_buffer* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const slice_dim* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const transpose* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const async* op) {
+  stmt task = mutate(op->task);
+  stmt body = mutate(op->body);
+  if (body.same_as(op->body) && task.same_as(op->task)) {
+    set_result(stmt(op));
+  } else {
+    set_result(async::make(op->sym, std::move(task), std::move(body)));
+  }
+}
 
 void node_mutator::visit(const variable* op) { set_result(op); }
 void node_mutator::visit(const constant* op) { set_result(op); }

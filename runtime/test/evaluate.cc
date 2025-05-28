@@ -5,6 +5,7 @@
 #include "base/thread_pool_impl.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -243,6 +244,58 @@ TEST(evaluate, semaphore) {
   evaluate(make_signal(sem3), ctx);
   th.join();
   ASSERT_EQ(state, 2);
+}
+
+TEST(evaluate, async) {
+  eval_context ctx;
+  thread_pool_impl t;
+  eval_config cfg;
+  cfg.thread_pool = &t;
+  ctx.config = &cfg;
+
+  index_t sem1 = 0;
+  index_t sem2 = 0;
+  index_t sem3 = 0;
+  std::atomic<int> state = 0;
+
+  auto make_wait = [&](index_t& sem) { return check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))); };
+  auto make_signal = [&](index_t& sem) { return check::make(semaphore_signal(reinterpret_cast<index_t>(&sem))); };
+  stmt increment_state = call_stmt::make(
+      [&](const call_stmt* op, eval_context& ctx) -> index_t {
+        ++state;
+        return 0;
+      },
+      {}, {}, {});
+  auto make_check_state = [&](index_t value) {
+    return call_stmt::make(
+        [value, &state](const call_stmt* op, eval_context& ctx) -> index_t {
+          assert(state == value);
+          return 0;
+        },
+        {}, {}, {});
+  };
+
+  stmt task = block::make({
+      make_wait(sem1),
+      increment_state,
+      make_signal(sem2),
+      make_wait(sem3),
+      increment_state,
+  });
+  stmt body = block::make({
+      make_check_state(0),
+      make_signal(sem1),
+      make_wait(sem2),
+      make_check_state(1),
+      make_signal(sem3),
+  });
+
+  stmt test = block::make({
+      async::make(x, task, body),
+      make_check_state(2),
+  });
+
+  evaluate(test, ctx);
 }
 
 }  // namespace slinky

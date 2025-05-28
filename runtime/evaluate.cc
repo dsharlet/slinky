@@ -364,6 +364,7 @@ public:
     case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
     case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
     case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()));
+    case stmt_node_type::async: return eval(reinterpret_cast<const async*>(op.get()));
     case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()));
     default: SLINKY_UNREACHABLE << "unknown stmt type " << to_string(op.type());
     }
@@ -401,7 +402,7 @@ public:
   }
 
   SLINKY_NO_INLINE static void init_context(
-      eval_context& context, const eval_context& parent_context, const let_stmt* closure, var exclude) {
+      eval_context& context, const eval_context& parent_context, const let_stmt* closure, var exclude = var()) {
     if (closure) {
       // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
       context.reserve(parent_context.size());
@@ -507,6 +508,43 @@ public:
     } else {
       return eval_loop_serial(op);
     }
+  }
+
+  index_t eval_with_new_context(stmt task) {
+    eval_context context;
+    const let_stmt* closure = as_closure(task);
+    if (closure) task = closure->body;
+    init_context(context, this->context, closure);
+
+    return evaluate(task, context);
+  }
+
+  SLINKY_NO_INLINE index_t eval(const async* op) {
+    index_t task_result = 0;
+    auto task_body = [&]() {
+      task_result = eval_with_new_context(op->task);
+    };
+    ref_count<thread_pool::task> task;
+    thread_pool* pool = context.config->thread_pool;
+    if (pool) {
+      task = pool->enqueue(task_body);
+    } else {
+      task_body();
+    }
+
+    context.reserve(op->sym.id + 1);
+    index_t old_sym = 0;
+    if (op->sym.defined()) context.set(op->sym, reinterpret_cast<index_t>(&*task));
+
+    index_t result = eval_with_new_context(op->body);
+
+    if (op->sym.defined()) context.set(op->sym, old_sym);
+
+    if (pool) {
+      pool->wait_for(&*task);
+    }
+
+    return task_result != 0 ? task_result : result;
   }
 
   SLINKY_NO_INLINE void call_failed(index_t result, const call_stmt* op) {

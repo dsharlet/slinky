@@ -607,6 +607,14 @@ bool transpose::is_truncate(span<const int> dims) {
 }
 bool transpose::is_truncate() const { return is_truncate(dims); }
 
+stmt async::make(var sym, stmt task, stmt body) {
+  auto n = new async();
+  n->sym = sym;
+  n->task = std::move(task);
+  n->body = std::move(body);
+  return stmt(n);
+}
+
 stmt check::make(expr condition) {
   auto n = new check();
   n->condition = std::move(condition);
@@ -930,6 +938,10 @@ void recursive_node_visitor::visit(const slice_dim* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const transpose* op) {
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const async* op) {
+  if (op->task.defined()) op->task.accept(this);
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const check* op) {

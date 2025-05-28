@@ -42,6 +42,7 @@ public:
   void visit(const slice_buffer*) override;
   void visit(const slice_dim*) override;
   void visit(const transpose*) override;
+  void visit(const async*) override;
   void visit(const check*) override;
 };
 
@@ -127,6 +128,7 @@ stmt clone_with(const crop_dim* op, stmt new_body);
 stmt clone_with(const slice_buffer* op, stmt new_body);
 stmt clone_with(const slice_dim* op, stmt new_body);
 stmt clone_with(const transpose* op, stmt new_body);
+stmt clone_with(const async* op, stmt new_body);
 
 stmt clone_with(const loop* op, var sym, stmt new_body);
 stmt clone_with(const allocate* op, var sym, stmt new_body);
@@ -138,6 +140,7 @@ stmt clone_with(const crop_dim* op, var sym, stmt new_body);
 stmt clone_with(const slice_buffer* op, var sym, stmt new_body);
 stmt clone_with(const slice_dim* op, var sym, stmt new_body);
 stmt clone_with(const transpose* op, var sym, stmt new_body);
+stmt clone_with(const async* op, var sym, stmt new_body);
 
 // Helper for single statement mutators.
 template <typename T>
