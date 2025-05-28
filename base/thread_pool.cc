@@ -9,17 +9,16 @@ void thread_pool::parallel_for(std::size_t n, task_body body, int max_workers) {
     body(0);
     return;
   }
-  max_workers = std::min(max_workers - 1, thread_count());
-  if (max_workers == 0) {
+  if (max_workers == 1 || thread_count() == 0) {
     // We aren't going to get any worker threads, just run the loop.
     for (std::size_t i = 0; i < n; ++i) {
       body(i);
     }
   } else {
-    auto loop = enqueue(n, body, max_workers);
+    auto loop = enqueue(n, std::move(body), max_workers);
     // Working on the loop here guarantees forward progress on the loop even if no threads in the thread pool are
     // available.
-    wait_for(loop.get(), std::move(body));
+    wait_for(&*loop);
   }
 }
 

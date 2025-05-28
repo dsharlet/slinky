@@ -1,16 +1,13 @@
 #ifndef SLINKY_BASE_THREAD_POOL_H
 #define SLINKY_BASE_THREAD_POOL_H
 
-#include <atomic>
-#include <cassert>
-#include <condition_variable>
-#include <deque>
+#include <cstddef>
 #include <functional>
 #include <limits>
-#include <mutex>
-#include <thread>
+#include <utility>
 
 #include "base/function_ref.h"
+#include "base/ref_count.h"
 
 namespace slinky {
 
@@ -18,17 +15,15 @@ namespace slinky {
 class thread_pool {
 public:
   // A task is a set of work items indexed by an integer i, where a `body` is called for each i in the set.
-  class task {
+  class task : public ref_counted<task> {
   public:
     virtual ~task() = default;
 
-    // Work on the task. This returns when work on all items in the task have started, but may return before all items
-    // are complete. Returns true if this call resulted in the loop being done (any subsequent calls to `run` will do no
-    // work), but the loop may not be done.
-    virtual bool run(function_ref<void(std::size_t)> body) = 0;
-
     // Returns true if all work is complete.
     virtual bool done() const = 0;
+
+    virtual void destroy() { delete this; }
+    static void destroy(task* t) { t->destroy(); }
   };
 
   using task_body = std::function<void(std::size_t)>;
@@ -41,11 +36,12 @@ public:
   // Enqueues a loop task over `n` work items `[0, n)`. The tasks queued in this thread pool are instances of `task`
   // plus a task body `t` that executes each iteration. Tasks are complete when all work items are done. Each thread
   // calling `t` uses its own instance of `t`.
-  virtual std::shared_ptr<task> enqueue(
+  virtual ref_count<task> enqueue(
       std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  // Does not return until the loop is complete.
-  virtual void wait_for(task* l, task_body body) = 0;
+  // Does not return until the task is complete. The task object must have been created by the `enqueue` function of
+  // this thread pool.
+  virtual void wait_for(task* t) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(predicate_ref condition) = 0;
@@ -54,7 +50,7 @@ public:
 
   // Enqueues a singleton task.
   template <typename Fn>
-  std::shared_ptr<task> enqueue(Fn t) {
+  ref_count<task> enqueue(Fn t) {
     // Make a dummy loop task with one iteration.
     return enqueue(1, [t = std::move(t)](std::size_t) { t(); });
   }

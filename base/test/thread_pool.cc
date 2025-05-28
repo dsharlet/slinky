@@ -10,22 +10,19 @@ namespace slinky {
 
 int sum_arithmetic_sequence(int n) { return n * (n - 1) / 2; }
 
-template <std::size_t K>
-bool test_task_impl_done(int n) {
-  std::vector<bool> ran(n);
+bool test_task_impl_done(int shard_count, int n) {
+  std::vector<int> ran(n);
 
-  thread_pool_impl::task_impl<K> p(n);
-  p.run([&](int i) { ran[i] = true; });
-  return std::all_of(ran.begin(), ran.end(), [](bool i) { return i; });
+  auto p = thread_pool_impl::task_impl::make(shard_count, n, [&](int i) { ran[i]++; });
+  p->work();
+  return std::all_of(ran.begin(), ran.end(), [](int i) { return i == 1; });
 }
 
 TEST(task_impl, done) {
-  for (int n : {0, 1, 2, 10, 20, 30}) {
-    ASSERT_TRUE(test_task_impl_done<1>(n));
-    ASSERT_TRUE(test_task_impl_done<2>(n));
-    ASSERT_TRUE(test_task_impl_done<3>(n));
-    ASSERT_TRUE(test_task_impl_done<4>(n));
-    ASSERT_TRUE(test_task_impl_done<16>(n));
+  for (int n = 0; n < 100; ++n) {
+    for (int shard_count = 1; shard_count < 10; ++shard_count) {
+      ASSERT_TRUE(test_task_impl_done(shard_count, n));
+    }
   }
 }
 

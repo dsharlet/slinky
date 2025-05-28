@@ -59,6 +59,11 @@ public:
     return *this;
   }
 
+  template <typename U>
+  operator ref_count<U>() const {
+    return ref_count<U>(value);
+  }
+
   SLINKY_ALWAYS_INLINE T& operator*() { return *value; }
   SLINKY_ALWAYS_INLINE const T& operator*() const { return *value; }
   SLINKY_ALWAYS_INLINE T* operator->() { return value; }
