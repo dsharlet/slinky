@@ -562,6 +562,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
+// Finds if expr depends on any of the buffer_min/buffer_max from dependent_dims.
 class dependent_dims_finder : public recursive_node_visitor {
   const std::map<var, std::vector<int>>& dependent_dims;
 
@@ -588,6 +589,7 @@ public:
   }
 };
 
+// Finds which of the bounds depend on any of the buffer_min/buffer_max from dependent_dims.
 void find_dependent_dims(
     var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependent_dims) {
   for (size_t i = 0; i < bounds.size(); ++i) {
@@ -1317,7 +1319,10 @@ public:
       all_deps.insert(v);
     }
 
+    // We actually don't need to produce a full crop, but only dimensions
+    // which (transitively) depend on the this loop's base function crop_dim.
     std::map<var, std::vector<int>> dependent_dims;
+    // Add a dimension which will have crop_dim.
     if (base_f) {
       for (const func::output& o : base_f->outputs()) {
         for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
@@ -1328,6 +1333,7 @@ public:
       }
     }
 
+    // Propagate dependent dims starting from the outer crop.
     for (auto i = order_.begin(); i != order_.end(); ++i) {
       const func* f = *i;
       if (f == base_f) continue;
