@@ -9,6 +9,7 @@ cc_library(
         "allocator.h",
         "arithmetic.h",
         "atomic_wait.h",
+        "flat_set.h",
         "function_ref.h",
         "ref_count.h",
         "modulus_remainder.h",
