@@ -535,7 +535,9 @@ public:
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       for (dim_expr& d : i->dims) {
-        d.bounds = bounds_of(d.bounds, loop_bounds);
+        if (depends_on(d.bounds, op->sym).any()) {
+          d.bounds = bounds_of(d.bounds, loop_bounds);
+        }
       }
     }
   }
