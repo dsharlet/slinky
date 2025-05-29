@@ -1242,7 +1242,6 @@ public:
 
   stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependent_dim) {
     if (dependent_dim.size() > 1) {
-      std::vector<interval_expr>& bounds = *allocation_bounds_[sym];
       std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
       for (int d : dependent_dim) {
         needed[d] = bounds[d];
@@ -1250,7 +1249,7 @@ public:
       body = crop_buffer::make(sym, sym, needed, body);
     } else if (dependent_dim.size() == 1) {
       int dim = dependent_dim[0];
-      body = crop_dim::make(sym, sym, dim, (*allocation_bounds_[sym])[dim], body);
+      body = crop_dim::make(sym, sym, dim, bounds[dim], body);
     }
 
     return body;
