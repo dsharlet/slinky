@@ -18,6 +18,8 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var u(symbols, "u");
+var v(symbols, "v");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
@@ -261,7 +263,17 @@ TEST(optimizations, parallelize_tasks) {
                   call_stmt::make(nullptr, {x}, {y}, {}),
                   call_stmt::make(nullptr, {x}, {z}, {}),
               })),
-      matches(async::make(var(), {call_stmt::make(nullptr, {x}, {y}, {})}, call_stmt::make(nullptr, {x}, {z}, {}))));
+      matches(async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {z}, {}))));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  check::make(w),
+                  call_stmt::make(nullptr, {x}, {z}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          check::make(w),
+          call_stmt::make(nullptr, {x}, {z}, {}),
+      })));
   ASSERT_THAT(parallelize_tasks(block::make({
                   call_stmt::make(nullptr, {x}, {y}, {}),
                   call_stmt::make(nullptr, {y}, {z}, {}),
@@ -269,6 +281,53 @@ TEST(optimizations, parallelize_tasks) {
       matches(block::make({
           call_stmt::make(nullptr, {x}, {y}, {}),
           call_stmt::make(nullptr, {y}, {z}, {}),
+      })));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+              })),
+      matches(block::make({
+          async::make(var(),
+              block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              }),
+              call_stmt::make(nullptr, {x}, {w}, {})),
+      })));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  call_stmt::make(nullptr, {w}, {u}, {}),
+              })),
+      matches(async::make(var(),
+          block::make({
+              call_stmt::make(nullptr, {x}, {y}, {}),
+              call_stmt::make(nullptr, {y}, {z}, {}),
+          }),
+          block::make({
+              call_stmt::make(nullptr, {x}, {w}, {}),
+              call_stmt::make(nullptr, {w}, {u}, {}),
+          }))));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  call_stmt::make(nullptr, {w}, {u}, {}),
+                  call_stmt::make(nullptr, {z, u}, {v}, {}),
+              })),
+      matches(block::make({
+          async::make(var(),
+              block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              }),
+              block::make({
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  call_stmt::make(nullptr, {w}, {u}, {}),
+              })),
+          call_stmt::make(nullptr, {z, u}, {v}, {}),
       })));
 }
 

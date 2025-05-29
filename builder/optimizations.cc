@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/chrome_trace.h"
+#include "base/flat_set.h"
 #include "base/function_ref.h"
 #include "builder/node_mutator.h"
 #include "builder/pipeline.h"
@@ -1697,115 +1698,169 @@ stmt canonicalize_nodes(const stmt& s) {
 
 namespace {
 
-class task_parallelizer : public stmt_mutator {
-  std::vector<var> produced;
+class task_parallelizer : public node_mutator {
+  flat_set<var> consumed, produced;
+  bool barrier = false;
   symbol_map<var> aliases;
-  bool should_parallelize;
 
   var lookup_alias(var x) {
     auto alias = aliases.lookup(x);
-    return alias ? *alias : var();
-  }
-
-  static void insert_sorted(std::vector<var>& v, var x) {
-    auto i = std::lower_bound(v.begin(), v.end(), x);
-    if (i == v.end() || *i != x) {
-      v.insert(i, x);
-    }
-  }
-
-  static void erase_sorted(std::vector<var>& v, var x) {
-    auto i = std::lower_bound(v.begin(), v.end(), x);
-    if (i != v.end() && *i == x) {
-      v.erase(i);
-    }
+    return alias ? *alias : x;
   }
 
 public:
-  bool is_produced(var x) const { return std::binary_search(produced.begin(), produced.end(), x); }
-  void produce(var x) {
-    while (x.defined()) {
-      insert_sorted(produced, x);
-      x = lookup_alias(x);
-    }
-  }
-
   void visit(const block* b) override {
-    std::vector<var> old_produced;
-    std::swap(old_produced, produced);
-
+    flat_set<var> outer_produced, outer_consumed;
     bool changed = false;
 
-    // Keep track of the new block, and the tasks we want to parallelize. When we can't parallelize any more, the
-    // parallelized tasks are flushed into the result.
-    std::vector<stmt> result;
-    std::vector<std::pair<bool, stmt>> tasks;
-    auto flush_tasks = [&]() {
-      if (tasks.empty()) return;
-      stmt s = std::move(tasks.back().second);
-      tasks.pop_back();
-      while (!tasks.empty()) {
-        if (tasks.back().first) {
-          s = async::make(var(), std::move(tasks.back().second), std::move(s));
-        } else {
-          s = block::make({std::move(tasks.back().second), std::move(s)});
-        }
-        tasks.pop_back();
+    // We build the result in several stages:
+    // - Find sequences of stmts that must be computed synchronously (a task)
+    // - Those sequences are computed asynchronously when possible (tasks)
+    // - We might need to synchronize between tasks computed asynchronously (stages).
+    std::vector<stmt> stages;
+    std::vector<stmt> tasks;
+    std::vector<stmt> task;
+    flat_set<var> task_produced, task_consumed;
+    // Make a task from the current task stmts, and add it to tasks.
+    auto flush_task = [&]() {
+      if (task.empty()) return;
+      if (!changed && task.size() == b->stmts.size()) {
+        assert(tasks.empty());
+        tasks.push_back(stmt(b));
+        task.clear();
+      } else {
+        tasks.push_back(block::make(std::move(task)));
         changed = true;
       }
-      for (var i : produced) {
-        insert_sorted(old_produced, i);
+      assert(task.empty());
+      outer_produced |= task_produced;
+      outer_consumed |= task_consumed;
+      task_produced.clear();
+      task_consumed.clear();
+    };
+    // Make a sequence of async tasks, and add the sequence to the stages.
+    auto flush_tasks = [&]() {
+      if (tasks.empty()) return;
+      stmt async_result = tasks.back();
+      tasks.pop_back();
+      while (!tasks.empty()) {
+        async_result = async::make(var(), std::move(tasks.back()), std::move(async_result));
+        tasks.pop_back();
       }
-      produced.clear();
-      result.push_back(std::move(s));
+      stages.push_back(std::move(async_result));
     };
 
     for (const stmt& i : b->stmts) {
-      if (depends_on(i, produced).any() ||
-          std::any_of(tasks.begin(), tasks.end(), [&](const auto& j) { return depends_on(j.second, produced).buffer_read(); })) {
-        flush_tasks();
-      }
-      should_parallelize = false;
+      produced.clear();
+      consumed.clear();
+      barrier = false;
       stmt s = mutate(i);
       changed = changed || !s.same_as(i);
-      tasks.push_back({should_parallelize, std::move(s)});
+
+      if (produced.empty()) {
+        // If we didn't produce or consume anything, assume this isn't worth parallelizing (e.g. a check)
+      } else {
+        if (empty_intersection(task_produced, consumed)) {
+          // s does not depend on the previously produced buffers, we can compute it in parallel with previous
+          // operations.
+          flush_task();
+        }
+        if (!empty_intersection(outer_produced, consumed) || !empty_intersection(outer_produced, produced)) {
+          // s depends on something in the already flushed tasks, we need to synchronize.
+          // TODO: We could try to wait for the specific task instead of synchronizing everything.
+          flush_task();
+          flush_tasks();
+        }
+      }
+
+      task.push_back(s);
+
+      if (barrier) {
+        // There was a barrier, we need to synchronize.
+        flush_task();
+        flush_tasks();
+        barrier = false;
+      }
+
+      task_produced |= produced;
+      task_consumed |= consumed;
+      produced.clear();
+      consumed.clear();
     }
+    flush_task();
     flush_tasks();
-    if (changed) {
-      set_result(block::make(std::move(result)));
-    } else {
-      set_result(b);
-    }
-    std::swap(old_produced, produced);
+
+    set_result(block::make(std::move(stages)));
+    produced = std::move(outer_produced);
+    consumed = std::move(outer_consumed);
   }
 
   void visit(const call_stmt* op) override {
-    for (var i : op->outputs) {
-      produce(i);
+    for (var i : op->inputs) {
+      consumed.insert(lookup_alias(i));
     }
-    should_parallelize = true;
+    for (var i : op->outputs) {
+      produced.insert(lookup_alias(i));
+    }
     set_result(op);
   }
 
   void visit(const copy_stmt* op) override {
-    produce(op->dst);
-    should_parallelize = true;
+    consumed.insert(lookup_alias(op->src));
+    produced.insert(lookup_alias(op->dst));
     set_result(op);
+  }
+
+  void visit(const call* op) override {
+    node_mutator::visit(op);
+    if (op->intrinsic == intrinsic::buffer_at) {
+      assert(op->args.size() >= 1);
+      auto buf = as_variable(op->args[0]);
+      // Assume we are both producing and consuming this buffer.
+      consumed.insert(lookup_alias(*buf));
+      produced.insert(lookup_alias(*buf));
+    }
+  }
+
+  void visit(const check* op) override {
+    node_mutator::visit(op);
+    // Stmts after a check assume the check was true, so these are async barriers.
+    barrier = true;
   }
 
   template <typename T>
   void visit_buffer_decl(const T* op, var src = var()) {
-    bool was_produced = is_produced(op->sym);
-    auto s = set_value_in_scope(aliases, op->sym, src);
-    stmt_mutator::visit(op);
-    if (was_produced) {
-      insert_sorted(produced, op->sym);
+    if (src.defined()) {
+      // Just remember what this is an alias of.
+      auto s = set_value_in_scope(aliases, op->sym, lookup_alias(src));
+      node_mutator::visit(op);
     } else {
-      erase_sorted(produced, op->sym);
+      auto consumed_i = consumed.find(op->sym);
+      auto produced_i = produced.find(op->sym);
+      bool was_consumed = consumed_i != consumed.end();
+      bool was_produced = produced_i != produced.end();
+      if (was_consumed) consumed.erase(consumed_i);
+      if (was_produced) produced.erase(produced_i);
+
+      node_mutator::visit(op);
+
+      if (was_produced) {
+        produced.insert(op->sym);
+      } else {
+        auto i = produced.find(op->sym);
+        if (i != produced.end()) produced.erase(i);
+      }
+      if (was_consumed) {
+        consumed.insert(op->sym);
+      } else {
+        auto i = consumed.find(op->sym);
+        if (i != consumed.end()) consumed.erase(i);
+      }
     }
   }
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
+  void visit(const constant_buffer* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_data_dependency(op->base)); }
   void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
   void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
@@ -1813,6 +1868,8 @@ public:
   void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
   void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
   void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
+
+  using node_mutator::visit;
 };
 
 }  // namespace
