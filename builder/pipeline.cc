@@ -562,6 +562,44 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
+class dependant_dims_finder : public recursive_node_visitor {
+  const std::map<var, std::vector<int>>& dependant_dims;
+
+public:
+  bool depends = false;
+  dependant_dims_finder(const std::map<var, std::vector<int>>& dependant_dims) : dependant_dims(dependant_dims) {}
+
+  void visit(const variable* v) override {
+    switch (v->field) {
+    case buffer_field::min:
+    case buffer_field::max: {
+      if (dependant_dims.count(v->sym) == 0) return;
+      for (int d : dependant_dims.at(v->sym)) {
+        if (v->dim == d) {
+          depends = true;
+          return;
+        }
+      }
+      return;
+    }
+      [[fallthrough]];
+    default: return;
+    }
+  }
+};
+
+void find_dependant_dims(
+    var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependant_dims) {
+  for (int i = 0; i < bounds.size(); ++i) {
+    dependant_dims_finder finder(dependant_dims);
+    bounds[i].min.accept(&finder);
+    bounds[i].max.accept(&finder);
+    if (finder.depends) {
+      dependant_dims[sym].push_back(i);
+    }
+  }
+}
+
 class pipeline_builder {
   node_context& ctx;
 
@@ -1264,13 +1302,47 @@ public:
       all_deps.insert(v);
     }
 
+    std::map<var, std::vector<int>> dependant_dims;
+    if (base_f) {
+      for (const func::output& o : base_f->outputs()) {
+        for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
+          if (o.dims[d] == loop.sym()) {
+            dependant_dims[o.sym()].push_back(d);
+          }
+        }
+      }
+    }
+
+    for (auto i = order_.begin(); i != order_.end(); ++i) {
+      const func* f = *i;
+      if (f == base_f) continue;
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (!inferred_bounds_[b->sym()]) continue;
+        if (all_deps.count(b->sym()) == 0) continue;
+        if (body.allocations.count(b->sym()) > 0) continue;
+        find_dependant_dims(b->sym(), *inferred_bounds_[b->sym()], dependant_dims);
+      }
+    }
+
     // Add crops for the buffers and their dependencies used inside of the body using previously inferred bounds.
     // Input syms should be the innermost.
     for (const auto& i : input_syms_) {
       var sym = i.first;
       if (!allocation_bounds_[sym]) continue;
       if (all_deps.count(sym) == 0) continue;
-      body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
+      find_dependant_dims(sym, *allocation_bounds_[sym], dependant_dims);
+      if (dependant_dims[sym].size() > 1) {
+        std::vector<interval_expr>& bounds = *allocation_bounds_[sym];
+        std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
+        for (int d : dependant_dims[sym]) {
+          needed[d] = bounds[d];
+        }
+        body.body = crop_buffer::make(sym, sym, needed, body.body);
+      } else if (dependant_dims[sym].size() == 1) {
+        int dim = dependant_dims[sym][0];
+        body.body = crop_dim::make(sym, sym, dim, (*allocation_bounds_[sym])[dim], body.body);
+      }
     }
 
     // Followed by intermediate buffers in the reverse topological order
@@ -1294,7 +1366,17 @@ public:
           if (!maybe_dims) continue;
           body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
         } else {
-          body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
+          if (dependant_dims[b->sym()].size() > 1) {
+            std::vector<interval_expr>& bounds = *inferred_bounds_[b->sym()];
+            std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
+            for (int d : dependant_dims[b->sym()]) {
+              needed[d] = bounds[d];
+            }
+            body.body = crop_buffer::make(b->sym(), b->sym(), needed, body.body);
+          } else if (dependant_dims[b->sym()].size() == 1) {
+            int dim = dependant_dims[b->sym()][0];
+            body.body = crop_dim::make(b->sym(), b->sym(), dim, (*inferred_bounds_[b->sym()])[dim], body.body);
+          }
         }
       }
     }
