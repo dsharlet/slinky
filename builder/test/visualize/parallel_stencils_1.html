@@ -333,6 +333,11 @@ function transpose(b, dims) {
   result.dims = dims.map(i => result.dims[i]);
   return result;
 }
+function slinky_async(task) {
+  task();
+  return 0;
+}
+function slinky_wait_for(task) {}
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
@@ -386,17 +391,31 @@ function pipeline(in1, in2, out) {
           let __loop_max = buffer_max(out, 1);
           let __loop_step = 2;
           for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
-            { let __intm3 = crop_dim(intm3, 1, [out_y, (out_y + 1)]); {
-              let intm3 = __intm3;
-              consume(intm1);
-              produce(intm3);
-              __event_t++;
-            }}
-            { let __intm2 = crop_dim(intm2, 1, [(out_y + 2), (out_y + 3)]); {
-              let intm2 = __intm2;
-              consume(in2);
-              produce(intm2);
-              __event_t++;
+            { let __task_handle = slinky_async(() => {
+                {
+                  let intm1 = intm1;
+                  let intm3 = intm3;
+                  let out_y = out_y;
+                  { let __intm3_out_y = crop_dim(intm3, 1, [out_y, (out_y + 1)]); {
+                    let intm3_out_y = __intm3_out_y;
+                    consume(intm1);
+                    produce(intm3_out_y);
+                    __event_t++;
+                  }}
+                }
+              }); {
+              {
+                let in2 = in2;
+                let intm2 = intm2;
+                let out_y = out_y;
+                { let __intm2_out_y = crop_dim(intm2, 1, [(out_y + 2), (out_y + 3)]); {
+                  let intm2_out_y = __intm2_out_y;
+                  consume(in2);
+                  produce(intm2_out_y);
+                  __event_t++;
+                }}
+              }
+              slinky_wait_for(__task_handle);
             }}
             { let __intm4 = crop_dim(intm4, 1, [out_y, (out_y + 1)]); {
               let intm4 = __intm4;

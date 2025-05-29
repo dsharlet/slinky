@@ -333,6 +333,11 @@ function transpose(b, dims) {
   result.dims = dims.map(i => result.dims[i]);
   return result;
 }
+function slinky_async(task) {
+  task();
+  return 0;
+}
+function slinky_wait_for(task) {}
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
