@@ -407,6 +407,7 @@ function pipeline(in1, in2, out) {
               {
                 let in2 = in2;
                 let intm2 = intm2;
+                let intm4 = intm4;
                 let out_y = out_y;
                 { let __intm2_out_y = crop_dim(intm2, 1, [(out_y + 2), (out_y + 3)]); {
                   let intm2_out_y = __intm2_out_y;
@@ -414,14 +415,14 @@ function pipeline(in1, in2, out) {
                   produce(intm2_out_y);
                   __event_t++;
                 }}
+                { let __intm4_out_y = crop_dim(intm4, 1, [out_y, (out_y + 1)]); {
+                  let intm4_out_y = __intm4_out_y;
+                  consume(intm2);
+                  produce(intm4_out_y);
+                  __event_t++;
+                }}
               }
               slinky_wait_for(__task_handle);
-            }}
-            { let __intm4 = crop_dim(intm4, 1, [out_y, (out_y + 1)]); {
-              let intm4 = __intm4;
-              consume(intm2);
-              produce(intm4);
-              __event_t++;
             }}
             { let __out_out_y = crop_dim(out, 1, [out_y, (out_y + 1)]); {
               let out_out_y = __out_out_y;

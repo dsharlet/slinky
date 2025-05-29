@@ -388,17 +388,18 @@ function pipeline(in1, in2, out) {
           let __loop_max = buffer_max(out, 1);
           let __loop_step = 1;
           for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
-            { let __intm1 = crop_dim(intm1, 1, [(out_y + 1), (out_y + 1)]); {
-              let intm1 = __intm1;
-              consume(in1);
-              produce(intm1);
-              __event_t++;
-            }}
             { let __task_handle = slinky_async(() => {
                 {
+                  let in1 = in1;
                   let intm1 = intm1;
                   let intm3 = intm3;
                   let out_y = out_y;
+                  { let __intm1_out_y = crop_dim(intm1, 1, [(out_y + 1), (out_y + 1)]); {
+                    let intm1_out_y = __intm1_out_y;
+                    consume(in1);
+                    produce(intm1_out_y);
+                    __event_t++;
+                  }}
                   { let __intm3_out_y = crop_dim(intm3, 1, [out_y, out_y]); {
                     let intm3_out_y = __intm3_out_y;
                     consume(intm1);
@@ -410,6 +411,7 @@ function pipeline(in1, in2, out) {
               {
                 let in2 = in2;
                 let intm2 = intm2;
+                let intm4 = intm4;
                 let out_y = out_y;
                 { let __intm2_out_y = crop_dim(intm2, 1, [(out_y + 2), (out_y + 2)]); {
                   let intm2_out_y = __intm2_out_y;
@@ -417,14 +419,14 @@ function pipeline(in1, in2, out) {
                   produce(intm2_out_y);
                   __event_t++;
                 }}
+                { let __intm4_out_y = crop_dim(intm4, 1, [out_y, out_y]); {
+                  let intm4_out_y = __intm4_out_y;
+                  consume(intm2);
+                  produce(intm4_out_y);
+                  __event_t++;
+                }}
               }
               slinky_wait_for(__task_handle);
-            }}
-            { let __intm4 = crop_dim(intm4, 1, [out_y, out_y]); {
-              let intm4 = __intm4;
-              consume(intm2);
-              produce(intm4);
-              __event_t++;
             }}
             { let __out_out_y = crop_dim(out, 1, [out_y, out_y]); {
               let out_out_y = __out_out_y;
