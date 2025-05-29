@@ -1700,6 +1700,7 @@ namespace {
 class task_parallelizer : public stmt_mutator {
   std::vector<var> produced;
   symbol_map<var> aliases;
+  bool should_parallelize;
 
   var lookup_alias(var x) {
     auto alias = aliases.lookup(x);
@@ -1729,8 +1730,6 @@ public:
     }
   }
 
-  static bool should_parallelize(const stmt& s) { return !s.as<check>(); }
-
   void visit(const block* b) override {
     std::vector<var> old_produced;
     std::swap(old_produced, produced);
@@ -1740,13 +1739,17 @@ public:
     // Keep track of the new block, and the tasks we want to parallelize. When we can't parallelize any more, the
     // parallelized tasks are flushed into the result.
     std::vector<stmt> result;
-    std::vector<stmt> tasks;
+    std::vector<std::pair<bool, stmt>> tasks;
     auto flush_tasks = [&]() {
       if (tasks.empty()) return;
-      stmt s = tasks.back();
+      stmt s = std::move(tasks.back().second);
       tasks.pop_back();
       while (!tasks.empty()) {
-        s = async::make(var(), tasks.back(), std::move(s));
+        if (tasks.back().first) {
+          s = async::make(var(), std::move(tasks.back().second), std::move(s));
+        } else {
+          s = block::make({std::move(tasks.back().second), std::move(s)});
+        }
         tasks.pop_back();
         changed = true;
       }
@@ -1759,17 +1762,13 @@ public:
 
     for (const stmt& i : b->stmts) {
       if (depends_on(i, produced).any() ||
-          std::any_of(tasks.begin(), tasks.end(), [&](const stmt& j) { return depends_on(j, produced).buffer_read(); })) {
+          std::any_of(tasks.begin(), tasks.end(), [&](const auto& j) { return depends_on(j.second, produced).buffer_read(); })) {
         flush_tasks();
       }
+      should_parallelize = false;
       stmt s = mutate(i);
       changed = changed || !s.same_as(i);
-      if (!should_parallelize(s)) {
-        flush_tasks();
-        result.push_back(std::move(s));
-      } else {
-        tasks.push_back(std::move(s));
-      }
+      tasks.push_back({should_parallelize, std::move(s)});
     }
     flush_tasks();
     if (changed) {
@@ -1784,11 +1783,13 @@ public:
     for (var i : op->outputs) {
       produce(i);
     }
+    should_parallelize = true;
     set_result(op);
   }
 
   void visit(const copy_stmt* op) override {
     produce(op->dst);
+    should_parallelize = true;
     set_result(op);
   }
 
