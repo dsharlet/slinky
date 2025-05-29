@@ -495,6 +495,12 @@ stmt block::make(std::vector<stmt> stmts) {
   }
 }
 
+stmt block::make(stmt a, stmt b) {
+  if (!a.defined()) return b;
+  if (!b.defined()) return a;
+  return block::make({std::move(a), std::move(b)});
+}
+
 stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
   stmts.push_back(std::move(tail_stmt));
   return make(std::move(stmts));

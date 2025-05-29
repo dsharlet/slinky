@@ -211,6 +211,7 @@ public:
   // Nested block statements are flattened, and undef stmts are removed.
   // Note that this may not produce a block at all if `stmts` contains < 2 items.
   static stmt make(std::vector<stmt> stmts);
+  static stmt make(stmt a, stmt b);
 
   // Convenience for the not-uncommon case that we have a vector of stmts
   // (eg checks) followed by a result.
