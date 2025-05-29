@@ -1241,6 +1241,8 @@ public:
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
   stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependent_dim) {
+    // In order to just produce crop without taking into account what dims can change use :
+    // body = crop_buffer::make(sym, sym, bounds, body);
     if (dependent_dim.size() > 1) {
       std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
       for (int d : dependent_dim) {
