@@ -77,6 +77,10 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(make_buffer, y), (depends_on_result{.var = true}));
   ASSERT_EQ(depends_on(make_buffer, z), (depends_on_result{.var = true}));
 
+  stmt constant_buffer = constant_buffer::make(x, nullptr, check::make(x && z));
+  ASSERT_EQ(depends_on(make_buffer, x), (depends_on_result{}));
+  ASSERT_EQ(depends_on(make_buffer, z), (depends_on_result{.var = true}));
+
   stmt cropped_output = crop_dim::make(y, z, 0, {w, w}, call);
   ASSERT_EQ(depends_on(cropped_output, z),
       (depends_on_result{.var = true, .buffer_output = true, .buffer_dims = true, .buffer_bounds = true}));
