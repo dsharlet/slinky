@@ -1427,6 +1427,11 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
       stmt result = clone_with(op, std::move(body));
       set_result(add_trace(std::move(result), loop_name));
     }
+    void visit(const async* op) override {
+      expr task_name = get_trace_arg("task " + ctx.name(op->sym));
+      stmt task = add_trace(mutate(op->task), task_name);
+      set_result(async::make(op->sym, std::move(task), mutate(op->body)));
+    }
   };
 
   injector m(ctx);
