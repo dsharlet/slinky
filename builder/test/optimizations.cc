@@ -256,4 +256,20 @@ TEST(optimizations, canonicalize_nodes) {
       unique_node_count_is(3));
 }
 
+TEST(optimizations, parallelize_tasks) {
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {x}, {z}, {}),
+              })),
+      matches(async::make(var(), {call_stmt::make(nullptr, {x}, {y}, {})}, call_stmt::make(nullptr, {x}, {z}, {}))));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          call_stmt::make(nullptr, {y}, {z}, {}),
+      })));
+}
+
 }  // namespace slinky

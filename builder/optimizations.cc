@@ -1605,25 +1605,35 @@ public:
     stmt_mutator::visit(op);
   }
 
+  stmt mutate_closure(stmt s) {
+    // We're entering a stmt executed in parallel. All the buffers in scope cannot be mutated in this scope.
+    symbol_map<bool> old_can_mutate;
+    std::swap(can_mutate, old_can_mutate);
+    s = mutate(s);
+    can_mutate = std::move(old_can_mutate);
+
+    std::vector<var> referenced = find_dependencies(s);
+    std::vector<std::pair<var, expr>> lets;
+    for (var i : referenced) {
+      lets.push_back({i, expr(i)});
+    }
+    return let_stmt::make(std::move(lets), std::move(s), /*is_closure=*/true);
+  }
+
   void visit(const loop* op) override {
     if (!prove_true(op->max_workers == loop::serial)) {
-      // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
-      symbol_map<bool> old_can_mutate;
-      std::swap(can_mutate, old_can_mutate);
-
-      stmt body = mutate(op->body);
-      std::vector<var> referenced = find_dependencies(body);
-      std::vector<std::pair<var, expr>> lets;
-      for (var i : referenced) {
-        lets.push_back({i, expr(i)});
-      }
-      body = let_stmt::make(std::move(lets), std::move(body), /*is_closure=*/true);
+      stmt body = mutate_closure(op->body);
       set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
-
-      can_mutate = std::move(old_can_mutate);
     } else {
       stmt_mutator::visit(op);
     }
+  }
+
+  void visit(const async* op) override {
+    // We're entering an async task. All the buffers in scope cannot be mutated in this scope.
+    stmt task = mutate_closure(op->task);
+    stmt body = mutate_closure(op->body);
+    set_result(async::make(op->sym, std::move(task), std::move(body)));
   }
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
@@ -1683,6 +1693,132 @@ expr canonicalize_nodes(const expr& e) { return node_canonicalizer().mutate(e); 
 stmt canonicalize_nodes(const stmt& s) {
   scoped_trace trace("canonicalize_nodes");
   return node_canonicalizer().mutate(s);
+}
+
+namespace {
+
+class task_parallelizer : public stmt_mutator {
+  std::vector<var> produced;
+  symbol_map<var> aliases;
+
+  var lookup_alias(var x) {
+    auto alias = aliases.lookup(x);
+    return alias ? *alias : var();
+  }
+
+  static void insert_sorted(std::vector<var>& v, var x) {
+    auto i = std::lower_bound(v.begin(), v.end(), x);
+    if (i == v.end() || *i != x) {
+      v.insert(i, x);
+    }
+  }
+
+  static void erase_sorted(std::vector<var>& v, var x) {
+    auto i = std::lower_bound(v.begin(), v.end(), x);
+    if (i != v.end() && *i == x) {
+      v.erase(i);
+    }
+  }
+
+public:
+  bool is_produced(var x) const { return std::binary_search(produced.begin(), produced.end(), x); }
+  void produce(var x) {
+    while (x.defined()) {
+      insert_sorted(produced, x);
+      x = lookup_alias(x);
+    }
+  }
+
+  static bool should_parallelize(const stmt& s) { return !s.as<check>(); }
+
+  void visit(const block* b) override {
+    std::vector<var> old_produced;
+    std::swap(old_produced, produced);
+
+    bool changed = false;
+
+    // Keep track of the new block, and the tasks we want to parallelize. When we can't parallelize any more, the
+    // parallelized tasks are flushed into the result.
+    std::vector<stmt> result;
+    std::vector<stmt> tasks;
+    auto flush_tasks = [&]() {
+      if (tasks.empty()) return;
+      stmt s = tasks.back();
+      tasks.pop_back();
+      while (!tasks.empty()) {
+        s = async::make(var(), tasks.back(), std::move(s));
+        tasks.pop_back();
+        changed = true;
+      }
+      for (var i : produced) {
+        insert_sorted(old_produced, i);
+      }
+      produced.clear();
+      result.push_back(std::move(s));
+    };
+
+    for (const stmt& i : b->stmts) {
+      if (depends_on(i, produced).any() ||
+          std::any_of(tasks.begin(), tasks.end(), [&](const stmt& j) { return depends_on(j, produced).buffer_read(); })) {
+        flush_tasks();
+      }
+      stmt s = mutate(i);
+      changed = changed || !s.same_as(i);
+      if (!should_parallelize(s)) {
+        flush_tasks();
+        result.push_back(std::move(s));
+      } else {
+        tasks.push_back(std::move(s));
+      }
+    }
+    flush_tasks();
+    if (changed) {
+      set_result(block::make(std::move(result)));
+    } else {
+      set_result(b);
+    }
+    std::swap(old_produced, produced);
+  }
+
+  void visit(const call_stmt* op) override {
+    for (var i : op->outputs) {
+      produce(i);
+    }
+    set_result(op);
+  }
+
+  void visit(const copy_stmt* op) override {
+    produce(op->dst);
+    set_result(op);
+  }
+
+  template <typename T>
+  void visit_buffer_decl(const T* op, var src = var()) {
+    bool was_produced = is_produced(op->sym);
+    auto s = set_value_in_scope(aliases, op->sym, src);
+    stmt_mutator::visit(op);
+    if (was_produced) {
+      insert_sorted(produced, op->sym);
+    } else {
+      erase_sorted(produced, op->sym);
+    }
+  }
+
+  void visit(const allocate* op) override { visit_buffer_decl(op); }
+  void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_data_dependency(op->base)); }
+  void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
+};
+
+}  // namespace
+
+stmt parallelize_tasks(const stmt& s) {
+  scoped_trace trace("parallelize_tasks");
+  return task_parallelizer().mutate(s);
 }
 
 }  // namespace slinky
