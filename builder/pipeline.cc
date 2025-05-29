@@ -590,7 +590,7 @@ public:
 
 void find_dependant_dims(
     var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependant_dims) {
-  for (int i = 0; i < bounds.size(); ++i) {
+  for (size_t i = 0; i < bounds.size(); ++i) {
     dependant_dims_finder finder(dependant_dims);
     bounds[i].min.accept(&finder);
     bounds[i].max.accept(&finder);
@@ -1238,6 +1238,21 @@ public:
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
+  stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependant_dim) {
+    if (dependant_dim.size() > 1) {
+      std::vector<interval_expr>& bounds = *allocation_bounds_[sym];
+      std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
+      for (int d : dependant_dim) {
+        needed[d] = bounds[d];
+      }
+      body = crop_buffer::make(sym, sym, needed, body);
+    } else if (dependant_dim.size() == 1) {
+      int dim = dependant_dim[0];
+      body = crop_dim::make(sym, sym, dim, (*allocation_bounds_[sym])[dim], body);
+    }
+
+    return body;
+  }
   // Creates a loop body for a given function including all function bodies computed inside of the loops.
   // It may recursively call itself if there are nested loops, it's assumed that loops are produced
   // starting from the outer one. If base_f function is nullptr, the assumption is that we need to
@@ -1332,17 +1347,7 @@ public:
       if (!allocation_bounds_[sym]) continue;
       if (all_deps.count(sym) == 0) continue;
       find_dependant_dims(sym, *allocation_bounds_[sym], dependant_dims);
-      if (dependant_dims[sym].size() > 1) {
-        std::vector<interval_expr>& bounds = *allocation_bounds_[sym];
-        std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
-        for (int d : dependant_dims[sym]) {
-          needed[d] = bounds[d];
-        }
-        body.body = crop_buffer::make(sym, sym, needed, body.body);
-      } else if (dependant_dims[sym].size() == 1) {
-        int dim = dependant_dims[sym][0];
-        body.body = crop_dim::make(sym, sym, dim, (*allocation_bounds_[sym])[dim], body.body);
-      }
+      body.body = add_crop(body.body, sym, *allocation_bounds_[sym], dependant_dims[sym]);
     }
 
     // Followed by intermediate buffers in the reverse topological order
@@ -1366,17 +1371,7 @@ public:
           if (!maybe_dims) continue;
           body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
         } else {
-          if (dependant_dims[b->sym()].size() > 1) {
-            std::vector<interval_expr>& bounds = *inferred_bounds_[b->sym()];
-            std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
-            for (int d : dependant_dims[b->sym()]) {
-              needed[d] = bounds[d];
-            }
-            body.body = crop_buffer::make(b->sym(), b->sym(), needed, body.body);
-          } else if (dependant_dims[b->sym()].size() == 1) {
-            int dim = dependant_dims[b->sym()][0];
-            body.body = crop_dim::make(b->sym(), b->sym(), dim, (*inferred_bounds_[b->sym()])[dim], body.body);
-          }
+          body.body = add_crop(body.body, b->sym(), *inferred_bounds_[b->sym()], dependant_dims[b->sym()]);
         }
       }
     }
