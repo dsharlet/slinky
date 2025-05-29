@@ -562,19 +562,19 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
-class dependant_dims_finder : public recursive_node_visitor {
-  const std::map<var, std::vector<int>>& dependant_dims;
+class dependent_dims_finder : public recursive_node_visitor {
+  const std::map<var, std::vector<int>>& dependent_dims;
 
 public:
   bool depends = false;
-  dependant_dims_finder(const std::map<var, std::vector<int>>& dependant_dims) : dependant_dims(dependant_dims) {}
+  dependent_dims_finder(const std::map<var, std::vector<int>>& dependent_dims) : dependent_dims(dependent_dims) {}
 
   void visit(const variable* v) override {
     switch (v->field) {
     case buffer_field::min:
     case buffer_field::max: {
-      if (dependant_dims.count(v->sym) == 0) return;
-      for (int d : dependant_dims.at(v->sym)) {
+      if (dependent_dims.count(v->sym) == 0) return;
+      for (int d : dependent_dims.at(v->sym)) {
         if (v->dim == d) {
           depends = true;
           return;
@@ -588,14 +588,14 @@ public:
   }
 };
 
-void find_dependant_dims(
-    var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependant_dims) {
+void find_dependent_dims(
+    var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependent_dims) {
   for (size_t i = 0; i < bounds.size(); ++i) {
-    dependant_dims_finder finder(dependant_dims);
+    dependent_dims_finder finder(dependent_dims);
     bounds[i].min.accept(&finder);
     bounds[i].max.accept(&finder);
     if (finder.depends) {
-      dependant_dims[sym].push_back(i);
+      dependent_dims[sym].push_back(i);
     }
   }
 }
@@ -1238,16 +1238,16 @@ public:
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
-  stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependant_dim) {
-    if (dependant_dim.size() > 1) {
+  stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependent_dim) {
+    if (dependent_dim.size() > 1) {
       std::vector<interval_expr>& bounds = *allocation_bounds_[sym];
       std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
-      for (int d : dependant_dim) {
+      for (int d : dependent_dim) {
         needed[d] = bounds[d];
       }
       body = crop_buffer::make(sym, sym, needed, body);
-    } else if (dependant_dim.size() == 1) {
-      int dim = dependant_dim[0];
+    } else if (dependent_dim.size() == 1) {
+      int dim = dependent_dim[0];
       body = crop_dim::make(sym, sym, dim, (*allocation_bounds_[sym])[dim], body);
     }
 
@@ -1317,12 +1317,12 @@ public:
       all_deps.insert(v);
     }
 
-    std::map<var, std::vector<int>> dependant_dims;
+    std::map<var, std::vector<int>> dependent_dims;
     if (base_f) {
       for (const func::output& o : base_f->outputs()) {
         for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
           if (o.dims[d] == loop.sym()) {
-            dependant_dims[o.sym()].push_back(d);
+            dependent_dims[o.sym()].push_back(d);
           }
         }
       }
@@ -1336,7 +1336,7 @@ public:
         if (!inferred_bounds_[b->sym()]) continue;
         if (all_deps.count(b->sym()) == 0) continue;
         if (body.allocations.count(b->sym()) > 0) continue;
-        find_dependant_dims(b->sym(), *inferred_bounds_[b->sym()], dependant_dims);
+        find_dependent_dims(b->sym(), *inferred_bounds_[b->sym()], dependent_dims);
       }
     }
 
@@ -1346,8 +1346,8 @@ public:
       var sym = i.first;
       if (!allocation_bounds_[sym]) continue;
       if (all_deps.count(sym) == 0) continue;
-      find_dependant_dims(sym, *allocation_bounds_[sym], dependant_dims);
-      body.body = add_crop(body.body, sym, *allocation_bounds_[sym], dependant_dims[sym]);
+      find_dependent_dims(sym, *allocation_bounds_[sym], dependent_dims);
+      body.body = add_crop(body.body, sym, *allocation_bounds_[sym], dependent_dims[sym]);
     }
 
     // Followed by intermediate buffers in the reverse topological order
@@ -1371,7 +1371,7 @@ public:
           if (!maybe_dims) continue;
           body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
         } else {
-          body.body = add_crop(body.body, b->sym(), *inferred_bounds_[b->sym()], dependant_dims[b->sym()]);
+          body.body = add_crop(body.body, b->sym(), *inferred_bounds_[b->sym()], dependent_dims[b->sym()]);
         }
       }
     }
