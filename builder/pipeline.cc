@@ -1255,6 +1255,7 @@ public:
 
     return body;
   }
+
   // Creates a loop body for a given function including all function bodies computed inside of the loops.
   // It may recursively call itself if there are nested loops, it's assumed that loops are produced
   // starting from the outer one. If base_f function is nullptr, the assumption is that we need to
