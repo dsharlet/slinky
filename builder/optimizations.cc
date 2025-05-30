@@ -1835,6 +1835,7 @@ public:
       auto s = set_value_in_scope(aliases, op->sym, lookup_alias(src));
       node_mutator::visit(op);
     } else {
+      // Handle shadowing of op->sym by saving the state of op->sym being produced or consumed, then clearing it.
       auto consumed_i = consumed.find(op->sym);
       auto produced_i = produced.find(op->sym);
       bool was_consumed = consumed_i != consumed.end();
@@ -1844,6 +1845,7 @@ public:
 
       node_mutator::visit(op);
 
+      // Restore the state of op->sym being produced or consumed.
       if (was_produced) {
         produced.insert(op->sym);
       } else {
