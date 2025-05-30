@@ -1,9 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <cstdlib>
-#include <random>
-
-#include "base/flat_set.h"
+#include "base/set.h"
 
 namespace slinky {
 

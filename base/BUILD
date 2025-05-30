@@ -9,10 +9,10 @@ cc_library(
         "allocator.h",
         "arithmetic.h",
         "atomic_wait.h",
-        "flat_set.h",
         "function_ref.h",
-        "ref_count.h",
         "modulus_remainder.h",
+        "ref_count.h",
+        "set.h",
         "span.h",
         "util.h",
     ],
@@ -26,9 +26,9 @@ cc_library(
     name = "thread_pool",
     srcs = ["thread_pool.cc"],
     hdrs = [
-        "thread_pool.h",
         "function_ref.h",
         "ref_count.h",
+        "thread_pool.h",
         "util.h"
     ],
     deps = [":base"],
@@ -39,9 +39,9 @@ cc_library(
     name = "thread_pool_impl",
     srcs = ["thread_pool_impl.cc"],
     hdrs = [
-        "thread_pool_impl.h",
         "function_ref.h",
         "ref_count.h",
+        "thread_pool_impl.h",
         "util.h"
     ],
     deps = [":thread_pool"],

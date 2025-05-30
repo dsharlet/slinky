@@ -13,8 +13,8 @@
 #include <vector>
 
 #include "base/chrome_trace.h"
-#include "base/flat_set.h"
 #include "base/function_ref.h"
+#include "base/set.h"
 #include "builder/node_mutator.h"
 #include "builder/pipeline.h"
 #include "builder/simplify.h"
@@ -1699,7 +1699,7 @@ stmt canonicalize_nodes(const stmt& s) {
 namespace {
 
 class task_parallelizer : public node_mutator {
-  flat_set<var> consumed, produced;
+  std::set<var> consumed, produced;
   bool barrier = false;
   symbol_map<var> aliases;
 
@@ -1710,7 +1710,7 @@ class task_parallelizer : public node_mutator {
 
 public:
   void visit(const block* b) override {
-    flat_set<var> outer_produced, outer_consumed;
+    std::set<var> outer_produced, outer_consumed;
     bool changed = false;
 
     // We build the result in several stages:
@@ -1720,7 +1720,7 @@ public:
     std::vector<stmt> stages;
     std::vector<stmt> tasks;
     std::vector<stmt> task;
-    flat_set<var> task_produced, task_consumed;
+    std::set<var> task_produced, task_consumed;
     // Make a task from the current task stmts, and add it to tasks.
     auto flush_task = [&]() {
       if (task.empty()) return;
@@ -1733,8 +1733,8 @@ public:
         changed = true;
       }
       assert(task.empty());
-      outer_produced |= task_produced;
-      outer_consumed |= task_consumed;
+      outer_produced.insert(task_produced.begin(), task_produced.end());
+      outer_consumed.insert(task_consumed.begin(), task_consumed.end());
       task_produced.clear();
       task_consumed.clear();
     };
@@ -1782,8 +1782,8 @@ public:
         barrier = false;
       }
 
-      task_produced |= produced;
-      task_consumed |= consumed;
+      task_produced.insert(produced.begin(), produced.end());
+      task_consumed.insert(consumed.begin(), consumed.end());
       produced.clear();
       consumed.clear();
     }

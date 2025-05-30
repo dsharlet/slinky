@@ -41,8 +41,8 @@ cc_test(
 )
 
 cc_test(
-    name = "flat_set",
-    srcs = ["flat_set.cc"],
+    name = "set",
+    srcs = ["set.cc"],
     deps = [
         "//base",
         "@googletest//:gtest_main",

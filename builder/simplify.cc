@@ -15,7 +15,7 @@
 
 #include "base/arithmetic.h"
 #include "base/chrome_trace.h"
-#include "base/flat_set.h"
+#include "base/set.h"
 #include "builder/node_mutator.h"
 #include "builder/rewrite.h"
 #include "builder/substitute.h"
@@ -78,11 +78,6 @@ stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
   }
 }
 
-template <typename T>
-bool empty_intersection(const std::set<T>& a, const std::set<T>& b) {
-  return empty_intersection(a.begin(), a.end(), b.begin(), b.end());
-}
-
 // If a constant can be added to an expression without creating new nodes, this helper produces that expression,
 // otherwise expr().
 class constant_adder : public node_mutator {
@@ -92,7 +87,7 @@ public:
 
   constant_adder(index_t c) : c(c) {}
 
-  void visit(const constant* op) override { 
+  void visit(const constant* op) override {
     if (!add_overflows(op->value, c)) {
       set_result(op->value + c);
     } else {
