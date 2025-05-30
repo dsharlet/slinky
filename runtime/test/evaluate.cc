@@ -253,13 +253,8 @@ TEST(evaluate, async) {
   cfg.thread_pool = &t;
   ctx.config = &cfg;
 
-  index_t sem1 = 0;
-  index_t sem2 = 0;
-  index_t sem3 = 0;
   std::atomic<int> state = 0;
 
-  auto make_wait = [&](index_t& sem) { return check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))); };
-  auto make_signal = [&](index_t& sem) { return check::make(semaphore_signal(reinterpret_cast<index_t>(&sem))); };
   stmt increment_state = call_stmt::make(
       [&](const call_stmt* op, eval_context& ctx) -> index_t {
         ++state;
@@ -275,25 +270,14 @@ TEST(evaluate, async) {
         {}, {}, {});
   };
 
-  stmt task = block::make({
-      make_wait(sem1),
-      increment_state,
-      make_signal(sem2),
-      make_wait(sem3),
-      increment_state,
-  });
-  stmt body = block::make({
-      make_check_state(0),
-      make_signal(sem1),
-      make_wait(sem2),
-      make_check_state(1),
-      make_signal(sem3),
-  });
-
-  stmt test = block::make({
-      async::make(x, task, body),
-      make_check_state(2),
-  });
+  stmt test = async::make(x,
+      block::make({
+          increment_state,
+      }),
+      block::make({
+          check::make(wait_for(x)),
+          make_check_state(1),
+      }));
 
   evaluate(test, ctx);
 }

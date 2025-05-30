@@ -824,6 +824,9 @@ expr semaphore_wait(span<const expr> sems, span<const expr> counts) {
   return semaphore_helper(intrinsic::semaphore_wait, sems, counts);
 }
 
+expr wait_for(expr task) { return wait_for(std::vector<expr>{std::move(task)}); }
+expr wait_for(std::vector<expr> tasks) { return call::make(intrinsic::wait_for, std::move(tasks)); }
+
 void recursive_node_visitor::visit(const variable*) {}
 void recursive_node_visitor::visit(const constant*) {}
 

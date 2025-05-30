@@ -304,6 +304,18 @@ public:
     return 1;
   }
 
+  index_t eval_wait_for(const call* op) {
+    assert(op->args.size() >= 1);
+    for (const expr& i : op->args) {
+      var sym = *as_variable(i);
+      thread_pool::task* t = reinterpret_cast<thread_pool::task*>(context.lookup(sym));
+      if (!t) continue;
+      assert(context.config->thread_pool);
+      context.config->thread_pool->wait_for(t);
+    }
+    return op->args.size();
+  }
+
   SLINKY_NO_INLINE index_t eval(const call* op) {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: SLINKY_UNREACHABLE << "cannot evaluate positive_infinity";
@@ -321,6 +333,8 @@ public:
     case intrinsic::semaphore_init: return eval_semaphore_init(op);
     case intrinsic::semaphore_signal: return eval_semaphore_signal(op);
     case intrinsic::semaphore_wait: return eval_semaphore_wait(op);
+
+    case intrinsic::wait_for: return eval_wait_for(op);
 
     case intrinsic::trace_begin: return eval_trace_begin(op);
     case intrinsic::trace_end: return eval_trace_end(op);

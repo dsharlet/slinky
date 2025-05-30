@@ -670,7 +670,7 @@ function slinky_async(task) {
   task();
   return 0;
 }
-function slinky_wait_for(task) {}
+function slinky_wait_for(...tasks) {}
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
