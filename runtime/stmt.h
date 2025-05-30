@@ -239,6 +239,8 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };
 
+// Enqueues `task` to run in parallel, storing the task handle in `sym`, which can be waited on using `wait_for`.
+// `body` then runs, and after it is complete, waits for `task` to complete.
 class async : public stmt_node<async> {
 public:
   var sym;
