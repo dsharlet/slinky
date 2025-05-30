@@ -1504,8 +1504,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = simplify(result);
   }
 
-  result = parallelize_tasks(result);
-
   result = insert_early_free(result);
 
   if (options.trace) {
