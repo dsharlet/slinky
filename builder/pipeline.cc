@@ -1343,7 +1343,6 @@ public:
         const buffer_expr_ptr& b = o.buffer;
         if (!inferred_bounds_[b->sym()]) continue;
         if (all_deps.count(b->sym()) == 0) continue;
-        if (body.allocations.count(b->sym()) > 0) continue;
         find_dependent_dims(b->sym(), *inferred_bounds_[b->sym()], dependent_dims);
       }
     }
