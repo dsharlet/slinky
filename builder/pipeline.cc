@@ -562,6 +562,46 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
+// Finds if expr depends on any of the buffer_min/buffer_max from dependent_dims.
+class dependent_dims_finder : public recursive_node_visitor {
+  const std::map<var, std::vector<int>>& dependent_dims;
+
+public:
+  bool depends = false;
+  dependent_dims_finder(const std::map<var, std::vector<int>>& dependent_dims) : dependent_dims(dependent_dims) {}
+
+  void visit(const variable* v) override {
+    switch (v->field) {
+    case buffer_field::min:
+    case buffer_field::max: {
+      if (dependent_dims.count(v->sym) == 0) return;
+      for (int d : dependent_dims.at(v->sym)) {
+        if (v->dim == d) {
+          depends = true;
+          return;
+        }
+      }
+      return;
+    }
+      [[fallthrough]];
+    default: return;
+    }
+  }
+};
+
+// Finds which of the bounds depend on any of the buffer_min/buffer_max from dependent_dims.
+void find_dependent_dims(
+    var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependent_dims) {
+  for (size_t i = 0; i < bounds.size(); ++i) {
+    dependent_dims_finder finder(dependent_dims);
+    bounds[i].min.accept(&finder);
+    bounds[i].max.accept(&finder);
+    if (finder.depends) {
+      dependent_dims[sym].push_back(i);
+    }
+  }
+}
+
 class pipeline_builder {
   node_context& ctx;
 
@@ -1200,6 +1240,23 @@ public:
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
+  stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependent_dim) {
+    // In order to just produce crop without taking into account what dims can change use :
+    // body = crop_buffer::make(sym, sym, bounds, body);
+    if (dependent_dim.size() > 1) {
+      std::vector<interval_expr> needed(bounds.size(), {expr(), expr()});
+      for (int d : dependent_dim) {
+        needed[d] = bounds[d];
+      }
+      body = crop_buffer::make(sym, sym, needed, body);
+    } else if (dependent_dim.size() == 1) {
+      int dim = dependent_dim[0];
+      body = crop_dim::make(sym, sym, dim, bounds[dim], body);
+    }
+
+    return body;
+  }
+
   // Creates a loop body for a given function including all function bodies computed inside of the loops.
   // It may recursively call itself if there are nested loops, it's assumed that loops are produced
   // starting from the outer one. If base_f function is nullptr, the assumption is that we need to
@@ -1264,13 +1321,40 @@ public:
       all_deps.insert(v);
     }
 
+    // We actually don't need to produce a full crop, but only dimensions
+    // which (transitively) depend on the this loop's base function crop_dim.
+    std::map<var, std::vector<int>> dependent_dims;
+    // Add a dimension which will have crop_dim.
+    if (base_f) {
+      for (const func::output& o : base_f->outputs()) {
+        for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
+          if (o.dims[d] == loop.sym()) {
+            dependent_dims[o.sym()].push_back(d);
+          }
+        }
+      }
+    }
+
+    // Propagate dependent dims starting from the outer crop.
+    for (auto i = order_.begin(); i != order_.end(); ++i) {
+      const func* f = *i;
+      if (f == base_f) continue;
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (!inferred_bounds_[b->sym()]) continue;
+        if (all_deps.count(b->sym()) == 0) continue;
+        find_dependent_dims(b->sym(), *inferred_bounds_[b->sym()], dependent_dims);
+      }
+    }
+
     // Add crops for the buffers and their dependencies used inside of the body using previously inferred bounds.
     // Input syms should be the innermost.
     for (const auto& i : input_syms_) {
       var sym = i.first;
       if (!allocation_bounds_[sym]) continue;
       if (all_deps.count(sym) == 0) continue;
-      body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
+      find_dependent_dims(sym, *allocation_bounds_[sym], dependent_dims);
+      body.body = add_crop(body.body, sym, *allocation_bounds_[sym], dependent_dims[sym]);
     }
 
     // Followed by intermediate buffers in the reverse topological order
@@ -1294,7 +1378,7 @@ public:
           if (!maybe_dims) continue;
           body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
         } else {
-          body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
+          body.body = add_crop(body.body, b->sym(), *inferred_bounds_[b->sym()], dependent_dims[b->sym()]);
         }
       }
     }
