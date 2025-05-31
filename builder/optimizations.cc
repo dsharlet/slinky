@@ -14,6 +14,7 @@
 
 #include "base/chrome_trace.h"
 #include "base/function_ref.h"
+#include "base/set.h"
 #include "builder/node_mutator.h"
 #include "builder/pipeline.h"
 #include "builder/simplify.h"
@@ -1609,25 +1610,35 @@ public:
     stmt_mutator::visit(op);
   }
 
+  stmt mutate_closure(stmt s) {
+    // We're entering a stmt executed in parallel. All the buffers in scope cannot be mutated in this scope.
+    symbol_map<bool> old_can_mutate;
+    std::swap(can_mutate, old_can_mutate);
+    s = mutate(s);
+    can_mutate = std::move(old_can_mutate);
+
+    std::vector<var> referenced = find_dependencies(s);
+    std::vector<std::pair<var, expr>> lets;
+    for (var i : referenced) {
+      lets.push_back({i, expr(i)});
+    }
+    return let_stmt::make(std::move(lets), std::move(s), /*is_closure=*/true);
+  }
+
   void visit(const loop* op) override {
     if (!prove_true(op->max_workers == loop::serial)) {
-      // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
-      symbol_map<bool> old_can_mutate;
-      std::swap(can_mutate, old_can_mutate);
-
-      stmt body = mutate(op->body);
-      std::vector<var> referenced = find_dependencies(body);
-      std::vector<std::pair<var, expr>> lets;
-      for (var i : referenced) {
-        lets.push_back({i, expr(i)});
-      }
-      body = let_stmt::make(std::move(lets), std::move(body), /*is_closure=*/true);
+      stmt body = mutate_closure(op->body);
       set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
-
-      can_mutate = std::move(old_can_mutate);
     } else {
       stmt_mutator::visit(op);
     }
+  }
+
+  void visit(const async* op) override {
+    // We're entering an async task. All the buffers in scope cannot be mutated in this scope.
+    stmt task = mutate_closure(op->task);
+    stmt body = mutate_closure(op->body);
+    set_result(async::make(op->sym, std::move(task), std::move(body)));
   }
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
@@ -1687,6 +1698,191 @@ expr canonicalize_nodes(const expr& e) { return node_canonicalizer().mutate(e); 
 stmt canonicalize_nodes(const stmt& s) {
   scoped_trace trace("canonicalize_nodes");
   return node_canonicalizer().mutate(s);
+}
+
+namespace {
+
+class task_parallelizer : public node_mutator {
+  std::set<var> consumed, produced;
+  bool barrier = false;
+  symbol_map<var> aliases;
+
+  var lookup_alias(var x) {
+    auto alias = aliases.lookup(x);
+    return alias ? *alias : x;
+  }
+
+public:
+  void visit(const block* b) override {
+    std::set<var> outer_produced, outer_consumed;
+    bool changed = false;
+
+    // We build the result in several stages:
+    // - Find sequences of stmts that must be computed synchronously (a task)
+    // - Those sequences are computed asynchronously when possible (tasks)
+    // - We might need to synchronize between tasks computed asynchronously (stages).
+    std::vector<stmt> stages;
+    std::vector<stmt> tasks;
+    std::vector<stmt> task;
+    std::set<var> task_produced, task_consumed;
+    // Make a task from the current task stmts, and add it to tasks.
+    auto flush_task = [&]() {
+      if (task.empty()) return;
+      if (!changed && task.size() == b->stmts.size()) {
+        assert(tasks.empty());
+        tasks.push_back(stmt(b));
+        task.clear();
+      } else {
+        tasks.push_back(block::make(std::move(task)));
+        changed = true;
+      }
+      assert(task.empty());
+      outer_produced.insert(task_produced.begin(), task_produced.end());
+      outer_consumed.insert(task_consumed.begin(), task_consumed.end());
+      task_produced.clear();
+      task_consumed.clear();
+    };
+    // Make a sequence of async tasks, and add the sequence to the stages.
+    auto flush_tasks = [&]() {
+      if (tasks.empty()) return;
+      stmt async_result = tasks.back();
+      tasks.pop_back();
+      while (!tasks.empty()) {
+        async_result = async::make(var(), std::move(tasks.back()), std::move(async_result));
+        tasks.pop_back();
+      }
+      stages.push_back(std::move(async_result));
+    };
+
+    for (const stmt& i : b->stmts) {
+      produced.clear();
+      consumed.clear();
+      barrier = false;
+      stmt s = mutate(i);
+      changed = changed || !s.same_as(i);
+
+      if (produced.empty()) {
+        // If we didn't produce or consume anything, assume this isn't worth parallelizing (e.g. a check)
+      } else {
+        if (empty_intersection(task_produced, consumed)) {
+          // s does not depend on the previously produced buffers, we can compute it in parallel with previous
+          // operations.
+          flush_task();
+        }
+        if (!empty_intersection(outer_produced, consumed) || !empty_intersection(outer_produced, produced)) {
+          // s depends on something in the already flushed tasks, we need to synchronize.
+          // TODO: We could try to wait for the specific task instead of synchronizing everything.
+          flush_task();
+          flush_tasks();
+        }
+      }
+
+      task.push_back(s);
+
+      if (barrier) {
+        // There was a barrier, we need to synchronize.
+        flush_task();
+        flush_tasks();
+        barrier = false;
+      }
+
+      task_produced.insert(produced.begin(), produced.end());
+      task_consumed.insert(consumed.begin(), consumed.end());
+      produced.clear();
+      consumed.clear();
+    }
+    flush_task();
+    flush_tasks();
+
+    set_result(block::make(std::move(stages)));
+    produced = std::move(outer_produced);
+    consumed = std::move(outer_consumed);
+  }
+
+  void visit(const call_stmt* op) override {
+    for (var i : op->inputs) {
+      consumed.insert(lookup_alias(i));
+    }
+    for (var i : op->outputs) {
+      produced.insert(lookup_alias(i));
+    }
+    set_result(op);
+  }
+
+  void visit(const copy_stmt* op) override {
+    consumed.insert(lookup_alias(op->src));
+    produced.insert(lookup_alias(op->dst));
+    set_result(op);
+  }
+
+  void visit(const call* op) override {
+    node_mutator::visit(op);
+    if (op->intrinsic == intrinsic::buffer_at) {
+      assert(op->args.size() >= 1);
+      auto buf = as_variable(op->args[0]);
+      // Assume we are both producing and consuming this buffer.
+      consumed.insert(lookup_alias(*buf));
+      produced.insert(lookup_alias(*buf));
+    }
+  }
+
+  void visit(const check* op) override {
+    node_mutator::visit(op);
+    // Stmts after a check assume the check was true, so these are async barriers.
+    barrier = true;
+  }
+
+  template <typename T>
+  void visit_buffer_decl(const T* op, var src = var()) {
+    if (src.defined()) {
+      // Just remember what this is an alias of.
+      auto s = set_value_in_scope(aliases, op->sym, lookup_alias(src));
+      node_mutator::visit(op);
+    } else {
+      // Handle shadowing of op->sym by saving the state of op->sym being produced or consumed, then clearing it.
+      auto consumed_i = consumed.find(op->sym);
+      auto produced_i = produced.find(op->sym);
+      bool was_consumed = consumed_i != consumed.end();
+      bool was_produced = produced_i != produced.end();
+      if (was_consumed) consumed.erase(consumed_i);
+      if (was_produced) produced.erase(produced_i);
+
+      node_mutator::visit(op);
+
+      // Restore the state of op->sym being produced or consumed.
+      if (was_produced) {
+        produced.insert(op->sym);
+      } else {
+        auto i = produced.find(op->sym);
+        if (i != produced.end()) produced.erase(i);
+      }
+      if (was_consumed) {
+        consumed.insert(op->sym);
+      } else {
+        auto i = consumed.find(op->sym);
+        if (i != consumed.end()) consumed.erase(i);
+      }
+    }
+  }
+
+  void visit(const allocate* op) override { visit_buffer_decl(op); }
+  void visit(const constant_buffer* op) override { visit_buffer_decl(op); }
+  void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_data_dependency(op->base)); }
+  void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
+
+  using node_mutator::visit;
+};
+
+}  // namespace
+
+stmt parallelize_tasks(const stmt& s) {
+  scoped_trace trace("parallelize_tasks");
+  return task_parallelizer().mutate(s);
 }
 
 }  // namespace slinky

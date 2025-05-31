@@ -45,6 +45,9 @@ stmt optimize_symbols(const stmt& s, node_context& ctx);
 expr canonicalize_nodes(const expr& s);
 stmt canonicalize_nodes(const stmt& s);
 
+// Find opportunities to run stmts in parallel tasks.
+stmt parallelize_tasks(const stmt& s);
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

@@ -325,6 +325,15 @@ public:
     if (!try_match(trs->body, op->body)) return;
   }
 
+  void visit(const async* op) override {
+    const async* as = static_cast<const async*>(self);
+    assert(as);
+
+    if (!try_match(as->sym, op->sym)) return;
+    if (!try_match(as->task, op->task)) return;
+    if (!try_match(as->body, op->body)) return;
+  }
+
   void visit(const check* op) override {
     const check* cs = static_cast<const check*>(self);
     assert(cs);
@@ -568,6 +577,19 @@ void substitutor::visit(const crop_dim* op) {
     set_result(op);
   } else {
     set_result(crop_dim::make(sym, src, op->dim, std::move(bounds), std::move(body)));
+  }
+  exit_decls();
+}
+
+void substitutor::visit(const async* op) {
+  var sym = enter_decl(op->sym);
+  stmt task = sym.defined() ? mutate(op->task) : op->task;
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (sym == op->sym && task.same_as(op->task) && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(async::make(sym, std::move(task), std::move(body)));
   }
   exit_decls();
 }
