@@ -1334,9 +1334,11 @@ class pure_dims_remover : public stmt_mutator {
     return sd;
   }
 
-  static bool is_extent_one(interval_expr interval) { return prove_true(interval.min == interval.max); }
-
-  static bool is_extent_one(dim_expr d) { return is_extent_one(d.bounds); }
+  static bool is_extent_one(const interval_expr& interval) {
+    return interval.min.defined() && interval.max.defined() &&
+           (interval.is_point() || match(interval.min, interval.max));
+  }
+  static bool is_extent_one(const dim_expr& d) { return is_extent_one(d.bounds); }
 
   template <typename T>
   static sliceable_dims find_sliceable(const std::vector<T>& dims) {
