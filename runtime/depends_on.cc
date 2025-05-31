@@ -54,7 +54,7 @@ public:
       }
     }
 
-    if (unknown_deps) {
+    if (!is_decl && unknown_deps && s.defined()) {
       return &(*unknown_deps)[s];
     }
     return nullptr;
@@ -115,9 +115,9 @@ public:
     }
   }
 
-  // Returns true if everything is shadowed and the result is already not pure, so there is no point in recursing.
+  // Returns false if everything is shadowed and the result is already not pure, so there is no point in recursing.
   bool add_dummy_decl(var x) {
-    if (no_dummy(find_deps(x, /*is_decl=*/true))) {
+    if (no_dummy(find_deps(x, /*is_decl=*/true)) || unknown_deps) {
       if (!is_pure && !unknown_deps) {
         // We want to know if every decl we care about is shadowed. For this to be true, the number of dummy decls in
         // var_deps (including the new one we are about to add) must be equal to the number of non-dummy decls. This is
