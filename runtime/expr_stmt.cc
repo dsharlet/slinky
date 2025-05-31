@@ -744,7 +744,6 @@ const expr& dim_expr::get_field(buffer_field field) const {
 
 bool is_buffer_intrinsic(intrinsic fn) {
   switch (fn) {
-  case intrinsic::buffer_size_bytes:
   case intrinsic::buffer_at: return true;
   default: return false;
   }

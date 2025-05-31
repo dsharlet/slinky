@@ -98,9 +98,6 @@ enum class intrinsic {
   and_then,
   or_else,
 
-  // Returns the size of a buffer in bytes.
-  buffer_size_bytes,
-
   // This function returns the address of the element x in (buf, x_0, x_1, ...). x can be any rank, including 0.
   buffer_at,
 
@@ -125,6 +122,7 @@ enum class buffer_field : unsigned {
 
   rank,
   elem_size,
+  size_bytes,
 
   min,
   max,

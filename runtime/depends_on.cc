@@ -73,7 +73,8 @@ public:
       case buffer_field::stride:
       case buffer_field::fold_factor: deps->buffer_dims = true; break;
       case buffer_field::rank:
-      case buffer_field::elem_size: deps->var = true; break;
+      case buffer_field::elem_size:
+      case buffer_field::size_bytes: deps->var = true; break;
       default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(op->field);
       }
     }
@@ -82,13 +83,10 @@ public:
     if (is_buffer_intrinsic(op->intrinsic)) {
       is_pure = false;
       assert(op->args.size() >= 1);
-      if (auto buf = as_variable(op->args[0])) {
-        if (depends_on_result* deps = find_deps(*buf)) {
-          if (op->intrinsic == intrinsic::buffer_at) {
+      if (op->intrinsic == intrinsic::buffer_at) {
+        if (auto buf = as_variable(op->args[0])) {
+          if (depends_on_result* deps = find_deps(*buf)) {
             deps->buffer_base = true;
-          }
-          if (op->intrinsic == intrinsic::buffer_size_bytes) {
-            deps->var = true;
           }
         }
       }
@@ -225,9 +223,7 @@ public:
     }
     visit_sym_body(op->sym, nullptr, op->body);
   }
-  void visit(const constant_buffer* op) override {
-    visit_sym_body(op->sym, nullptr, op->body);
-  }
+  void visit(const constant_buffer* op) override { visit_sym_body(op->sym, nullptr, op->body); }
   void visit(const crop_buffer* op) override {
     for (const interval_expr& i : op->bounds) {
       if (i.min.defined()) i.min.accept(this);
