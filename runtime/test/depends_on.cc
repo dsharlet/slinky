@@ -105,6 +105,48 @@ TEST(depends_on, copy) {
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
 
+TEST(depends_on_any, basic) {
+  ASSERT_TRUE(depends_on_any(x + y, x));
+  ASSERT_TRUE(depends_on_any(x + x, x));
+  ASSERT_TRUE(depends_on_any(buffer_at(x), x));
+
+  stmt loop_x = loop::make(x, loop::serial, {y, z}, 1, check::make(x && z));
+  ASSERT_FALSE(depends_on_any(loop_x, x));
+  ASSERT_TRUE(depends_on_any(loop_x, y));
+
+  stmt call = call_stmt::make(nullptr, {xc}, {yc}, {});
+  // Everything here should be transparent to clones.
+  call = clone_buffer::make(xc, x, clone_buffer::make(yc, y, call));
+  ASSERT_TRUE(depends_on_any(call, x));
+  ASSERT_TRUE(depends_on_any(call, y));
+
+  stmt crop = crop_dim::make(x, w, 1, {y, z}, check::make(y));
+  ASSERT_FALSE(depends_on_any(crop, x));
+
+  stmt crop_shadowed = crop_dim::make(x, x, 1, {y, z}, check::make(y));
+  ASSERT_TRUE(depends_on_any(crop_shadowed, x));
+
+  stmt make_buffer = make_buffer::make(x, 0, 1, {{{y, z}, w}}, check::make(x && z));
+  ASSERT_FALSE(depends_on_any(make_buffer, x));
+  ASSERT_TRUE(depends_on_any(make_buffer, y));
+  ASSERT_TRUE(depends_on_any(make_buffer, z));
+
+  stmt cropped_output = crop_dim::make(y, z, 0, {w, w}, call);
+  ASSERT_TRUE(depends_on_any(cropped_output, z));
+
+  stmt cropped_input = crop_dim::make(x, z, 0, {w, w}, call);
+  ASSERT_TRUE(depends_on_any(cropped_input, z));
+}
+
+TEST(depends_on_any, copy) {
+  ASSERT_TRUE(depends_on_any(copy_stmt::make(x, {z}, y, {z}, {}), x));
+  ASSERT_TRUE(depends_on_any(copy_stmt::make(x, {z}, y, {z}, {{w}}), x));
+  ASSERT_TRUE(depends_on_any(copy_stmt::make(x, {z}, y, {z}, {}), y));
+  ASSERT_TRUE(depends_on_any(copy_stmt::make(x, {z}, y, {z}, {{w}}), y));
+  ASSERT_FALSE(depends_on_any(copy_stmt::make(x, {z + w}, y, {z}, {}), z));
+  ASSERT_TRUE(depends_on_any(copy_stmt::make(x, {z + w}, y, {z}, {}), w));
+}
+
 TEST(depends_on, is_pure) {
   ASSERT_TRUE(is_pure(x + y));
   ASSERT_TRUE(is_pure(abs(x)));

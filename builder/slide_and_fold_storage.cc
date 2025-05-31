@@ -349,7 +349,7 @@ public:
       }
 
       interval_expr cur_bounds_d = (*bounds)[d];
-      if (!depends_on(cur_bounds_d, loop.sym).any()) {
+      if (!depends_on_any(cur_bounds_d, loop.sym)) {
         // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
         // just compute it once.
         continue;
@@ -371,7 +371,7 @@ public:
         expr fold_factor =
             simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds, *loop.expr_alignment);
         fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
-        if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
+        if (is_finite(fold_factor) && !depends_on_any(fold_factor, loop.sym)) {
           vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.back().loop_id};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -392,7 +392,7 @@ public:
           expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds, *loop.expr_alignment).max,
               *loop.expr_bounds, *loop.expr_alignment);
           fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
-          if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
+          if (is_finite(fold_factor) && !depends_on_any(fold_factor, loop.sym)) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
             vector_at(fold_factors[output], d) = {simplify(fold_factor, *loop.expr_bounds, *loop.expr_alignment),
                 simplify(constant_upper_bound(
@@ -475,7 +475,7 @@ public:
             continue;
           }
 
-          if (!depends_on(fold_factor, loop.sym).any()) {
+          if (!depends_on_any(fold_factor, loop.sym)) {
             // We need an extra fold per worker when parallelizing the loop.
             // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
             // If we can figure out how to add some synchronization to limit the number of workers that
@@ -663,7 +663,7 @@ public:
     for (std::optional<std::vector<dim_fold_info>>& i : fold_factors) {
       if (!i) continue;
       for (dim_fold_info& j : *i) {
-        if (!depends_on(j.factor, l.worker_count).any()) continue;
+        if (!depends_on_any(j.factor, l.worker_count)) continue;
 
         if (l.data_parallel && !prove_true(max_workers == loop::serial)) {
           // This is a data parallel loop, remove the folding.
@@ -716,7 +716,7 @@ public:
       result = substitute(result, l.semaphores, expr());
     }
 
-    if (!is_variable(loop_bounds.min, orig_min) || depends_on(result, orig_min).any()) {
+    if (!is_variable(loop_bounds.min, orig_min) || depends_on_any(result, orig_min)) {
       // We rewrote or used the loop min.
       result = let_stmt::make(orig_min, op->bounds.min, result);
     }

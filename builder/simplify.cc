@@ -54,12 +54,12 @@ stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
     std::vector<stmt> result;
     result.reserve(b->stmts.size());
     for (auto i = b->stmts.begin(); i != b->stmts.end();) {
-      if (depends_on(*i, sym).any()) {
+      if (depends_on_any(*i, sym)) {
         std::vector<stmt> result_i;
         result_i.reserve(b->stmts.size());
         do {
           result_i.push_back(*i++);
-        } while (i != b->stmts.end() && depends_on(*i, sym).any());
+        } while (i != b->stmts.end() && depends_on_any(*i, sym));
         if (result.empty() && i == b->stmts.end()) {
           // Every stmt in the body depended on the decl, we aren't changing it.
           return make_decl(std::move(body));
@@ -1307,7 +1307,7 @@ public:
     if (!body.defined()) {
       set_result(stmt());
       return;
-    } else if (!depends_on(body, op->sym).any()) {
+    } else if (!depends_on_any(body, op->sym)) {
       // The body does not depend on the loop, drop the loop.
       set_result(std::move(body));
       return;
@@ -1522,7 +1522,7 @@ public:
     stmt before, after;
     if (const block* b = body.as<block>()) {
       // Split the body into 3 parts: the part that depends on the allocation, and anything before or after that.
-      const auto depends_on_alloc = [=](const stmt& s) { return depends_on(s, op->sym).any(); };
+      const auto depends_on_alloc = [=](const stmt& s) { return depends_on_any(s, op->sym); };
       auto end_before = std::find_if(b->stmts.begin(), b->stmts.end(), depends_on_alloc);
       if (end_before != b->stmts.end()) {
         before = block::make({b->stmts.begin(), end_before});
@@ -2119,7 +2119,7 @@ public:
     }
 
     stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));
-    if (!depends_on(body, op_sym).any()) {
+    if (!depends_on_any(body, op_sym)) {
       set_result(std::move(body));
       return;
     }

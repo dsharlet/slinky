@@ -40,6 +40,11 @@ depends_on_result depends_on(const interval_expr& e, var x);
 depends_on_result depends_on(stmt_ref s, var x);
 depends_on_result depends_on(expr_ref e, span<const var> xs);
 depends_on_result depends_on(stmt_ref s, span<const var> xs);
+bool depends_on_any(expr_ref e, var x);
+bool depends_on_any(const interval_expr& e, var x);
+bool depends_on_any(stmt_ref s, var x);
+bool depends_on_any(expr_ref e, span<const var> xs);
+bool depends_on_any(stmt_ref s, span<const var> xs);
 
 // Check if buffer can be safely substituted.
 bool can_substitute_buffer(const depends_on_result& r);

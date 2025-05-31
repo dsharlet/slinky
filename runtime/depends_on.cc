@@ -20,12 +20,22 @@ public:
   // want to add a dummy to this.
   std::vector<std::pair<var, depends_on_result*>> var_deps;
   depends_on_result dummy_deps;
+  depends_on_result any_deps;
+
+  bool any = false;
 
   // If non-null, we'll also add dependencies of variables as we find them.
   std::map<var, depends_on_result>* unknown_deps = nullptr;
 
   dependencies() {}
   dependencies(std::map<var, depends_on_result>& unknown_deps) : unknown_deps(&unknown_deps) {}
+  dependencies(var x) { var_deps.push_back({x, &any_deps}); }
+  dependencies(span<const var> any) {
+    var_deps.reserve(any.size());
+    for (var i : any) {
+      var_deps.push_back({i, &any_deps});
+    }
+  }
   dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
   dependencies(span<const std::pair<var, depends_on_result&>> deps) {
     var_deps.reserve(deps.size());
@@ -34,12 +44,14 @@ public:
     }
   }
 
-  depends_on_result* find_deps(var s) {
-    if (!s.defined()) return nullptr;
-
+  depends_on_result* find_deps(var s, bool is_decl = false) {
+    if (any) return nullptr;
     // Go in reverse order to handle shadowed declarations properly.
     for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
-      if (i->first == s) return i->second;
+      if (i->first == s) {
+        if (!is_decl && i->second == &any_deps) any = true;
+        return i->second;
+      }
     }
 
     if (unknown_deps) {
@@ -61,6 +73,7 @@ public:
   depends_on_result* no_dummy(depends_on_result* deps) const { return deps != &dummy_deps ? deps : nullptr; }
 
   void visit(const variable* op) override {
+    if (any) return;
     if (is_pure && op->field != buffer_field::none) is_pure = false;
     if (depends_on_result* deps = find_deps(op->sym)) {
       switch (op->field) {
@@ -79,6 +92,7 @@ public:
     }
   }
   void visit(const call* op) override {
+    if (any) return;
     if (is_buffer_intrinsic(op->intrinsic)) {
       is_pure = false;
       assert(op->args.size() >= 1);
@@ -103,7 +117,7 @@ public:
 
   // Returns true if everything is shadowed and the result is already not pure, so there is no point in recursing.
   bool add_dummy_decl(var x) {
-    if (no_dummy(find_deps(x))) {
+    if (no_dummy(find_deps(x, /*is_decl=*/true))) {
       if (!is_pure && !unknown_deps) {
         // We want to know if every decl we care about is shadowed. For this to be true, the number of dummy decls in
         // var_deps (including the new one we are about to add) must be equal to the number of non-dummy decls. This is
@@ -128,6 +142,7 @@ public:
 
   template <typename T>
   void visit_let(const T* op) {
+    if (any) return;
     size_t var_deps_count = var_deps.size();
     for (const auto& p : op->lets) {
       p.second.accept(this);
@@ -148,6 +163,7 @@ public:
   void visit_sym_body(var sym, depends_on_result* src_deps, const stmt& body) {
     // We assume that any sym declaration is not pure, because if it were pure, why does it exist?
     is_pure = false;
+    if (any) return;
     if (!body.defined()) return;
     size_t var_deps_count = var_deps.size();
     if (no_dummy(src_deps)) {
@@ -163,6 +179,7 @@ public:
   void visit_sym_body(var sym, var src, depends_on_result* src_deps, const stmt& body) {
     // We assume that any sym declaration is not pure, because if it were pure, why does it exist?
     is_pure = false;
+    if (any) return;
     if (sym == src) {
       if (!body.defined()) return;
       body.accept(this);
@@ -172,6 +189,7 @@ public:
   }
 
   void visit(const loop* op) override {
+    if (any) return;
     op->bounds.min.accept(this);
     op->bounds.max.accept(this);
     if (op->step.defined()) op->step.accept(this);
@@ -182,6 +200,7 @@ public:
 
   void visit(const call_stmt* op) override {
     is_pure = false;
+    if (any) return;
     for (var i : op->inputs) {
       if (depends_on_result* deps = find_deps(i)) {
         deps->var = true;
@@ -201,6 +220,7 @@ public:
 
   void visit(const copy_stmt* op) override {
     is_pure = false;
+    if (any) return;
     if (depends_on_result* deps = find_deps(op->src)) {
       deps->var = true;
       deps->buffer_src = true;
@@ -238,6 +258,7 @@ public:
   void visit(const clone_buffer* op) override { visit_sym_body(op->sym, op->src, find_deps(op->src), op->body); }
 
   void visit(const allocate* op) override {
+    if (any) return;
     op->elem_size.accept(this);
     for (const dim_expr& i : op->dims) {
       i.bounds.min.accept(this);
@@ -248,6 +269,7 @@ public:
     visit_sym_body(op->sym, nullptr, op->body);
   }
   void visit(const make_buffer* op) override {
+    if (any) return;
     if (op->base.defined()) op->base.accept(this);
     if (op->elem_size.defined()) op->elem_size.accept(this);
     for (const dim_expr& i : op->dims) {
@@ -262,6 +284,7 @@ public:
     visit_sym_body(op->sym, nullptr, op->body);
   }
   void visit(const crop_buffer* op) override {
+    if (any) return;
     for (const interval_expr& i : op->bounds) {
       if (i.min.defined()) i.min.accept(this);
       if (i.max.defined()) i.max.accept(this);
@@ -274,6 +297,7 @@ public:
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
   void visit(const crop_dim* op) override {
+    if (any) return;
     if (op->bounds.min.defined()) op->bounds.min.accept(this);
     if (op->bounds.max.defined()) op->bounds.max.accept(this);
     depends_on_result* deps = find_deps(op->src);
@@ -284,6 +308,7 @@ public:
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
   void visit(const slice_buffer* op) override {
+    if (any) return;
     for (const expr& i : op->at) {
       if (i.defined()) i.accept(this);
     }
@@ -295,6 +320,7 @@ public:
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
   void visit(const slice_dim* op) override {
+    if (any) return;
     op->at.accept(this);
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
@@ -304,6 +330,7 @@ public:
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
   void visit(const transpose* op) override {
+    if (any) return;
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
       deps->buffer_bounds = true;  // TODO: Maybe not?
@@ -377,11 +404,42 @@ depends_on_result depends_on(stmt_ref s, span<const var> xs) {
   return r;
 }
 
+bool depends_on_any(expr_ref e, var x) {
+  dependencies deps(x);
+  if (e.defined()) e.accept(&deps);
+  return deps.any;
+}
+
+bool depends_on_any(const interval_expr& e, var x) {
+  dependencies deps(x);
+  if (e.min.defined()) e.min.accept(&deps);
+  if (e.max.defined()) e.max.accept(&deps);
+  return deps.any;
+}
+
+bool depends_on_any(stmt_ref s, var x) {
+  dependencies deps(x);
+  if (s.defined()) s.accept(&deps);
+  return deps.any;
+}
+
+bool depends_on_any(expr_ref e, span<const var> xs) {
+  dependencies deps(xs);
+  if (e.defined()) e.accept(&deps);
+  return deps.any;
+}
+
+bool depends_on_any(stmt_ref s, span<const var> xs) {
+  dependencies deps(xs);
+  if (s.defined()) s.accept(&deps);
+  return deps.any;
+}
+
 bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data() || r.var); }
 
 bool is_pure(expr_ref x) {
   dependencies v;
-  x.accept(&v);
+  if (x.defined()) x.accept(&v);
   return v.is_pure;
 }
 

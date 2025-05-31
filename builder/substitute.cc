@@ -702,7 +702,7 @@ public:
 public:
   var_substitutor(var target, const expr& replacement) : target(target), replacement(replacement) {}
 
-  var enter_decl(var x) override { return x != target && !depends_on(replacement, x).any() ? x : var(); }
+  var enter_decl(var x) override { return x != target && !depends_on_any(replacement, x) ? x : var(); }
 
   void visit(const variable* v) override {
     if (v->sym == target) {

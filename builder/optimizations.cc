@@ -54,7 +54,7 @@ bool is_linear(const expr& y, var x, expr& a, expr& b) {
     a = 1;
     b = 0;
     return true;
-  } else if (!depends_on(y, x).var) {
+  } else if (!depends_on_any(y, x)) {
     // y = b
     a = 0;
     b = y;
@@ -76,11 +76,11 @@ bool is_linear(const expr& y, var x, expr& a, expr& b) {
       return true;
     }
   } else if (const mul* op = y.as<mul>()) {
-    if (is_linear(op->a, x, a, b) && !depends_on(op->b, x).var) {
+    if (is_linear(op->a, x, a, b) && !depends_on_any(op->b, x)) {
       a *= op->b;
       b *= op->b;
       return true;
-    } else if (is_linear(op->b, x, a, b) && !depends_on(op->a, x).var) {
+    } else if (is_linear(op->b, x, a, b) && !depends_on_any(op->a, x)) {
       a *= op->a;
       b *= op->a;
       return true;
@@ -107,7 +107,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     } else {
       return false;
     }
-  } else if (!depends_on(src_x, dst_x).var) {
+  } else if (!depends_on_any(src_x, dst_x)) {
     // This is a broadcast because the src_x is constant w.r.t. dst_x.
     at = src_x;
     src_dim.bounds = buffer_bounds(dst, dst_d);
@@ -141,7 +141,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     src_dim.stride = buffer_stride(src, src_d) * scale;
     src_dim.fold_factor = buffer_fold_factor(src, src_d);
     at = buffer_min(src, src_d);
-    if (!depends_on(offset, dst).any()) {
+    if (!depends_on_any(offset, dst)) {
       at += offset * (scale - 1);
     } else {
       // This offset is going to be handled by another dimension... we assume.
@@ -166,7 +166,7 @@ bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_
 bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
   src_d = -1;
   for (int i = 0; i < static_cast<int>(op->src_x.size()); ++i) {
-    if (depends_on(op->src_x[i], op->dst_x[dst_d]).any()) {
+    if (depends_on_any(op->src_x[i], op->dst_x[dst_d])) {
       if (src_d == -1) {
         src_d = i;
       } else {
@@ -535,7 +535,7 @@ public:
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       for (dim_expr& d : i->dims) {
-        if (depends_on(d.bounds, op->sym).any()) {
+        if (depends_on_any(d.bounds, op->sym)) {
           d.bounds = bounds_of(d.bounds, loop_bounds);
         }
       }
@@ -658,7 +658,7 @@ public:
       }
 
       expr offset = simplify(op->src_x[src_d] - op->dst_x[dst_d]);
-      if (depends_on(offset, op->dst_x[dst_d]).any()) {
+      if (depends_on_any(offset, op->dst_x[dst_d])) {
         // This is not a simple copy, we can't handle it here.
         return;
       }
@@ -1227,7 +1227,7 @@ public:
 
   // Handler for the `terminal` nodes.
   void visit_terminal(stmt s) {
-    if (!found && depends_on(s, names).any()) {
+    if (!found && depends_on_any(s, names)) {
       found = true;
       if (visited_something) {
         s = block::make({std::move(s), check::make(call::make(intrinsic::free, {names.front()}))});
@@ -1246,7 +1246,7 @@ public:
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
   void visit(const make_buffer* op) override {
-    bool base_depends = depends_on(op->base, names).any();
+    bool base_depends = depends_on_any(op->base, names);
     found = found || base_depends;
     if (std::find(names.begin(), names.end(), op->sym) != names.end()) {
       // Don't look inside if shadowing names.
@@ -1585,7 +1585,7 @@ public:
     // If we don't know about a buffer, we assume we cannot mutate it in place. This covers input and output buffers.
     bool can_mutate_src = can_mutate[op->src] && *can_mutate[op->src];
     // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
-    if (can_mutate_src && !depends_on(body, op->src).any()) {
+    if (can_mutate_src && !depends_on_any(body, op->src)) {
       // We can re-use the src because the body doesn't use it, and it will not create a data race.
       sym = op->src;
       body = substitute(body, op->sym, sym);
