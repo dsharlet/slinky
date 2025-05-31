@@ -1815,7 +1815,6 @@ public:
       }
       return false;
     };
-    if (is_redundant(x)) return def;
     if (const T* t = x.as<T>()) {
       bool a_redundant = is_redundant(t->a);
       bool b_redundant = is_redundant(t->b);
@@ -1826,7 +1825,10 @@ public:
       } else if (b_redundant) {
         return remove_redundant_bounds<T>(t->a, bounds, def);
       }
-    } else if (const add* xa = x.as<add>()) {
+    } else {
+      if (is_redundant(x)) return def;
+    }
+    if (const add* xa = x.as<add>()) {
       if (as_constant(xa->b)) {
         // We have T(x + y, b). We can rewrite to T(x, b - y) + y, and if we can eliminate the bound, the whole
         // bound is redundant.
