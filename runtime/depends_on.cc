@@ -80,14 +80,12 @@ public:
     }
   }
   void visit(const call* op) override {
-    if (is_buffer_intrinsic(op->intrinsic)) {
+    if (op->intrinsic == intrinsic::buffer_at) {
       is_pure = false;
       assert(op->args.size() >= 1);
-      if (op->intrinsic == intrinsic::buffer_at) {
-        if (auto buf = as_variable(op->args[0])) {
-          if (depends_on_result* deps = find_deps(*buf)) {
-            deps->buffer_base = true;
-          }
+      if (auto buf = as_variable(op->args[0])) {
+        if (depends_on_result* deps = find_deps(*buf)) {
+          deps->buffer_base = true;
         }
       }
 
