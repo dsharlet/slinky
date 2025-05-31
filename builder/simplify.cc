@@ -1900,8 +1900,8 @@ public:
     //   result = simplify(result & x, {{x, buffer}})
     //
     // and then remove the clamps of x. But this is pretty tricky.
-    std::set<expr, node_less> mins = {buffer_min(buf, dim)};
-    std::set<expr, node_less> maxs = {buffer_max(buf, dim)};
+    std::set<expr, node_less> mins;
+    std::set<expr, node_less> maxs;
     enumerate_bounds<class max>(buffer.min, mins);
     enumerate_bounds<class min>(buffer.max, maxs);
     interval_expr deduped = {
