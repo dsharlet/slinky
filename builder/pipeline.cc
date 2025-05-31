@@ -282,7 +282,7 @@ public:
   }
 
   void visit(const call* op) override {
-    if (!is_buffer_intrinsic(op->intrinsic)) {
+    if (op->intrinsic != intrinsic::buffer_at) {
       node_mutator::visit(op);
       return;
     }
