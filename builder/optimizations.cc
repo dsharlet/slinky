@@ -1704,7 +1704,7 @@ namespace {
 
 class task_parallelizer : public node_mutator {
   std::set<var> consumed, produced;
-  bool barrier = false;
+  bool barrier;
   symbol_map<var> aliases;
 
   var lookup_alias(var x) {
@@ -1712,91 +1712,156 @@ class task_parallelizer : public node_mutator {
     return alias ? *alias : x;
   }
 
+  template <typename T>
+  static void remove_from_set(std::set<T>& set, const T& x) {
+    auto it = set.find(x);
+    if (it != set.end()) set.erase(it);
+  }
+
+  // Here we are going to construct a DAG of stmts with their dependencies determining the edges.
+  struct stage {
+    stmt body;
+    std::set<var> consumed, produced;
+    std::set<stage*> consumers, producers;
+
+    bool should_async() const { return body.type() != stmt_node_type::check; }
+
+    void fuse(stage* p) {
+      body = block::make(std::move(p->body), std::move(body));
+      for (stage* i : p->consumers) {
+        remove_from_set(i->producers, p);
+        i->producers.insert(this);
+      }
+      for (stage* i : p->producers) {
+        remove_from_set(i->consumers, p);
+        i->consumers.insert(this);
+      }
+      consumers.insert(p->consumers.begin(), p->consumers.end());
+      producers.insert(p->producers.begin(), p->producers.end());
+      consumed.insert(p->consumed.begin(), p->consumed.end());
+      produced.insert(p->produced.begin(), p->produced.end());
+
+      remove_from_set(consumers, this);
+      remove_from_set(consumers, p);
+      remove_from_set(producers, this);
+      remove_from_set(producers, p);
+    }
+  };
+
+  stage mutate_stage(const stmt& s) {
+    consumed.clear();
+    produced.clear();
+    stage result = {mutate(s)};
+    result.consumed = std::move(consumed);
+    result.produced = std::move(produced);
+    return result;
+  }
+
 public:
   void visit(const block* b) override {
-    std::set<var> outer_produced, outer_consumed;
+    std::vector<stage> stages;
+    stages.reserve(b->stmts.size());
+
+    // Mutating the statements in the block, and determine which stages are producers for prior stages.
+    barrier = false;
     bool changed = false;
-
-    // We build the result in several stages:
-    // - Find sequences of stmts that must be computed synchronously (a task)
-    // - Those sequences are computed asynchronously when possible (tasks)
-    // - We might need to synchronize between tasks computed asynchronously (stages).
-    std::vector<stmt> stages;
-    std::vector<stmt> tasks;
-    std::vector<stmt> task;
-    std::set<var> task_produced, task_consumed;
-    // Make a task from the current task stmts, and add it to tasks.
-    auto flush_task = [&]() {
-      if (task.empty()) return;
-      if (!changed && task.size() == b->stmts.size()) {
-        assert(tasks.empty());
-        tasks.push_back(stmt(b));
-        task.clear();
-      } else {
-        tasks.push_back(block::make(std::move(task)));
-        changed = true;
-      }
-      assert(task.empty());
-      outer_produced.insert(task_produced.begin(), task_produced.end());
-      outer_consumed.insert(task_consumed.begin(), task_consumed.end());
-      task_produced.clear();
-      task_consumed.clear();
-    };
-    // Make a sequence of async tasks, and add the sequence to the stages.
-    auto flush_tasks = [&]() {
-      if (tasks.empty()) return;
-      stmt async_result = tasks.back();
-      tasks.pop_back();
-      while (!tasks.empty()) {
-        async_result = async::make(var(), std::move(tasks.back()), std::move(async_result));
-        tasks.pop_back();
-      }
-      stages.push_back(std::move(async_result));
-    };
-
     for (const stmt& i : b->stmts) {
-      produced.clear();
-      consumed.clear();
-      barrier = false;
-      stmt s = mutate(i);
-      changed = changed || !s.same_as(i);
-
-      if (produced.empty()) {
-        // If we didn't produce or consume anything, assume this isn't worth parallelizing (e.g. a check)
-      } else {
-        if (empty_intersection(task_produced, consumed)) {
-          // s does not depend on the previously produced buffers, we can compute it in parallel with previous
-          // operations.
-          flush_task();
-        }
-        if (!empty_intersection(outer_produced, consumed) || !empty_intersection(outer_produced, produced)) {
-          // s depends on something in the already flushed tasks, we need to synchronize.
-          // TODO: We could try to wait for the specific task instead of synchronizing everything.
-          flush_task();
-          flush_tasks();
+      stages.push_back(mutate_stage(i));
+      changed = changed || !stages.back().body.same_as(i);
+      for (stage& s : stages) {
+        if (&s == &stages.back()) continue;
+        if (!empty_intersection(s.produced, stages.back().consumed) ||
+            !empty_intersection(s.produced, stages.back().produced) ||
+            !empty_intersection(s.consumed, stages.back().produced)) {
+          // We are a consumer of this stage, or we are a producer of something this stage consumes.
+          stages.back().producers.insert(&s);
+          s.consumers.insert(&stages.back());
         }
       }
-
-      task.push_back(s);
-
-      if (barrier) {
-        // There was a barrier, we need to synchronize.
-        flush_task();
-        flush_tasks();
-        barrier = false;
-      }
-
-      task_produced.insert(produced.begin(), produced.end());
-      task_consumed.insert(consumed.begin(), consumed.end());
-      produced.clear();
-      consumed.clear();
     }
-    flush_task();
-    flush_tasks();
 
-    set_result(block::make(std::move(stages)));
-    produced = std::move(outer_produced);
-    consumed = std::move(outer_consumed);
+    // Populate the consumers, and the outer produced/consumed set result for this block.
+    produced.clear();
+    consumed.clear();
+    for (stage& s : stages) {
+      consumed.insert(s.consumed.begin(), s.consumed.end());
+      produced.insert(s.produced.begin(), s.produced.end());
+    }
+
+    if (barrier) {
+      if (changed) {
+        // For now, give up and don't parallelize anything.
+        std::vector<stmt> stmts;
+        stmts.reserve(stages.size());
+        for (stage& i : stages) {
+          stmts.push_back(std::move(i.body));
+        }
+        set_result(block::make(std::move(stmts)));
+      } else {
+        set_result(b);
+      }
+      return;
+    }
+
+    // Fuse nodes that we don't want to compute in their own task.
+    std::set<stage*> produced;
+    bool should_async = stages.front().should_async();
+    for (int i = 1; i < static_cast<int>(stages.size()); ++i) {
+      stage& p = stages[i - 1];
+      stage& c = stages[i];
+      should_async = should_async || c.should_async();
+      if (!should_async) {
+        c.fuse(&p);
+        produced.insert(&p);
+      }
+    }
+
+    for (stage& p : stages) {
+      stage* fuse = nullptr;
+      if (p.consumers.size() == 1) {
+        // This producer only has one consumer, fuse into the consumer if it also only has one producer.
+        fuse = *p.consumers.begin();
+        if (fuse->producers.size() == 1) {
+          // This edge should be collapsed into one task.
+          fuse->fuse(&p);
+          produced.insert(&p);
+        }
+      }
+    }
+
+    stmt result;
+    while (produced.size() < stages.size()) {
+      std::set<stage*, std::greater<stage*>> to_produce;
+      // Find all the nodes that can be executed now.
+      for (stage& s : stages) {
+        if (produced.count(&s)) continue;
+
+        assert(s.body.defined());
+
+        if (s.consumers.empty()) {
+          // This stage can start now.
+          to_produce.insert(&s);
+        }
+      }
+
+      // For each thing we want to produce, we need to make a task, and wait for its producers.
+      stmt tasks;
+      for (stage* s : to_produce) {
+        if (tasks.defined()) {
+          tasks = async::make(var(), std::move(s->body), std::move(tasks));
+        } else {
+          tasks = std::move(s->body);
+        }
+        for (stage* j : s->producers) {
+          remove_from_set(j->consumers, s);
+        }
+        produced.insert(s);
+      }
+      result = block::make(std::move(tasks), std::move(result));
+
+      assert(!to_produce.empty() || produced.size() == stages.size());
+    }
+    set_result(std::move(result));
   }
 
   void visit(const call_stmt* op) override {
@@ -1815,6 +1880,26 @@ public:
     set_result(op);
   }
 
+  bool in_check = false;
+
+  void visit(const variable* op) override {
+    set_result(op);
+    if (in_check && op->field != buffer_field::none) {
+      // Treat buffers accessed by a check as being produced, so we don't compute reorder a check w.r.t. the things its
+      // checking.
+      produced.insert(lookup_alias(op->sym));
+    }
+  }
+
+  static bool is_barrier(intrinsic fn) {
+    switch (fn) {
+    case intrinsic::semaphore_init:
+    case intrinsic::semaphore_wait:
+    case intrinsic::semaphore_signal: return true;
+    default: return false;
+    }
+  }
+
   void visit(const call* op) override {
     node_mutator::visit(op);
     if (op->intrinsic == intrinsic::buffer_at) {
@@ -1824,12 +1909,13 @@ public:
       consumed.insert(lookup_alias(*buf));
       produced.insert(lookup_alias(*buf));
     }
+    barrier = barrier || is_barrier(op->intrinsic);
   }
 
   void visit(const check* op) override {
+    in_check = true;
     node_mutator::visit(op);
-    // Stmts after a check assume the check was true, so these are async barriers.
-    barrier = true;
+    in_check = false;
   }
 
   template <typename T>
