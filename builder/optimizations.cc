@@ -943,7 +943,7 @@ public:
       }
       for (std::size_t i = 0; i < op->inputs.size(); ++i) {
         const std::size_t bit = o * op->inputs.size() + i;
-        assert(bit < 32);
+        if (bit > 31) break;
         if ((op->attrs.allow_in_place & (1 << bit)) == 0) {
           continue;
         }
