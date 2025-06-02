@@ -218,8 +218,8 @@ public:
   void visit(const call_stmt* op) override {
     if (op->attrs.name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
         is_a_and_b(op->inputs[0], op->outputs[0])) {
-      expr input_size = call::make(intrinsic::buffer_size_bytes, {op->inputs[0]});
-      expr output_size = call::make(intrinsic::buffer_size_bytes, {op->outputs[0]});
+      expr input_size = variable::make(op->inputs[0], buffer_field::size_bytes);
+      expr output_size = variable::make(op->outputs[0], buffer_field::size_bytes);
       set_result(check::make(input_size == output_size));
     } else {
       set_result(op);

@@ -98,9 +98,6 @@ enum class intrinsic {
   and_then,
   or_else,
 
-  // Returns the size of a buffer in bytes.
-  buffer_size_bytes,
-
   // This function returns the address of the element x in (buf, x_0, x_1, ...). x can be any rank, including 0.
   buffer_at,
 
@@ -128,6 +125,7 @@ enum class buffer_field : unsigned {
 
   rank,
   elem_size,
+  size_bytes,
 
   min,
   max,
@@ -628,7 +626,6 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const call* as_intrinsic(expr_ref x, intrinsi
   const call* c = x.as<call>();
   return c && c->intrinsic == fn ? c : nullptr;
 }
-bool is_buffer_intrinsic(intrinsic fn);
 
 bool is_positive_infinity(expr_ref x);
 bool is_negative_infinity(expr_ref x);

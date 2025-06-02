@@ -200,18 +200,6 @@ public:
     return eval(op->args[0], def);
   }
 
-  index_t eval_buffer_metadata(const call* op) {
-    assert(op->args.size() == 1);
-    auto sym = as_variable(op->args[0]);
-    assert(sym);
-    const raw_buffer* buf = context.lookup_buffer(*sym);
-    assert(buf);
-    switch (op->intrinsic) {
-    case intrinsic::buffer_size_bytes: return buf->size_bytes();
-    default: SLINKY_UNREACHABLE << "unknown buffer metadata intrinsic " << to_string(op->intrinsic);
-    }
-  }
-
   void* eval_buffer_at(const call* op) {
     assert(op->args.size() >= 1);
     auto sym = as_variable(op->args[0]);
@@ -327,7 +315,6 @@ public:
     case intrinsic::and_then:
     case intrinsic::or_else: return eval_short_circuit_op(op);
 
-    case intrinsic::buffer_size_bytes: return eval_buffer_metadata(op);
     case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));
 
     case intrinsic::semaphore_init: return eval_semaphore_init(op);

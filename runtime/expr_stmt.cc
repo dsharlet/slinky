@@ -756,14 +756,6 @@ const expr& dim_expr::get_field(buffer_field field) const {
   }
 }
 
-bool is_buffer_intrinsic(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::buffer_size_bytes:
-  case intrinsic::buffer_at: return true;
-  default: return false;
-  }
-}
-
 bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }
 bool is_negative_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::negative_infinity); }
 bool is_indeterminate(expr_ref x) { return as_intrinsic(x, intrinsic::indeterminate); }
@@ -776,7 +768,7 @@ int is_infinity(expr_ref x) {
 bool is_finite(expr_ref x) {
   if (x.as<constant>()) return true;
   if (const call* c = x.as<call>()) {
-    return is_buffer_intrinsic(c->intrinsic);
+    return c->intrinsic == intrinsic::buffer_at;
   }
   return false;
 }
