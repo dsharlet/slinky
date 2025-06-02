@@ -47,6 +47,28 @@ void ensure_is_point(interval_expr& x) {
   }
 }
 
+bool operator!=(const dim& a, const dim& b) {
+  return a.min() != b.min() || a.max() != b.max() || a.stride() != b.stride() || a.fold_factor() != b.fold_factor();
+}
+
+// Returns true if a and b can be used equivalently.
+bool buffers_equal(const raw_buffer& a, const raw_buffer& b) {
+  if (a.rank != b.rank) return false;
+  if (a.elem_size != b.elem_size) return false;
+  for (std::size_t d = 0; d < a.rank; ++d) {
+    if (a.dim(d) != b.dim(d)) return false;
+  }
+  const index_t elem_size = a.elem_size;
+  bool equal = true;
+  for_each_contiguous_slice(
+      a,
+      [&](index_t slice_extent, const void* a, const void* b) {
+        equal = equal && std::memcmp(a, b, slice_extent * elem_size) == 0;
+      },
+      b);
+  return equal;
+}
+
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
 stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
@@ -108,7 +130,7 @@ public:
 
   constant_adder(index_t c) : c(c) {}
 
-  void visit(const constant* op) override { 
+  void visit(const constant* op) override {
     if (!add_overflows(op->value, c)) {
       set_result(op->value + c);
     } else {
@@ -238,9 +260,20 @@ public:
     // How many loops out is the `decl` found.
     int loop_depth = 0;
 
+    // If this buffer is a constant, a pointer to the constant value.
+    const_raw_buffer_ptr constant;
+
     buffer_info() = default;
 
-    buffer_info(expr elem_size) : elem_size(elem_size) {}
+    buffer_info(expr elem_size) : elem_size(std::move(elem_size)) {}
+
+    buffer_info(const_raw_buffer_ptr value) : elem_size(value->elem_size), constant(value) {
+      dims.resize(value->rank);
+      for (std::size_t d = 0; d < value->rank; ++d) {
+        dims[d] = dim_expr(value->dim(d));
+      }
+      all_dims_known = true;
+    }
 
     buffer_info(var sym, int rank) : dims(rank) {
       elem_size = buffer_elem_size(sym);
@@ -1741,12 +1774,23 @@ public:
   }
 
   void visit(const constant_buffer* op) override {
-    buffer_info info(op->value->elem_size);
-    info.dims.resize(op->value->rank);
-    for (std::size_t d = 0; d < op->value->rank; ++d) {
-      info.dims[d] = dim_expr(op->value->dim(d));
+    // Don't check big constants for equality. If a constant is big, this equality check could be expensive, and the
+    // caller really should avoid making such duplicate buffers in the first place. The case we are trying to catch here
+    // is e.g. duplicated scalar buffers for padded copies.
+    constexpr std::size_t max_equal_buffers_size = 256;
+    for (std::size_t i = 0; i < buffers.size(); ++i) {
+      std::optional<buffer_info>& parent = buffers[i];
+      if (parent && parent->constant &&
+          (parent->constant == op->value ||
+              (op->value->size_bytes() < max_equal_buffers_size && buffers_equal(*parent->constant, *op->value)))) {
+        // `parent` has the same value as this constant, use the parent instead.
+        auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(var(i))));
+        set_result(mutate(op->body));
+        return;
+      }
     }
-    info.all_dims_known = true;
+
+    buffer_info info(op->value);
     info.decl = stmt(op);
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);
 

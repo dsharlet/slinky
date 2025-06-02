@@ -660,6 +660,29 @@ TEST(simplify, allocate) {
           check::make(z)})));
 }
 
+TEST(simplify, constant_buffer) {
+  auto zero_float = raw_buffer::make_scalar<float>(0.0f);
+  auto zero_int = raw_buffer::make_scalar<std::int32_t>(0);
+  ASSERT_THAT(simplify(constant_buffer::make(
+                  x, zero_int, constant_buffer::make(y, zero_float, call_stmt::make(nullptr, {x, y}, {z}, {})))),
+      matches(constant_buffer::make(x, zero_int, call_stmt::make(nullptr, {x, x}, {z}, {}))));
+
+  auto one = raw_buffer::make_scalar<float>(1.0f);
+  ASSERT_THAT(simplify(constant_buffer::make(
+                  x, zero_int, constant_buffer::make(y, one, call_stmt::make(nullptr, {x, y}, {z}, {})))),
+      matches(constant_buffer::make(
+          x, zero_int, constant_buffer::make(y, one, call_stmt::make(nullptr, {x, y}, {z}, {})))));
+
+  // This has the same size and memory contents as the above buffers, but a different shape.
+  slinky::dim dims[] = {{0, 1, 2, dim::unfolded}};
+  auto zero_int16x2 = raw_buffer::make(1, 2, dims);
+  std::memset(zero_int16x2->base, 0, 4);
+  ASSERT_THAT(simplify(constant_buffer::make(
+                  x, zero_int, constant_buffer::make(y, zero_int16x2, call_stmt::make(nullptr, {x, y}, {z}, {})))),
+      matches(constant_buffer::make(
+                  x, zero_int, constant_buffer::make(y, zero_int16x2, call_stmt::make(nullptr, {x, y}, {z}, {})))));
+}
+
 TEST(simplify, slice_of_crop) {
   stmt body = call_stmt::make(nullptr, {}, {b3}, {});
 
