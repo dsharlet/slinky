@@ -226,6 +226,7 @@ public:
     case buffer_field::none: *this << v->sym; return;
     case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
     case buffer_field::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
+    case buffer_field::size_bytes: *this << "buffer_size_bytes(" << v->sym << ")"; return;
     case buffer_field::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;

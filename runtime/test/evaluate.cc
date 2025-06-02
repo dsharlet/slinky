@@ -63,6 +63,20 @@ TEST(evaluate, arithmetic) {
   ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
 }
 
+TEST(evaluate, buffer_fields) {
+  eval_context context;
+  buffer<int, 1> buf({10});
+  context[x] = reinterpret_cast<index_t>(&buf);
+
+  ASSERT_EQ(evaluate(buffer_rank(x), context), 1);
+  ASSERT_EQ(evaluate(buffer_elem_size(x), context), 4);
+  ASSERT_EQ(evaluate(variable::make(x, buffer_field::size_bytes), context), 40);
+  ASSERT_EQ(evaluate(buffer_min(x, 0), context), 0);
+  ASSERT_EQ(evaluate(buffer_max(x, 0), context), 9);
+  ASSERT_EQ(evaluate(buffer_stride(x, 0), context), 4);
+  ASSERT_EQ(evaluate(buffer_fold_factor(x, 0), context), dim::unfolded);
+}
+
 TEST(evaluate, call) {
   std::vector<index_t> calls;
   stmt c = call_stmt::make(

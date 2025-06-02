@@ -145,6 +145,7 @@ public:
     case buffer_field::none: return value;
     case buffer_field::rank: return buf->rank;
     case buffer_field::elem_size: return buf->elem_size;
+    case buffer_field::size_bytes: return buf->size_bytes();
     case buffer_field::min: return buf->dim(op->dim).min();
     case buffer_field::max: return buf->dim(op->dim).max();
     case buffer_field::stride: return buf->dim(op->dim).stride();
