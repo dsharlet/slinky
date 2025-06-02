@@ -276,6 +276,28 @@ TEST(optimizations, parallelize_tasks) {
           call_stmt::make(nullptr, {y}, {z}, {}),
       })));
 
+  // And with an unrelated check.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  check::make(w),
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {x}, {z}, {}),
+              })),
+      matches(async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}),
+          block::make({
+              check::make(w),
+              call_stmt::make(nullptr, {x}, {z}, {}),
+          }))));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  check::make(w),
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              })),
+      matches(block::make({
+          check::make(w),
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          call_stmt::make(nullptr, {y}, {z}, {}),
+      })));
+
   // One producer, one consumer computed in-place.
   ASSERT_THAT(parallelize_tasks(block::make({
                   call_stmt::make(nullptr, {x}, {y}, {}),

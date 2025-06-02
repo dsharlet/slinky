@@ -1718,14 +1718,26 @@ class task_parallelizer : public node_mutator {
     if (it != set.end()) set.erase(it);
   }
 
+  static bool should_async(const stmt& s) {
+    if (const block* b = s.as<block>()) {
+      for (const stmt& i : b->stmts) {
+        if (should_async(i)) return true;
+      }
+      return false;
+    } else if (s.as<check>()) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
   // Here we are going to construct a DAG of stmts with their dependencies determining the edges.
   struct stage {
     stmt body;
     std::set<var> consumed, produced;
     std::set<stage*> consumers, producers;
 
-    bool should_async() const { return body.type() != stmt_node_type::check; }
-
+    // Fuse the producer `p` into this stage, the consumer, making `p` a no-op.
     void fuse(stage* p) {
       body = block::make(std::move(p->body), std::move(body));
       for (stage* i : p->consumers) {
@@ -1789,8 +1801,9 @@ public:
     }
 
     if (barrier) {
+      // For now, give up and don't parallelize anything. We could do better here, and parallelize between barriers.
+      // Currently, the only barriers are `semaphore_*` intrinsics, which we hope to get rid of anyways.
       if (changed) {
-        // For now, give up and don't parallelize anything.
         std::vector<stmt> stmts;
         stmts.reserve(stages.size());
         for (stage& i : stages) {
@@ -1803,19 +1816,16 @@ public:
       return;
     }
 
-    // Fuse nodes that we don't want to compute in their own task.
+    // From here onwards, we track which nodes we've produced.
     std::set<stage*> produced;
-    bool should_async = stages.front().should_async();
-    for (int i = 1; i < static_cast<int>(stages.size()); ++i) {
-      stage& p = stages[i - 1];
-      stage& c = stages[i];
-      should_async = should_async || c.should_async();
-      if (!should_async) {
-        c.fuse(&p);
-        produced.insert(&p);
+    auto produce = [&](stage* s) {
+      for (stage* j : s->producers) {
+        remove_from_set(j->consumers, s);
       }
-    }
+      produced.insert(s);
+    };
 
+    // Fuse nodes that we don't want to compute in their own task.
     for (stage& p : stages) {
       stage* fuse = nullptr;
       if (p.consumers.size() == 1) {
@@ -1829,38 +1839,53 @@ public:
       }
     }
 
+    // Build the result. We start at the end of the body, and produce everything that has no consumers. Producing these
+    // stages results in other stages having no consumers, which can then run on the next iteration.
+    // TODO: This synchronizes between each group of tasks that can be executed, which is excessive synchronization,
+    // we should be able to wait for the specific tasks that we need to complete using `wait_for`.
     stmt result;
-    while (produced.size() < stages.size()) {
+    while (true) {
+      // All of the stages that are ready to compute (have no remaining consumers) either go in this set, or go in the
+      // `synchronous` vector, for stmts we don't want to bother computing asynchronously.
       std::set<stage*, std::greater<stage*>> to_produce;
-      // Find all the nodes that can be executed now.
+      std::vector<stmt> synchronous;
       for (stage& s : stages) {
         if (produced.count(&s)) continue;
 
         assert(s.body.defined());
-
         if (s.consumers.empty()) {
           // This stage can start now.
-          to_produce.insert(&s);
+          if (!should_async(s.body)) {
+            synchronous.push_back(std::move(s.body));
+            produce(&s);
+          } else {
+            to_produce.insert(&s);
+          }
         }
       }
 
-      // For each thing we want to produce, we need to make a task, and wait for its producers.
-      stmt tasks;
+      // Put the synchronous stages together with the first task to compute asynchronously.
+      if (!to_produce.empty()) {
+        stage* s = *to_produce.begin();
+        synchronous.push_back(std::move(s->body));
+        produce(s);
+        to_produce.erase(to_produce.begin());
+      }
+
+      stmt tasks = block::make(std::move(synchronous));
+
+      // Build the rest of the tasks asynchronously.
       for (stage* s : to_produce) {
-        if (tasks.defined()) {
-          tasks = async::make(var(), std::move(s->body), std::move(tasks));
-        } else {
-          tasks = std::move(s->body);
-        }
-        for (stage* j : s->producers) {
-          remove_from_set(j->consumers, s);
-        }
-        produced.insert(s);
+        assert(tasks.defined());
+        tasks = async::make(var(), std::move(s->body), std::move(tasks));
+        produce(s);
+      }
+      if (!tasks.defined()) {
+        break;
       }
       result = block::make(std::move(tasks), std::move(result));
-
-      assert(!to_produce.empty() || produced.size() == stages.size());
     }
+    assert(produced.size() == stages.size());
     set_result(std::move(result));
   }
 
