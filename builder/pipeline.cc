@@ -594,8 +594,8 @@ void find_dependent_dims(
     var sym, const std::vector<interval_expr>& bounds, std::map<var, std::vector<int>>& dependent_dims) {
   for (size_t i = 0; i < bounds.size(); ++i) {
     dependent_dims_finder finder(dependent_dims);
-    bounds[i].min.accept(&finder);
-    bounds[i].max.accept(&finder);
+    if (bounds[i].min.defined()) bounds[i].min.accept(&finder);
+    if (bounds[i].max.defined()) bounds[i].max.accept(&finder);
     if (finder.depends) {
       dependent_dims[sym].push_back(i);
     }
