@@ -495,6 +495,12 @@ stmt block::make(std::vector<stmt> stmts) {
   }
 }
 
+stmt block::make(stmt a, stmt b) {
+  if (!a.defined()) return b;
+  if (!b.defined()) return a;
+  return block::make({std::move(a), std::move(b)});
+}
+
 stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
   stmts.push_back(std::move(tail_stmt));
   return make(std::move(stmts));
@@ -606,6 +612,14 @@ bool transpose::is_truncate(span<const int> dims) {
   return true;
 }
 bool transpose::is_truncate() const { return is_truncate(dims); }
+
+stmt async::make(var sym, stmt task, stmt body) {
+  auto n = new async();
+  n->sym = sym;
+  n->task = std::move(task);
+  n->body = std::move(body);
+  return stmt(n);
+}
 
 stmt check::make(expr condition) {
   auto n = new check();
@@ -802,6 +816,9 @@ expr semaphore_wait(span<const expr> sems, span<const expr> counts) {
   return semaphore_helper(intrinsic::semaphore_wait, sems, counts);
 }
 
+expr wait_for(expr task) { return wait_for(std::vector<expr>{std::move(task)}); }
+expr wait_for(std::vector<expr> tasks) { return call::make(intrinsic::wait_for, std::move(tasks)); }
+
 void recursive_node_visitor::visit(const variable*) {}
 void recursive_node_visitor::visit(const constant*) {}
 
@@ -922,6 +939,10 @@ void recursive_node_visitor::visit(const slice_dim* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const transpose* op) {
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const async* op) {
+  if (op->task.defined()) op->task.accept(this);
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const check* op) {

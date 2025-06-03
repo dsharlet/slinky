@@ -109,6 +109,9 @@ enum class intrinsic {
   semaphore_signal,
   semaphore_wait,
 
+  // Wait for tasks created by an `async` node to complete.
+  wait_for,
+
   // Calls the tracing callback with the first argument. Returns a token that should be passed to end_trace.
   trace_begin,
   trace_end,
@@ -698,6 +701,9 @@ expr semaphore_signal(expr sem, expr count = expr());
 expr semaphore_signal(span<const expr> sems, span<const expr> counts = {});
 expr semaphore_wait(expr sem, expr count = expr());
 expr semaphore_wait(span<const expr> sems, span<const expr> counts = {});
+
+expr wait_for(expr task);
+expr wait_for(std::vector<expr> tasks);
 
 template <typename T>
 class symbol_map {

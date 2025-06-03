@@ -14,6 +14,7 @@
 
 #include "base/chrome_trace.h"
 #include "base/function_ref.h"
+#include "base/set.h"
 #include "builder/node_mutator.h"
 #include "builder/pipeline.h"
 #include "builder/simplify.h"
@@ -1609,25 +1610,35 @@ public:
     stmt_mutator::visit(op);
   }
 
+  stmt mutate_closure(stmt s) {
+    // We're entering a stmt executed in parallel. All the buffers in scope cannot be mutated in this scope.
+    symbol_map<bool> old_can_mutate;
+    std::swap(can_mutate, old_can_mutate);
+    s = mutate(s);
+    can_mutate = std::move(old_can_mutate);
+
+    std::vector<var> referenced = find_dependencies(s);
+    std::vector<std::pair<var, expr>> lets;
+    for (var i : referenced) {
+      lets.push_back({i, expr(i)});
+    }
+    return let_stmt::make(std::move(lets), std::move(s), /*is_closure=*/true);
+  }
+
   void visit(const loop* op) override {
     if (!prove_true(op->max_workers == loop::serial)) {
-      // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
-      symbol_map<bool> old_can_mutate;
-      std::swap(can_mutate, old_can_mutate);
-
-      stmt body = mutate(op->body);
-      std::vector<var> referenced = find_dependencies(body);
-      std::vector<std::pair<var, expr>> lets;
-      for (var i : referenced) {
-        lets.push_back({i, expr(i)});
-      }
-      body = let_stmt::make(std::move(lets), std::move(body), /*is_closure=*/true);
+      stmt body = mutate_closure(op->body);
       set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
-
-      can_mutate = std::move(old_can_mutate);
     } else {
       stmt_mutator::visit(op);
     }
+  }
+
+  void visit(const async* op) override {
+    // We're entering an async task. All the buffers in scope cannot be mutated in this scope.
+    stmt task = mutate_closure(op->task);
+    stmt body = mutate_closure(op->body);
+    set_result(async::make(op->sym, std::move(task), std::move(body)));
   }
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
@@ -1687,6 +1698,305 @@ expr canonicalize_nodes(const expr& e) { return node_canonicalizer().mutate(e); 
 stmt canonicalize_nodes(const stmt& s) {
   scoped_trace trace("canonicalize_nodes");
   return node_canonicalizer().mutate(s);
+}
+
+namespace {
+
+class task_parallelizer : public node_mutator {
+  std::set<var> consumed, produced;
+  bool barrier = false;
+  symbol_map<var> aliases;
+
+  var lookup_alias(var x) {
+    auto alias = aliases.lookup(x);
+    return alias ? *alias : x;
+  }
+
+  template <typename T>
+  static void remove_from_set(std::set<T>& set, const T& x) {
+    auto it = set.find(x);
+    if (it != set.end()) set.erase(it);
+  }
+
+  static bool should_async(const stmt& s) {
+    if (const block* b = s.as<block>()) {
+      for (const stmt& i : b->stmts) {
+        if (should_async(i)) return true;
+      }
+      return false;
+    } else if (s.as<check>()) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
+  // Here we are going to construct a DAG of stmts with their dependencies determining the edges.
+  struct stage {
+    stmt body;
+
+    // Set of buffers consumed (read by a call or copy), or produced (written by a call or copy) in this stage.
+    std::set<var> consumed, produced;
+
+    // Stages consuming something we produce, and producing something we consume, respectively.
+    std::set<stage*> consumers, producers;
+
+    // Fuse the producer `p` into this stage, the consumer, making `p` a no-op.
+    void fuse(stage* p) {
+      body = block::make(std::move(p->body), std::move(body));
+      for (stage* i : p->consumers) {
+        remove_from_set(i->producers, p);
+        i->producers.insert(this);
+      }
+      for (stage* i : p->producers) {
+        remove_from_set(i->consumers, p);
+        i->consumers.insert(this);
+      }
+      consumers.insert(p->consumers.begin(), p->consumers.end());
+      producers.insert(p->producers.begin(), p->producers.end());
+      consumed.insert(p->consumed.begin(), p->consumed.end());
+      produced.insert(p->produced.begin(), p->produced.end());
+
+      remove_from_set(consumers, this);
+      remove_from_set(consumers, p);
+      remove_from_set(producers, this);
+      remove_from_set(producers, p);
+    }
+  };
+
+  stage mutate_stage(const stmt& s) {
+    consumed.clear();
+    produced.clear();
+    stage result = {mutate(s)};
+    result.consumed = std::move(consumed);
+    result.produced = std::move(produced);
+    return result;
+  }
+
+public:
+  void visit(const block* b) override {
+    std::vector<stage> stages;
+    stages.reserve(b->stmts.size());
+
+    // Mutating the statements in the block, and determine which stages are producers for prior stages.
+    bool changed = false;
+    for (const stmt& i : b->stmts) {
+      stages.push_back(mutate_stage(i));
+      changed = changed || !stages.back().body.same_as(i);
+      for (stage& s : stages) {
+        if (&s == &stages.back()) continue;
+        if (!empty_intersection(s.produced, stages.back().consumed) ||
+            !empty_intersection(s.produced, stages.back().produced) ||
+            !empty_intersection(s.consumed, stages.back().produced)) {
+          // We are a consumer of this stage, or we are a producer of something this stage consumes.
+          stages.back().producers.insert(&s);
+          s.consumers.insert(&stages.back());
+        }
+      }
+    }
+
+    // Populate the consumers, and the outer produced/consumed set result for this block.
+    produced.clear();
+    consumed.clear();
+    for (stage& s : stages) {
+      consumed.insert(s.consumed.begin(), s.consumed.end());
+      produced.insert(s.produced.begin(), s.produced.end());
+    }
+
+    if (barrier) {
+      // For now, give up and don't parallelize anything. We could do better here, and parallelize between barriers.
+      // Currently, the only barriers are `semaphore_*` intrinsics, which we hope to get rid of anyways.
+      if (changed) {
+        std::vector<stmt> stmts;
+        stmts.reserve(stages.size());
+        for (stage& i : stages) {
+          stmts.push_back(std::move(i.body));
+        }
+        set_result(block::make(std::move(stmts)));
+      } else {
+        set_result(b);
+      }
+      return;
+    }
+
+    // From here onwards, we track which nodes we've produced.
+    std::set<stage*> produced;
+    auto produce = [&](stage* s) {
+      for (stage* j : s->producers) {
+        remove_from_set(j->consumers, s);
+      }
+      produced.insert(s);
+    };
+
+    // Fuse nodes that we don't want to compute in their own task.
+    for (stage& p : stages) {
+      stage* fuse = nullptr;
+      if (p.consumers.size() == 1) {
+        // This producer only has one consumer, fuse into the consumer if it also only has one producer.
+        fuse = *p.consumers.begin();
+        if (fuse->producers.size() == 1) {
+          // This edge should be collapsed into one task.
+          fuse->fuse(&p);
+          produced.insert(&p);
+        }
+      }
+    }
+
+    // Build the result. We start at the end of the body, and produce everything that has no consumers. Producing these
+    // stages results in other stages having no consumers, which can then run on the next iteration.
+    // TODO: This synchronizes between each group of tasks that can be executed, which is excessive synchronization,
+    // we should be able to wait for the specific tasks that we need to complete using `wait_for`.
+    stmt result;
+    while (true) {
+      // All of the stages that are ready to compute (have no remaining consumers) either go in this set, or go in the
+      // `synchronous` vector, for stmts we don't want to bother computing asynchronously.
+      std::set<stage*, std::greater<stage*>> to_produce;
+      std::vector<stmt> synchronous;
+      for (stage& s : stages) {
+        if (produced.count(&s)) continue;
+
+        assert(s.body.defined());
+        if (s.consumers.empty()) {
+          // This stage can start now.
+          if (!should_async(s.body)) {
+            synchronous.push_back(std::move(s.body));
+            produce(&s);
+          } else {
+            to_produce.insert(&s);
+          }
+        }
+      }
+
+      // Put the synchronous stages together with the first task to compute asynchronously.
+      if (!to_produce.empty()) {
+        stage* s = *to_produce.begin();
+        synchronous.push_back(std::move(s->body));
+        produce(s);
+        to_produce.erase(to_produce.begin());
+      }
+
+      stmt tasks = block::make(std::move(synchronous));
+
+      // Build the rest of the tasks asynchronously.
+      for (stage* s : to_produce) {
+        assert(tasks.defined());
+        tasks = async::make(var(), std::move(s->body), std::move(tasks));
+        produce(s);
+      }
+      if (!tasks.defined()) {
+        break;
+      }
+      result = block::make(std::move(tasks), std::move(result));
+    }
+    assert(produced.size() == stages.size());
+    set_result(std::move(result));
+  }
+
+  void visit(const call_stmt* op) override {
+    for (var i : op->inputs) {
+      consumed.insert(lookup_alias(i));
+    }
+    for (var i : op->outputs) {
+      produced.insert(lookup_alias(i));
+    }
+    set_result(op);
+  }
+
+  void visit(const copy_stmt* op) override {
+    consumed.insert(lookup_alias(op->src));
+    produced.insert(lookup_alias(op->dst));
+    set_result(op);
+  }
+
+  bool in_check = false;
+
+  void visit(const variable* op) override {
+    set_result(op);
+    if (in_check && op->field != buffer_field::none) {
+      // Treat buffers accessed by a check as being produced, so we don't compute reorder a check w.r.t. the things its
+      // checking.
+      produced.insert(lookup_alias(op->sym));
+    }
+  }
+
+  static bool is_barrier(intrinsic fn) {
+    switch (fn) {
+    case intrinsic::semaphore_init:
+    case intrinsic::semaphore_wait:
+    case intrinsic::semaphore_signal: return true;
+    default: return false;
+    }
+  }
+
+  void visit(const call* op) override {
+    node_mutator::visit(op);
+    if (op->intrinsic == intrinsic::buffer_at) {
+      assert(op->args.size() >= 1);
+      auto buf = as_variable(op->args[0]);
+      // Assume we are both producing and consuming this buffer.
+      consumed.insert(lookup_alias(*buf));
+      produced.insert(lookup_alias(*buf));
+    }
+    barrier = barrier || is_barrier(op->intrinsic);
+  }
+
+  void visit(const check* op) override {
+    in_check = true;
+    node_mutator::visit(op);
+    in_check = false;
+  }
+
+  template <typename T>
+  void visit_buffer_decl(const T* op, var src = var()) {
+    if (src.defined()) {
+      // Just remember what this is an alias of.
+      auto s = set_value_in_scope(aliases, op->sym, lookup_alias(src));
+      node_mutator::visit(op);
+    } else {
+      // Handle shadowing of op->sym by saving the state of op->sym being produced or consumed, then clearing it.
+      auto consumed_i = consumed.find(op->sym);
+      auto produced_i = produced.find(op->sym);
+      bool was_consumed = consumed_i != consumed.end();
+      bool was_produced = produced_i != produced.end();
+      if (was_consumed) consumed.erase(consumed_i);
+      if (was_produced) produced.erase(produced_i);
+
+      node_mutator::visit(op);
+
+      // Restore the state of op->sym being produced or consumed.
+      if (was_produced) {
+        produced.insert(op->sym);
+      } else {
+        auto i = produced.find(op->sym);
+        if (i != produced.end()) produced.erase(i);
+      }
+      if (was_consumed) {
+        consumed.insert(op->sym);
+      } else {
+        auto i = consumed.find(op->sym);
+        if (i != consumed.end()) consumed.erase(i);
+      }
+    }
+  }
+
+  void visit(const allocate* op) override { visit_buffer_decl(op); }
+  void visit(const constant_buffer* op) override { visit_buffer_decl(op); }
+  void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_data_dependency(op->base)); }
+  void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
+
+  using node_mutator::visit;
+};
+
+}  // namespace
+
+stmt parallelize_tasks(const stmt& s) {
+  scoped_trace trace("parallelize_tasks");
+  return task_parallelizer().mutate(s);
 }
 
 }  // namespace slinky

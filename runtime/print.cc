@@ -69,6 +69,7 @@ const char* to_string(stmt_node_type type) {
   case stmt_node_type::slice_buffer: return "slice_buffer";
   case stmt_node_type::slice_dim: return "slice_dim";
   case stmt_node_type::transpose: return "transpose";
+  case stmt_node_type::async: return "async";
   case stmt_node_type::check: return "check";
 
   default: return "<invalid stmt_node_type>";
@@ -306,6 +307,18 @@ public:
     }
     *this << ") {";
     *this << l->body;
+    *this << indent() << "}";
+  }
+
+  void visit(const async* a) override {
+    *this << indent();
+    if (a->sym.defined()) {
+      *this << a->sym << " = ";
+    }
+    *this << "async({";
+    *this << a->task;
+    *this << indent() << "}) {";
+    *this << a->body;
     *this << indent() << "}";
   }
 

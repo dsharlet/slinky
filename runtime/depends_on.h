@@ -27,6 +27,9 @@ struct depends_on_result {
   bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst || buffer_base; }
   bool buffer() const { return buffer_data() || buffer_dims || buffer_bounds; }
 
+  bool buffer_read() const { return buffer_input || buffer_src || buffer_base; }
+  bool buffer_write() const { return buffer_output || buffer_dst || buffer_base; }
+
   bool any() const { return var || buffer(); }
 };
 

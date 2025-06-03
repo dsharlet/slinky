@@ -18,6 +18,8 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var u(symbols, "u");
+var v(symbols, "v");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
@@ -254,6 +256,156 @@ TEST(optimizations, canonicalize_nodes) {
   ASSERT_THAT(
       canonicalize_nodes(block::make({call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {y}, {})})),
       unique_node_count_is(3));
+}
+
+TEST(optimizations, parallelize_tasks) {
+  // Two independent consumers.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {x}, {z}, {}),
+              })),
+      matches(async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {z}, {}))));
+
+  // One producer, one consumer.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          call_stmt::make(nullptr, {y}, {z}, {}),
+      })));
+
+  // And with an unrelated check.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  check::make(w),
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {x}, {z}, {}),
+              })),
+      matches(async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}),
+          block::make({
+              check::make(w),
+              call_stmt::make(nullptr, {x}, {z}, {}),
+          }))));
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  check::make(w),
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              })),
+      matches(block::make({
+          check::make(w),
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          call_stmt::make(nullptr, {y}, {z}, {}),
+      })));
+
+  // One producer, one consumer computed in-place.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {y}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          call_stmt::make(nullptr, {y}, {y}, {}),
+      })));
+
+  // One producer, two independent consumers.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {y}, {w}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          async::make(var(), call_stmt::make(nullptr, {y}, {z}, {}), call_stmt::make(nullptr, {y}, {w}, {})),
+      })));
+  // One producer, three independent consumers.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {y}, {w}, {}),
+                  call_stmt::make(nullptr, {y}, {u}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          async::make(var(), call_stmt::make(nullptr, {y}, {z}, {}),
+              async::make(var(), call_stmt::make(nullptr, {y}, {w}, {}), call_stmt::make(nullptr, {y}, {u}, {}))),
+      })));
+
+  // A check that both independent consumers depends on.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  check::make(buffer_min(x, 0) < buffer_max(x, 0)),
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {x}, {z}, {}),
+              })),
+      matches(block::make({
+          check::make(buffer_min(x, 0) < buffer_max(x, 0)),
+          async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {z}, {})),
+      })));
+
+  // A producer-consumer, with an unrelated stage.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+              })),
+      matches(block::make({
+          async::make(var(),
+              block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              }),
+              call_stmt::make(nullptr, {x}, {w}, {})),
+      })));
+
+  // Two unrelated producer-consumers.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  call_stmt::make(nullptr, {w}, {u}, {}),
+              })),
+      matches(async::make(var(),
+          block::make({
+              call_stmt::make(nullptr, {x}, {y}, {}),
+              call_stmt::make(nullptr, {y}, {z}, {}),
+          }),
+          block::make({
+              call_stmt::make(nullptr, {x}, {w}, {}),
+              call_stmt::make(nullptr, {w}, {u}, {}),
+          }))));
+
+  // Two unrelated producer-consumers, where both consumers are consumed by the same stage.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  call_stmt::make(nullptr, {w}, {u}, {}),
+                  call_stmt::make(nullptr, {z, u}, {v}, {}),
+              })),
+      matches(block::make({
+          async::make(var(),
+              block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+              }),
+              block::make({
+                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  call_stmt::make(nullptr, {w}, {u}, {}),
+              })),
+          call_stmt::make(nullptr, {z, u}, {v}, {}),
+      })));
+
+  // One producer, two independent consumers, one of which is computed in-place.
+  ASSERT_THAT(parallelize_tasks(block::make({
+                  call_stmt::make(nullptr, {x}, {y}, {}),
+                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  call_stmt::make(nullptr, {y}, {y}, {}),
+              })),
+      matches(block::make({
+          call_stmt::make(nullptr, {x}, {y}, {}),
+          call_stmt::make(nullptr, {y}, {z}, {}),
+          call_stmt::make(nullptr, {y}, {y}, {}),
+      })));
 }
 
 }  // namespace slinky

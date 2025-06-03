@@ -5,6 +5,7 @@
 #include "base/thread_pool_impl.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -257,6 +258,42 @@ TEST(evaluate, semaphore) {
   evaluate(make_signal(sem3), ctx);
   th.join();
   ASSERT_EQ(state, 2);
+}
+
+TEST(evaluate, async) {
+  eval_context ctx;
+  thread_pool_impl t;
+  eval_config cfg;
+  cfg.thread_pool = &t;
+  ctx.config = &cfg;
+
+  std::atomic<int> state = 0;
+
+  stmt increment_state = call_stmt::make(
+      [&](const call_stmt* op, eval_context& ctx) -> index_t {
+        ++state;
+        return 0;
+      },
+      {}, {}, {});
+  auto make_check_state = [&](index_t value) {
+    return call_stmt::make(
+        [value, &state](const call_stmt* op, eval_context& ctx) -> index_t {
+          assert(state == value);
+          return 0;
+        },
+        {}, {}, {});
+  };
+
+  stmt test = async::make(x,
+      block::make({
+          increment_state,
+      }),
+      block::make({
+          check::make(wait_for(x)),
+          make_check_state(1),
+      }));
+
+  evaluate(test, ctx);
 }
 
 }  // namespace slinky

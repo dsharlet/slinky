@@ -200,6 +200,29 @@ public:
     *this << indent() << "}\n";
   }
 
+  void visit(const async* a) override {
+    *this << indent() << "{ let "; 
+    if (a->sym.defined()) {
+      *this << name(a->sym);
+    } else {
+      *this << "__task_handle";
+    }
+    *this << " = slinky_async(() => {\n";
+    ++depth;
+    *this << a->task;
+    --depth;
+    *this << indent(1) << "}); {\n";
+    *this << a->body;
+    *this << indent(1) << "slinky_wait_for(";
+    if (a->sym.defined()) {
+      *this << a->sym;
+    } else {
+      *this << "__task_handle";
+    }
+    *this << ");\n";
+    *this << indent() << "}}\n";
+  }
+
   void visit(const call_stmt* n) override {
     for (var i : n->inputs) {
       *this << indent() << "consume(" << i << ");\n";
@@ -643,6 +666,11 @@ function transpose(b, dims) {
   result.dims = dims.map(i => result.dims[i]);
   return result;
 }
+function slinky_async(task) {
+  task();
+  return 0;
+}
+function slinky_wait_for(...tasks) {}
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
