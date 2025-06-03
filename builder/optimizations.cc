@@ -1704,7 +1704,7 @@ namespace {
 
 class task_parallelizer : public node_mutator {
   std::set<var> consumed, produced;
-  bool barrier;
+  bool barrier = false;
   symbol_map<var> aliases;
 
   var lookup_alias(var x) {
@@ -1734,7 +1734,11 @@ class task_parallelizer : public node_mutator {
   // Here we are going to construct a DAG of stmts with their dependencies determining the edges.
   struct stage {
     stmt body;
+
+    // Set of buffers consumed (read by a call or copy), or produced (written by a call or copy) in this stage.
     std::set<var> consumed, produced;
+
+    // Stages consuming something we produce, and producing something we consume, respectively.
     std::set<stage*> consumers, producers;
 
     // Fuse the producer `p` into this stage, the consumer, making `p` a no-op.
@@ -1775,7 +1779,6 @@ public:
     stages.reserve(b->stmts.size());
 
     // Mutating the statements in the block, and determine which stages are producers for prior stages.
-    barrier = false;
     bool changed = false;
     for (const stmt& i : b->stmts) {
       stages.push_back(mutate_stage(i));
