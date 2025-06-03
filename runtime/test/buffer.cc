@@ -383,6 +383,34 @@ TEST(buffer, slice_1_3_5) {
   ASSERT_EQ(sliced.dim(2), buf.dim(4));
 }
 
+TEST(buffer, slice_at) {
+  buffer<int, 3> buf({2, 3, 4});
+  buf.allocate();
+  buffer<int, 3> sliced = buf;
+
+  sliced.slice(/*dim=*/1, /*at=*/2);
+  ASSERT_EQ(sliced.rank, 2);
+  ASSERT_EQ(sliced.dim(0), buf.dim(0));
+  ASSERT_EQ(sliced.dim(1), buf.dim(2));
+  ASSERT_EQ(&sliced(0, 0), &buf(0, 2, 0));
+
+  sliced.slice(/*dim=*/0, /*at=*/1);
+  ASSERT_EQ(sliced.rank, 1);
+  ASSERT_EQ(sliced.dim(0), buf.dim(2));
+  ASSERT_EQ(&sliced(0), &buf(1, 2, 0));
+}
+
+TEST(buffer, slice_at_out_of_bounds) {
+  buffer<int, 3> buf({2, 3});
+  buf.allocate();
+  buffer<int, 3> sliced = buf;
+
+  sliced.slice(/*dim=*/1, /*at=*/3);
+  ASSERT_EQ(sliced.rank, 1);
+  ASSERT_EQ(sliced.dim(0), buf.dim(0));
+  ASSERT_EQ(sliced.base(), nullptr);
+}
+
 TEST(buffer, for_each_element_folded) {
   buffer<char, 1> buf({10});
   buf.dim(0).set_fold_factor(4);
