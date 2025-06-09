@@ -14,8 +14,6 @@
 
 namespace slinky {
 
-bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
-
 template <typename Rng>
 int random(Rng& rng, int min, int max) {
   return rng() % (max - min + 1) + min;

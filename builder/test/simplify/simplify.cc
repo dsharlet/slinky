@@ -708,6 +708,53 @@ TEST(simplify, slice_of_crop) {
       matches(slice_buffer::make(b3, b0, {{1}, {0}}, body)));
 }
 
+TEST(simplify, slice_of_const_buffer) {
+  stmt body = call_stmt::make(nullptr, {}, {b3}, {});
+  {
+    const int W = 20;
+    const int H = 0;
+    slinky::dim dims[2];
+    dims[0].set_bounds(0, W);
+    dims[0].set_stride(1 * sizeof(short));
+    dims[1].set_bounds(0, H);
+    dims[1].set_stride(W * sizeof(short));
+
+    raw_buffer_ptr constant_buf = raw_buffer::make(2, sizeof(short), dims);
+    std::memset(constant_buf->base, constant_buf->size_bytes(), 0x17);
+
+    raw_buffer_ptr sliced_constant_buf = raw_buffer::make_copy(*constant_buf);
+    sliced_constant_buf->rank = 1;
+
+    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, 1, 0, body))),
+        matches(constant_buffer::make(b3, sliced_constant_buf, body)));
+  }
+
+  {
+    slinky::dim dims[2] = {{0, 10, 1}, {0, 20, 10}};
+    raw_buffer_ptr constant_buf = raw_buffer::make(2, 1, dims);
+
+    raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+    sliced_buf->slice(/*dim=*/1, /*at=*/10);
+    sliced_buf->slice(/*dim=*/0, /*at=*/5);
+
+    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, {5, 10}, body))),
+        matches(constant_buffer::make(b3, sliced_buf, body)));
+  }
+
+  {
+    slinky::dim dims[2] = {{0, 10, 1}, {0, 20, 1}};
+    raw_buffer_ptr constant_buf = raw_buffer::make(2, 1, dims);
+
+    raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+    sliced_buf->slice(/*dim=*/1, /*at=*/10);
+    sliced_buf->slice(/*dim=*/0, /*at=*/21);
+    ASSERT_EQ(sliced_buf->base, nullptr);
+
+    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, {5, 10}, body))),
+        matches(constant_buffer::make(b3, sliced_buf, body)));
+  }
+}
+
 TEST(simplify, crop) {
   stmt body = call_stmt::make(nullptr, {}, {b2}, {});
 

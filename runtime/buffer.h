@@ -69,6 +69,13 @@ public:
   dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
       : min_(min), max_(max), stride_(stride), fold_factor_(fold_factor) {}
 
+  friend bool operator==(const dim& lhs, const dim& rhs) {
+    return std::tie(lhs.min_, lhs.max_, lhs.stride_, lhs.fold_factor_) ==
+           std::tie(rhs.min_, rhs.max_, rhs.stride_, rhs.fold_factor_);
+  }
+
+  friend bool operator!=(const dim& lhs, const dim& rhs) { return !(lhs == rhs); }
+
   static const dim& broadcast();
 
   index_t min() const { return min_; }

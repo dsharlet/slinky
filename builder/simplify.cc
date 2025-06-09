@@ -19,6 +19,7 @@
 #include "builder/node_mutator.h"
 #include "builder/rewrite.h"
 #include "builder/substitute.h"
+#include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
@@ -46,10 +47,6 @@ void ensure_is_point(interval_expr& x) {
   if (!x.is_point() && match(x.min, x.max)) {
     x.max = x.min;
   }
-}
-
-bool operator!=(const dim& a, const dim& b) {
-  return a.min() != b.min() || a.max() != b.max() || a.stride() != b.stride() || a.fold_factor() != b.fold_factor();
 }
 
 // Returns true if a and b can be used equivalently.
@@ -2138,6 +2135,46 @@ public:
         at[i] = mutate(op_at[i]);
         changed = changed || !at[i].same_as(op_at[i]);
         if (info && static_cast<index_t>(info->dims.size()) > i) info->dims.erase(info->dims.begin() + i);
+      }
+    }
+
+    if (info) {
+      const constant_buffer* cb = info->decl.as<constant_buffer>();
+      if (cb) {
+        bool is_slice_constant = true;
+        for (size_t d = 0; d < std::min(at.size(), cb->value->rank); ++d) {
+          if (!at[d].defined()) continue;
+          const constant* cx = at[d].as<constant>();
+          if (!cx) {
+            is_slice_constant = false;
+            break;
+          }
+        }
+        if (is_slice_constant) {
+          // Make a buffer of the same rank as the constant, but with the sliced
+          // dimensions as singletons at the sliced `at`.
+          std::vector<dim> dims;
+          dims.reserve(cb->value->rank);
+          for (size_t d = 0; d < cb->value->rank; ++d) {
+            if (d < at.size() && at[d].defined()) {
+              const index_t v = at[d].as<constant>()->value;
+              dims.emplace_back(v, v);
+            } else {
+              dims.push_back(cb->value->dims[d]);
+            }
+          }
+          raw_buffer_ptr sliced_buf = raw_buffer::make(cb->value->rank, cb->value->elem_size, dims.data());
+          copy(*cb->value, *sliced_buf);
+          for (int d = std::min(at.size(), cb->value->rank) - 1; d >= 0; --d) {
+            if (at[d].defined()) {
+              const constant* cx = at[d].as<constant>();
+              assert(cx);
+              sliced_buf->slice(d, cx->value);
+            }
+          }
+          set_result(constant_buffer::make(op_sym, sliced_buf, op_body));
+          return;
+        }
       }
     }
 

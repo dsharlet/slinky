@@ -114,7 +114,8 @@ T saturate_negate(T x) {
 
 template <typename T>
 int sign(T x) {
-  return x >= 0 ? 1 : -1;
+  if (x == 0) return 0;
+  return x > 0 ? 1 : -1;
 }
 
 template <typename T>
