@@ -89,8 +89,7 @@ TEST(match, basic) {
     raw_buffer_ptr buf_1 = raw_buffer::make(2, 2, dims);
     std::memset(buf_1->base, buf_1->size_bytes(), 0x17);
 
-    raw_buffer_ptr buf_2 = raw_buffer::make(2, 2, dims);
-    std::memset(buf_2->base, buf_2->size_bytes(), 0x17);
+    raw_buffer_ptr buf_2 = raw_buffer::make_copy(*buf_1);
 
     raw_buffer_ptr buf_3 = raw_buffer::make(2, 2, dims);
     std::memset(buf_3->base, buf_3->size_bytes(), 0x18);

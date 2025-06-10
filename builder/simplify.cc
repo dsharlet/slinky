@@ -232,7 +232,7 @@ const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const
   for (size_t d = 0; d < cb.value->rank; ++d) {
     if (d < at.size() && at[d].defined()) {
       const index_t v = at[d].as<constant>()->value;
-      dims.emplace_back(v, v, cb.value->dims[d].stride());
+      dims.emplace_back(v, v);
     } else {
       dims.push_back(cb.value->dims[d]);
     }
