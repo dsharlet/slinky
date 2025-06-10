@@ -354,12 +354,9 @@ void topological_sort_impl(const func* f, std::set<const func*>& processing, std
   processing.insert(f);
   for (const auto& i : f->inputs()) {
     const auto& input = i.buffer;
-    if (!input->producer()) {
-      continue;
-    }
+    if (!input->producer()) continue;
     // Record that f is consumer of input->producer.
     deps[input->producer()].push_back(f);
-
     topological_sort_impl(input->producer(), processing, visited, order, deps);
   }
   processing.erase(f);
@@ -372,6 +369,7 @@ void topological_sort(const std::vector<buffer_expr_ptr>& outputs, std::vector<c
   std::set<const func*> processing;
   std::set<const func*> visited;
   for (const auto& i : outputs) {
+    if (!i->producer()) continue;
     topological_sort_impl(i->producer(), processing, visited, order, deps);
   }
 
