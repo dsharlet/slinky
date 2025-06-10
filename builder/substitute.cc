@@ -67,7 +67,13 @@ public:
           *self,
           [&](index_t slice_extent, const void* a, const void* b) {
             if (match == 0) {
-              match = sign(std::memcmp(a, b, slice_extent * elem_size));
+              if (a && b) {
+                match = sign(std::memcmp(a, b, slice_extent * elem_size));
+              } else if (!a && b) {
+                match = -1;
+              } else if (a && !b) {
+                match = 1;
+              }
             }
           },
           *op);

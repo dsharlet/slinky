@@ -214,6 +214,50 @@ expr add_constant(const expr& a, index_t b) {
   return constant_adder(b).mutate(a);
 }
 
+const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const std::vector<expr>& at) {
+  bool is_slice_constant = true;
+  bool is_slice_in_bounds = true;
+  for (size_t d = 0; d < std::min<size_t>(at.size(), cb.value->rank); ++d) {
+    if (!at[d].defined()) continue;
+    const constant* cx = at[d].as<constant>();
+    if (!cx) {
+      is_slice_constant = false;
+      break;
+    }
+    if (!cb.value->dims[d].contains(cx->value)) {
+      is_slice_in_bounds = false;
+    }
+  }
+  if (!is_slice_constant) return nullptr;
+
+  // Make a buffer of the same rank as the constant, but with the sliced
+  // dimensions as singletons at the sliced `at`.
+  std::vector<dim> dims;
+  dims.reserve(cb.value->rank);
+  for (size_t d = 0; d < cb.value->rank; ++d) {
+    if (d < at.size() && at[d].defined()) {
+      const index_t v = at[d].as<constant>()->value;
+      dims.emplace_back(v, v, cb.value->dims[d].stride());
+    } else {
+      dims.push_back(cb.value->dims[d]);
+    }
+  }
+  raw_buffer_ptr sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size, dims.data());
+  if (is_slice_in_bounds) {
+    copy(*cb.value, *sliced_buf);
+  } else {
+    sliced_buf->base = nullptr;
+  }
+  for (int d = std::min<int>(at.size(), cb.value->rank) - 1; d >= 0; --d) {
+    if (at[d].defined()) {
+      const constant* cx = at[d].as<constant>();
+      assert(cx);
+      sliced_buf->slice(d, cx->value);
+    }
+  }
+  return sliced_buf;
+}
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
 public:
@@ -2141,38 +2185,9 @@ public:
     if (info) {
       const constant_buffer* cb = info->decl.as<constant_buffer>();
       if (cb) {
-        bool is_slice_constant = true;
-        for (size_t d = 0; d < std::min(at.size(), cb->value->rank); ++d) {
-          if (!at[d].defined()) continue;
-          const constant* cx = at[d].as<constant>();
-          if (!cx) {
-            is_slice_constant = false;
-            break;
-          }
-        }
-        if (is_slice_constant) {
-          // Make a buffer of the same rank as the constant, but with the sliced
-          // dimensions as singletons at the sliced `at`.
-          std::vector<dim> dims;
-          dims.reserve(cb->value->rank);
-          for (size_t d = 0; d < cb->value->rank; ++d) {
-            if (d < at.size() && at[d].defined()) {
-              const index_t v = at[d].as<constant>()->value;
-              dims.emplace_back(v, v);
-            } else {
-              dims.push_back(cb->value->dims[d]);
-            }
-          }
-          raw_buffer_ptr sliced_buf = raw_buffer::make(cb->value->rank, cb->value->elem_size, dims.data());
-          copy(*cb->value, *sliced_buf);
-          for (int d = std::min(at.size(), cb->value->rank) - 1; d >= 0; --d) {
-            if (at[d].defined()) {
-              const constant* cx = at[d].as<constant>();
-              assert(cx);
-              sliced_buf->slice(d, cx->value);
-            }
-          }
-          set_result(constant_buffer::make(op_sym, sliced_buf, op_body));
+        const_raw_buffer_ptr sliced_buf = fold_slice_of_const_buffer(*cb, at);
+        if (sliced_buf) {
+          set_result(constant_buffer::make(op_sym, std::move(sliced_buf), op_body));
           return;
         }
       }
