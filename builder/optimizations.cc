@@ -309,7 +309,7 @@ class copy_aliaser : public stmt_mutator {
   // Checks if `op` can safely be replaced by `alias` targeting a buffer `target` described by `target_info`.
   // This updates some fields of `alias` from what we learn from `target_info`.
   static bool alias_compatible(
-      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info) {
+      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info, bool should_substitute) {
     scoped_trace trace("alias_compatible");
     assert(alloc_info.dims.size() == alias.dims.size());
 
@@ -323,10 +323,13 @@ class copy_aliaser : public stmt_mutator {
 
     // Figure out what the actual alias dimension will be by substituting the target into it.
     std::vector<dim_expr> alias_dims = alias.dims;
-    for (dim_expr& i : alias_dims) {
-      i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
-      i.stride = substitute_buffer(i.stride, target, target_info.dims);
-      i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
+
+    if (should_substitute) {
+      for (dim_expr& i : alias_dims) {
+        i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
+        i.stride = substitute_buffer(i.stride, target, target_info.dims);
+        i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
+      }
     }
 
     if (!alias.assume_in_bounds) {
@@ -440,8 +443,10 @@ public:
       std::optional<buffer_info>& target_info = buffers[target_var];
       assert(target_info);
 
-      if (!alias_compatible(info, alias, target_var, *target_info)) {
-        continue;
+      if (!alias_compatible(info, alias, target_var, *target_info, false)) {
+        if (!alias_compatible(info, alias, target_var, *target_info, true)) {
+          continue;
+        }
       }
 
       // The alias might have used the bounds of this symbol, substitute them now.
