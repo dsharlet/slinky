@@ -322,7 +322,6 @@ class copy_aliaser : public stmt_mutator {
     const bool alloc_has_stride = any_stride_defined(alloc_info.dims);
 
     // Figure out what the actual alias dimension will be by substituting the target into it.
-    std::vector<dim_expr> alias_dims = alias.dims;
     std::vector<dim_expr> alloc_dims = alloc_info.dims;
 
     for (dim_expr& i : alloc_dims) {
@@ -330,6 +329,8 @@ class copy_aliaser : public stmt_mutator {
       i.stride = substitute_buffer(i.stride, target, target_info.dims);
       i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
     }
+
+    std::vector<dim_expr> alias_dims = alias.dims;
 
     for (dim_expr& i : alias_dims) {
       i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
