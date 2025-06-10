@@ -309,7 +309,7 @@ class copy_aliaser : public stmt_mutator {
   // Checks if `op` can safely be replaced by `alias` targeting a buffer `target` described by `target_info`.
   // This updates some fields of `alias` from what we learn from `target_info`.
   static bool alias_compatible(
-      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info, bool should_substitute) {
+      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info) {
     scoped_trace trace("alias_compatible");
     assert(alloc_info.dims.size() == alias.dims.size());
 
@@ -323,21 +323,26 @@ class copy_aliaser : public stmt_mutator {
 
     // Figure out what the actual alias dimension will be by substituting the target into it.
     std::vector<dim_expr> alias_dims = alias.dims;
+    std::vector<dim_expr> alloc_dims = alloc_info.dims;
 
-    if (should_substitute) {
-      for (dim_expr& i : alias_dims) {
-        i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
-        i.stride = substitute_buffer(i.stride, target, target_info.dims);
-        i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
-      }
+    for (dim_expr& i : alloc_dims) {
+      i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
+      i.stride = substitute_buffer(i.stride, target, target_info.dims);
+      i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
+    }
+
+    for (dim_expr& i : alias_dims) {
+      i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
+      i.stride = substitute_buffer(i.stride, target, target_info.dims);
+      i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
     }
 
     if (!alias.assume_in_bounds) {
       bool in_bounds = true;
-      for (std::size_t d = 0; d < alloc_info.dims.size(); ++d) {
+      for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
         const dim_expr& alias_dim = alias_dims[d];
-        if (!prove_true(alloc_info.dims[d].bounds.min >= alias_dim.bounds.min) ||
-            !prove_true(alloc_info.dims[d].bounds.max <= alias_dim.bounds.max)) {
+        if (!prove_true(alloc_dims[d].bounds.min >= alias_dim.bounds.min) ||
+            !prove_true(alloc_dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
           if (target_info.is_input || target_info.is_output) {
             // We can't reallocate this buffer.
@@ -350,12 +355,12 @@ class copy_aliaser : public stmt_mutator {
       alias.assume_in_bounds = in_bounds;
     }
 
-    for (std::size_t d = 0; d < alloc_info.dims.size(); ++d) {
+    for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
       const dim_expr& alias_dim = alias_dims[d];
       if (!alias.assume_in_bounds) {
         // The alias might grow the target allocation, so we can't use the target's strides.
-        if (alloc_info.dims[d].stride.defined()) {
-          if (!prove_true(alloc_info.dims[d].stride == alias_dim.stride)) {
+        if (alloc_dims[d].stride.defined()) {
+          if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
             // This alias would violate a constraint on the stride of the buffer.
             return false;
           }
@@ -364,27 +369,27 @@ class copy_aliaser : public stmt_mutator {
         // Either the allocation or the target can assume the strides of the other.
       } else {
         // There are strides on both the allocation and the target, they must be equal.
-        if (!prove_true(alloc_info.dims[d].stride == alias_dim.stride)) {
+        if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
           // This alias would violate a constraint on the stride of the buffer.
           return false;
         }
       }
 
-      if (alloc_info.dims[d].fold_factor.defined()) {
+      if (alloc_dims[d].fold_factor.defined()) {
         if (!alias_dim.fold_factor.defined() || is_constant(alias_dim.fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
-        } else if (!prove_true(alias_dim.fold_factor >= alloc_info.dims[d].fold_factor)) {
+        } else if (!prove_true(alias_dim.fold_factor >= alloc_dims[d].fold_factor)) {
           // The fold factor of this allocation does not evenly divide the target fold factor.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
         } else if (!prove_true((alias_dim.bounds.min % alias_dim.fold_factor) ==
-                               (alloc_info.dims[d].bounds.min % alloc_info.dims[d].fold_factor))) {
+                               (alloc_dims[d].bounds.min % alloc_dims[d].fold_factor))) {
           // The mins of folded buffers are not aligned.
           return false;
         }
       } else if ((alias_dim.fold_factor.defined() && !is_constant(alias_dim.fold_factor, dim::unfolded)) &&
-                 !prove_true(alloc_info.dims[d].extent() <= alias_dim.fold_factor)) {
+                 !prove_true(alloc_dims[d].extent() <= alias_dim.fold_factor)) {
         // If the target is folded, but the op is not, we can only alias it if the extent of this dimension
         // is less than the fold factor.
         return false;
@@ -443,10 +448,8 @@ public:
       std::optional<buffer_info>& target_info = buffers[target_var];
       assert(target_info);
 
-      if (!alias_compatible(info, alias, target_var, *target_info, false)) {
-        if (!alias_compatible(info, alias, target_var, *target_info, true)) {
-          continue;
-        }
+      if (!alias_compatible(info, alias, target_var, *target_info)) {
+        continue;
       }
 
       // The alias might have used the bounds of this symbol, substitute them now.
