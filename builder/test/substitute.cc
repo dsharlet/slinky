@@ -83,6 +83,21 @@ TEST(match, basic) {
   ASSERT_FALSE(match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make(x, y, check::make(x))));
   ASSERT_FALSE(
       match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make({{x, y * z}, {w, y * z}}, check::make(x))));
+
+  {
+    slinky::dim dims[2] = {{0, 10, 2}, {0, 1, 22}};
+    raw_buffer_ptr buf_1 = raw_buffer::make(2, 2, dims);
+    std::memset(buf_1->base, buf_1->size_bytes(), 0x17);
+
+    raw_buffer_ptr buf_2 = raw_buffer::make(2, 2, dims);
+    std::memset(buf_2->base, buf_2->size_bytes(), 0x17);
+
+    raw_buffer_ptr buf_3 = raw_buffer::make(2, 2, dims);
+    std::memset(buf_3->base, buf_3->size_bytes(), 0x18);
+
+    ASSERT_TRUE(match(constant_buffer::make(x, buf_1, {}), constant_buffer::make(x, buf_2, {})));
+    ASSERT_FALSE(match(constant_buffer::make(x, buf_1, {}), constant_buffer::make(x, buf_3, {})));
+  }
 }
 
 }  // namespace slinky
