@@ -710,11 +710,18 @@ TEST(simplify, slice_of_crop) {
 
 TEST(simplify, slice_of_const_buffer) {
   stmt body = call_stmt::make(nullptr, {}, {b3}, {});
+
+  auto fill = [](raw_buffer& buf) {
+    unsigned char* b = static_cast<unsigned char*>(buf.base);
+    unsigned char* e = b + buf.size_bytes();
+    std::iota(b, e, 1u);
+  };
+
   {
     // Basic test. Slicing a single dimension.
     slinky::dim dims[2] = {{0, 20, 2}, {0, 0, 42}};
     raw_buffer_ptr constant_buf = raw_buffer::make(2, 2, dims);
-    std::memset(constant_buf->base, constant_buf->size_bytes(), 0x17);
+    fill(*constant_buf);
 
     raw_buffer_ptr sliced_constant_buf = raw_buffer::make_copy(*constant_buf);
     sliced_constant_buf->rank = 1;
@@ -727,6 +734,7 @@ TEST(simplify, slice_of_const_buffer) {
     // Basic test. Slicing two dimensions.
     slinky::dim dims[2] = {{0, 10, 1}, {0, 20, 10}};
     raw_buffer_ptr constant_buf = raw_buffer::make(2, 1, dims);
+    fill(*constant_buf);
 
     raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
     sliced_buf->slice(/*dim=*/1, /*at=*/10);
@@ -740,6 +748,7 @@ TEST(simplify, slice_of_const_buffer) {
     // Test out-of-bounds slicing.
     slinky::dim dims[2] = {{0, 10, 1}, {0, 20, 1}};
     raw_buffer_ptr constant_buf = raw_buffer::make(2, 1, dims);
+    fill(*constant_buf);
 
     raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
     sliced_buf->slice(/*dim=*/1, /*at=*/21);
@@ -752,41 +761,48 @@ TEST(simplify, slice_of_const_buffer) {
   {
     // Slicing of a tensor of rank 3.
     slinky::dim dims[3] = {{0, 1, 1}, {0, 1, 2}, {0, 1, 4}};
+
+    // Slice a single dimension.
     for (int d = 0; d < 3; ++d) {
-      {
-        // Slice a single dimension.
-        raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
-        raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
-        sliced_buf->slice(d, 0);
-        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, d, 0, body))),
-            matches(constant_buffer::make(b3, sliced_buf, body)));
-      }
-      {
-        // Slice two dimensions.
-        std::vector<expr> at;
-        at.reserve(3);
-        for (int i = 0; i < 3; ++i) {
-          if (i == d) {
-            at.emplace_back();
-          } else {
-            at.emplace_back(0);
-          }
-        }
-        raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
-        raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
-        for (int i = 2; i >= 0; --i) {
-          if (i != d) {
-            sliced_buf->slice(i, 0);
-          }
-        }
-        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, at, body))),
-            matches(constant_buffer::make(b3, sliced_buf, body)));
-      }
+      raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+      fill(*constant_buf);
+
+      raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+      sliced_buf->slice(d, 0);
+      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, d, 0, body))),
+          matches(constant_buffer::make(b3, sliced_buf, body)));
     }
+
+    // Slice two dimensions.
+    for (int d = 0; d < 3; ++d) {
+      std::vector<expr> at;
+      at.reserve(3);
+      for (int i = 0; i < 3; ++i) {
+        if (i == d) {
+          at.emplace_back();
+        } else {
+          at.emplace_back(0);
+        }
+      }
+      raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+      fill(*constant_buf);
+
+      raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+      for (int i = 2; i >= 0; --i) {
+        if (i != d) {
+          sliced_buf->slice(i, 0);
+        }
+      }
+      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, at, body))),
+          matches(constant_buffer::make(b3, sliced_buf, body)));
+    }
+
     {
       // Slice all dimensions.
       std::vector<expr> at(3, 0);
       raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+      fill(*constant_buf);
+
       raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
       for (int i = 2; i >= 0; --i) {
         sliced_buf->slice(i, 0);

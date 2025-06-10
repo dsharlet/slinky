@@ -215,20 +215,15 @@ expr add_constant(const expr& a, index_t b) {
 }
 
 const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const std::vector<expr>& at) {
-  bool is_slice_constant = true;
   bool is_slice_in_bounds = true;
   for (size_t d = 0; d < std::min<size_t>(at.size(), cb.value->rank); ++d) {
     if (!at[d].defined()) continue;
     const constant* cx = at[d].as<constant>();
-    if (!cx) {
-      is_slice_constant = false;
-      break;
-    }
+    if (!cx) return nullptr;
     if (!cb.value->dims[d].contains(cx->value)) {
       is_slice_in_bounds = false;
     }
   }
-  if (!is_slice_constant) return nullptr;
 
   // Make a buffer of the same rank as the constant, but with the sliced
   // dimensions as singletons at the sliced `at`.
@@ -242,12 +237,16 @@ const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const
       dims.push_back(cb.value->dims[d]);
     }
   }
-  raw_buffer_ptr sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size, dims.data());
+
+  raw_buffer_ptr sliced_buf;
   if (is_slice_in_bounds) {
+    sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size, dims.data());
     copy(*cb.value, *sliced_buf);
   } else {
-    sliced_buf->base = nullptr;
+    sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size);
+    std::copy_n(dims.data(), cb.value->rank, sliced_buf->dims);
   }
+
   for (int d = std::min<int>(at.size(), cb.value->rank) - 1; d >= 0; --d) {
     if (at[d].defined()) {
       const constant* cx = at[d].as<constant>();
