@@ -763,51 +763,55 @@ TEST(simplify, slice_of_const_buffer) {
     slinky::dim dims[3] = {{0, 1, 1}, {0, 1, 2}, {0, 1, 4}};
 
     // Slice a single dimension.
-    for (int d = 0; d < 3; ++d) {
-      raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
-      fill(*constant_buf);
+    for (int at = 0; at <= 1; ++at) {
+      for (int d = 0; d < 3; ++d) {
+        raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+        fill(*constant_buf);
 
-      raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
-      sliced_buf->slice(d, 0);
-      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, d, 0, body))),
-          matches(constant_buffer::make(b3, sliced_buf, body)));
+        raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+        sliced_buf->slice(d, at);
+        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, d, at, body))),
+            matches(constant_buffer::make(b3, sliced_buf, body)));
+      }
     }
 
     // Slice two dimensions.
-    for (int d = 0; d < 3; ++d) {
-      std::vector<expr> at;
-      at.reserve(3);
-      for (int i = 0; i < 3; ++i) {
-        if (i == d) {
-          at.emplace_back();
-        } else {
-          at.emplace_back(0);
+    for (int at = 0; at <= 1; ++at) {
+      for (int d = 0; d < 3; ++d) {
+        std::vector<expr> ats;
+        ats.reserve(3);
+        for (int i = 0; i < 3; ++i) {
+          if (i == d) {
+            ats.emplace_back();
+          } else {
+            ats.emplace_back(at);
+          }
         }
-      }
-      raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
-      fill(*constant_buf);
+        raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+        fill(*constant_buf);
 
-      raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
-      for (int i = 2; i >= 0; --i) {
-        if (i != d) {
-          sliced_buf->slice(i, 0);
+        raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+        for (int i = 2; i >= 0; --i) {
+          if (i != d) {
+            sliced_buf->slice(i, at);
+          }
         }
+        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, ats, body))),
+            matches(constant_buffer::make(b3, sliced_buf, body)));
       }
-      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, at, body))),
-          matches(constant_buffer::make(b3, sliced_buf, body)));
     }
 
-    {
-      // Slice all dimensions.
-      std::vector<expr> at(3, 0);
+    // Slice all dimensions.
+    for (int at = 0; at <= 1; ++at) {
+      std::vector<expr> ats(3, at);
       raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
       fill(*constant_buf);
 
       raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
       for (int i = 2; i >= 0; --i) {
-        sliced_buf->slice(i, 0);
+        sliced_buf->slice(i, at);
       }
-      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, at, body))),
+      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, ats, body))),
           matches(constant_buffer::make(b3, sliced_buf, body)));
     }
   }
