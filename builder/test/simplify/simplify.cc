@@ -749,6 +749,52 @@ TEST(simplify, slice_of_const_buffer) {
     ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, {5, 21}, body))),
         matches(constant_buffer::make(b3, sliced_buf, body)));
   }
+  {
+    // Slicing of a tensor of rank 3.
+    slinky::dim dims[3] = {{0, 1, 1}, {0, 1, 2}, {0, 1, 4}};
+    for (int d = 0; d < 3; ++d) {
+      {
+        // Slice a single dimension.
+        raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+        raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+        sliced_buf->slice(d, 0);
+        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, d, 0, body))),
+            matches(constant_buffer::make(b3, sliced_buf, body)));
+      }
+      {
+        // Slice two dimensions.
+        std::vector<expr> at;
+        at.reserve(3);
+        for (int i = 0; i < 3; ++i) {
+          if (i == d) {
+            at.emplace_back();
+          } else {
+            at.emplace_back(0);
+          }
+        }
+        raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+        raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+        for (int i = 2; i >= 0; --i) {
+          if (i != d) {
+            sliced_buf->slice(i, 0);
+          }
+        }
+        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, at, body))),
+            matches(constant_buffer::make(b3, sliced_buf, body)));
+      }
+    }
+    {
+      // Slice all dimensions.
+      std::vector<expr> at(3, 0);
+      raw_buffer_ptr constant_buf = raw_buffer::make(3, 1, dims);
+      raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+      for (int i = 2; i >= 0; --i) {
+        sliced_buf->slice(i, 0);
+      }
+      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, at, body))),
+          matches(constant_buffer::make(b3, sliced_buf, body)));
+    }
+  }
 }
 
 TEST(simplify, crop) {
