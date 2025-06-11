@@ -86,12 +86,12 @@ TEST(match, basic) {
 
   {
     slinky::dim dims[2] = {{0, 10, 2}, {0, 1, 22}};
-    raw_buffer_ptr buf_1 = raw_buffer::make(2, 2, dims);
+    raw_buffer_ptr buf_1 = raw_buffer::make(2, dims);
     std::memset(buf_1->base, buf_1->size_bytes(), 0x17);
 
     raw_buffer_ptr buf_2 = raw_buffer::make_copy(*buf_1);
 
-    raw_buffer_ptr buf_3 = raw_buffer::make(2, 2, dims);
+    raw_buffer_ptr buf_3 = raw_buffer::make(2, dims);
     std::memset(buf_3->base, buf_3->size_bytes(), 0x18);
 
     ASSERT_TRUE(match(constant_buffer::make(x, buf_1, {}), constant_buffer::make(x, buf_2, {})));

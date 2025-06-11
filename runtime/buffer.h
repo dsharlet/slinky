@@ -386,6 +386,8 @@ public:
 
   // Make a pointer to a buffer with an allocation for the dims and (optionally) elements in the same allocation.
   static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size, const class dim* dims = nullptr);
+  static raw_buffer_ptr make(std::size_t elem_size, span<class dim> dims);
+  static raw_buffer_ptr make(std::size_t elem_size, std::initializer_list<class dim> dims);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);

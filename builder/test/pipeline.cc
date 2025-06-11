@@ -1228,13 +1228,7 @@ TEST(constant, pipeline) {
   const int W = 20;
   const int H = 10;
 
-  slinky::dim dims[2];
-  dims[0].set_bounds(0, W);
-  dims[0].set_stride(1 * sizeof(short));
-  dims[1].set_bounds(0, H);
-  dims[1].set_stride(W * sizeof(short));
-
-  auto constant_buf = raw_buffer::make(2, sizeof(short), dims);
+  auto constant_buf = raw_buffer::make(sizeof(short), {{0, W - 1, sizeof(short)}, {0, H - 1, W * sizeof(short)}});
   fill_random(constant_buf->cast<short>());
 
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));

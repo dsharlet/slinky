@@ -240,11 +240,11 @@ const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const
 
   raw_buffer_ptr sliced_buf;
   if (is_slice_in_bounds) {
-    sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size, dims.data());
+    sliced_buf = raw_buffer::make(cb.value->elem_size, dims);
     copy(*cb.value, *sliced_buf);
   } else {
-    sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size);
-    std::copy_n(dims.data(), cb.value->rank, sliced_buf->dims);
+    sliced_buf = raw_buffer::make(dims.size(), cb.value->elem_size);
+    std::copy_n(dims.data(), dims.size(), sliced_buf->dims);
   }
 
   for (int d = std::min<int>(at.size(), cb.value->rank) - 1; d >= 0; --d) {

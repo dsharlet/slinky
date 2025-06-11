@@ -76,6 +76,13 @@ raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const c
   return raw_buffer_ptr(buf, free);
 }
 
+raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<class dim> dims) {
+  return make(dims.size(), elem_size, dims.data());
+}
+raw_buffer_ptr raw_buffer::make(std::size_t elem_size, std::initializer_list<class dim> dims) {
+  return make(dims.size(), elem_size, &*dims.begin());
+}
+
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
   auto buf = make(src.rank, src.elem_size, src.dims);
   copy(src, *buf);
