@@ -17,10 +17,6 @@ var y(ctx, "y");
 
 }  // namespace
 
-bool operator!=(const dim& a, const dim& b) {
-  return a.min() != b.min() || a.max() != b.max() || a.stride() != b.stride() || a.fold_factor() != b.fold_factor();
-}
-
 bool operator==(const raw_buffer& a, const raw_buffer& b) {
   if (a.base != b.base) return false;
   if (a.elem_size != b.elem_size) return false;

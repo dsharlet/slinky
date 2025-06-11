@@ -46,6 +46,40 @@ public:
 
   bool try_match(const var& self, const var& op) { return try_match(self.id, op.id); }
 
+  bool try_match(const raw_buffer* self, const raw_buffer* op) {
+    assert(match == 0);
+    if (self == op) {
+    } else if (!self) {
+      match = -1;
+    } else if (!op) {
+      match = 1;
+    } else {
+      if (!try_match(self->rank, op->rank)) return false;
+      if (!try_match(self->elem_size, op->elem_size)) return false;
+      if (!try_match(span<const dim>{self->dims, self->rank}, span<const dim>{op->dims, op->rank})) return false;
+
+      assert(self->size_bytes() == op->size_bytes());
+      if (self->size_bytes() > 128) {
+        return try_match<const raw_buffer*>(self, op);
+      }
+      const index_t elem_size = self->elem_size;
+      for_each_contiguous_slice(
+          *self,
+          [&](index_t slice_extent, const void* a, const void* b) {
+            if (match != 0) return;
+            if (a && b) {
+              match = sign(std::memcmp(a, b, slice_extent * elem_size));
+            } else if (!a && b) {
+              match = -1;
+            } else if (a && !b) {
+              match = 1;
+            }
+          },
+          *op);
+    }
+    return match == 0;
+  }
+
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
   void visit(const base_expr_node* op) {
     switch (op->type) {
@@ -110,6 +144,14 @@ public:
     return true;
   }
 
+  bool try_match(const dim& self, const dim& op) {
+    if (!try_match(self.min(), op.min())) return false;
+    if (!try_match(self.max(), op.max())) return false;
+    if (!try_match(self.stride(), op.stride())) return false;
+    if (!try_match(self.fold_factor(), op.fold_factor())) return false;
+    return true;
+  }
+
   template <typename A, typename B>
   bool try_match(const std::pair<A, B>& self, const std::pair<A, B>& op) {
     if (!try_match(self.first, op.first)) return false;
@@ -117,8 +159,8 @@ public:
     return true;
   }
 
-  template <typename T>
-  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+  template <template <class> class Container, class T>
+  bool try_match(const Container<T>& self, const Container<T>& op) {
     if (!try_match(self.size(), op.size())) return false;
     for (std::size_t i = 0; i < self.size(); ++i) {
       if (!try_match(self[i], op[i])) return false;
@@ -260,7 +302,7 @@ public:
     assert(mbs);
 
     if (!try_match(mbs->sym, op->sym)) return;
-    if (!try_match(mbs->value, op->value)) return;
+    if (!try_match(mbs->value.get(), op->value.get())) return;
     if (!try_match(mbs->body, op->body)) return;
   }
 
