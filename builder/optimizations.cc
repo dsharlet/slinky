@@ -286,6 +286,8 @@ class copy_aliaser : public stmt_mutator {
     bool is_input;
     bool is_output;
 
+    int producers = 0;
+
     // Possible aliases of this allocation.
     std::vector<alias_info> aliases;
 
@@ -440,81 +442,86 @@ public:
       i.stride = expr();
       i.fold_factor = expr();
     }
-    for (alias_info& alias : info.aliases) {
-      if (alias.disabled) {
-        continue;
-      }
+    if (info.producers > 1) {
+      // Don't try to alias a buffer with more than one producer (e.g. copies that concatenate).
+      // TODO: We might be able to handle this case, if all the producers have a compatible alias with the same target?
+    } else {
+      for (alias_info& alias : info.aliases) {
+        if (alias.disabled) {
+          continue;
+        }
 
-      var target_var = alias.target;
-      std::optional<buffer_info>& target_info = buffers[target_var];
-      assert(target_info);
+        var target_var = alias.target;
+        std::optional<buffer_info>& target_info = buffers[target_var];
+        assert(target_info);
 
-      if (!alias_compatible(info, alias, target_var, *target_info)) {
-        continue;
-      }
+        if (!alias_compatible(info, alias, target_var, *target_info)) {
+          continue;
+        }
 
-      // The alias might have used the bounds of this symbol, substitute them now.
-      for (dim_expr& i : alias.dims) {
-        i.bounds = substitute_buffer(i.bounds, op->sym, op_dims_bounds);
-      }
-      for (expr& i : alias.at) {
-        i = substitute_buffer(i, op->sym, op_dims_bounds);
-      }
+        // The alias might have used the bounds of this symbol, substitute them now.
+        for (dim_expr& i : alias.dims) {
+          i.bounds = substitute_buffer(i.bounds, op->sym, op_dims_bounds);
+        }
+        for (expr& i : alias.at) {
+          i = substitute_buffer(i, op->sym, op_dims_bounds);
+        }
 
-      var alloc_var = target_var;
-      if (!alias.assume_in_bounds) {
-        assert(!target_info->is_output);
-        assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
-        // We allocated this buffer, make it big enough to share with this buffer.
-        std::string old_name =
-            ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
-        target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
-        alloc_var = target_info->shared_alloc_sym;
-        assert(target_info->dims.size() == alias.at.size());
-        for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
-          // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
-          // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
-          // starts.
-          int alias_d = alias.permutation[d];
-          if (alias_d >= 0) {
-            target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
+        var alloc_var = target_var;
+        if (!alias.assume_in_bounds) {
+          assert(!target_info->is_output);
+          assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
+          // We allocated this buffer, make it big enough to share with this buffer.
+          std::string old_name =
+              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
+          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
+          alloc_var = target_info->shared_alloc_sym;
+          assert(target_info->dims.size() == alias.at.size());
+          for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
+            // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
+            // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
+            // starts.
+            int alias_d = alias.permutation[d];
+            if (alias_d >= 0) {
+              target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
+            }
+          }
+        } else if (!any_stride_defined(target_info->dims)) {
+          assert(info.dims.size() == alias.permutation.size());
+          // The target doesn't have any strides, we might have some strides we assumed we could propagate.
+          for (std::size_t d = 0; d < info.dims.size(); ++d) {
+            int alias_d = alias.permutation[d];
+            if (alias_d >= 0) {
+              assert(alias_d < static_cast<int>(target_info->dims.size()));
+              assert(!target_info->dims[alias_d].stride.defined());
+              target_info->dims[alias_d].stride = info.dims[d].stride;
+            }
           }
         }
-      } else if (!any_stride_defined(target_info->dims)) {
-        assert(info.dims.size() == alias.permutation.size());
-        // The target doesn't have any strides, we might have some strides we assumed we could propagate.
-        for (std::size_t d = 0; d < info.dims.size(); ++d) {
-          int alias_d = alias.permutation[d];
-          if (alias_d >= 0) {
-            assert(alias_d < static_cast<int>(target_info->dims.size()));
-            assert(!target_info->dims[alias_d].stride.defined());
-            target_info->dims[alias_d].stride = info.dims[d].stride;
-          }
+
+        // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
+        expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
+        if (sym != op->sym) {
+          body = crop_buffer::make(op->sym, sym, dims_bounds(op->dims), std::move(body));
         }
+        stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+        // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
+        result = make_buffer::make(sym, expr(), elem_size, op->dims, std::move(result));
+
+        for (auto& i : target_info->aliases) {
+          i.assume_in_bounds = i.assume_in_bounds && alias.assume_in_bounds;
+        }
+
+        if (elem_size.defined()) {
+          result = block::make({check::make(elem_size == op->elem_size), result});
+        }
+
+        // If we aliased the source and destination of a copy with no padding, the copy can be removed.
+        result = remove_copy(result, op->sym, target_var);
+
+        set_result(std::move(result));
+        return;
       }
-
-      // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
-      expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      if (sym != op->sym) {
-        body = crop_buffer::make(op->sym, sym, dims_bounds(op->dims), std::move(body));
-      }
-      stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
-      // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
-      result = make_buffer::make(sym, expr(), elem_size, op->dims, std::move(result));
-
-      for (auto& i : target_info->aliases) {
-        i.assume_in_bounds = i.assume_in_bounds && alias.assume_in_bounds;
-      }
-
-      if (elem_size.defined()) {
-        result = block::make({check::make(elem_size == op->elem_size), result});
-      }
-
-      // If we aliased the source and destination of a copy with no padding, the copy can be removed.
-      result = remove_copy(result, op->sym, target_var);
-
-      set_result(std::move(result));
-      return;
     }
     if (!body.same_as(op->body)) {
       if (info.shared_alloc_sym.defined()) {
@@ -573,6 +580,7 @@ public:
       var out = op->outputs[0];
       std::optional<buffer_info>& input_info = buffers[in];
       std::optional<buffer_info>& output_info = buffers[out];
+      if (output_info) output_info->producers++;
       if (input_info && output_info) {
         alias_info fwd;
         fwd.target = out;
@@ -596,6 +604,7 @@ public:
   void alias_copy_dst(const copy_stmt* op) {
     scoped_trace trace("alias_copy_dst");
     std::optional<buffer_info>& info = buffers[op->dst];
+    if (info) info->producers++;
     if (!info || info->is_output) {
       // We didn't allocate the dst.
       return;
@@ -737,6 +746,7 @@ public:
       } else {
         old_info->dims = std::move(info->dims);
         old_info->elem_size = std::move(info->elem_size);
+        old_info->producers += info->producers;
       }
       if (info->shared_alloc_sym.defined()) {
         assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);

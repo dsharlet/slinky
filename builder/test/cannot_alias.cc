@@ -543,7 +543,6 @@ TEST_P(multiple_uses, cannot_alias_output) {
 }
 
 TEST(reused_in_loop, cannot_alias) {
-  // This test verifies that we don't compute 
   // Make the pipeline
   node_context ctx;
 
@@ -611,6 +610,59 @@ TEST(reused_in_loop, cannot_alias) {
 
     for (int y = 0; y < H; ++y) {
       ASSERT_EQ(in_buf(x, y) - sum_in_y_1, out_buf(x, y));
+    }
+  }
+}
+
+TEST(multiple_producers, cannot_alias) {
+  // Make the pipeline
+  node_context ctx;
+
+  // This pipeline contains a concatenate of two stages, followed by a consumer. It was tempting for the copy aliaser
+  // to alias the concatenate buffer to one of the producers for it, but this is not correct without being able to alias
+  // both of the producers.
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+
+  auto a = buffer_expr::make(ctx, "a", 2, sizeof(short));
+  auto b = buffer_expr::make(ctx, "b", 2, sizeof(short));
+  auto c = buffer_expr::make(ctx, "c", 2, sizeof(short));
+  auto d = buffer_expr::make(ctx, "d", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func in1_a = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{a, {x, y}}});
+  func in2_b = func::make(add_1<short>, {{in2, {point(x), point(y)}}}, {{b, {x, y}}});
+
+  func concat =
+      func::make_concat({a, b}, {c, {x, y}}, 1, {0, in1->dim(1).extent(), in1->dim(1).extent() + in2->dim(1).extent()});
+
+  func c_d = func::make(add_1<short>, {{c, {point(x), point(y)}}}, {{d, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {d});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 5;
+  buffer<short, 2> in1_buf({W, H});
+  buffer<short, 2> in2_buf({W, H});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 2> d_buf({W, H * 2});
+  d_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&d_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(d_buf(x, y), in1_buf(x, y) + 2);
+      ASSERT_EQ(d_buf(x, y + H), in2_buf(x, y) + 2);
     }
   }
 }
