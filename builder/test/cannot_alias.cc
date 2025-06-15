@@ -633,7 +633,7 @@ TEST(multiple_producers, cannot_alias) {
   var y(ctx, "y");
 
   func in1_a = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{a, {x, y}}});
-  func in2_b = func::make(add_1<short>, {{in2, {point(x), point(y)}}}, {{b, {x, y}}});
+  func in2_b = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{b, {x, y}}});
 
   func concat =
       func::make_concat({a, b}, {c, {x, y}}, 1, {0, in1->dim(1).extent(), in1->dim(1).extent() + in2->dim(1).extent()});
@@ -662,7 +662,7 @@ TEST(multiple_producers, cannot_alias) {
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(d_buf(x, y), in1_buf(x, y) + 2);
-      ASSERT_EQ(d_buf(x, y + H), in2_buf(x, y) + 2);
+      ASSERT_EQ(d_buf(x, y + H), in2_buf(x, y) * 2 + 1);
     }
   }
 }
