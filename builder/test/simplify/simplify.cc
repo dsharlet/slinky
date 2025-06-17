@@ -815,6 +815,24 @@ TEST(simplify, slice_of_const_buffer) {
           matches(constant_buffer::make(b3, sliced_buf, body)));
     }
   }
+
+  {
+    // Test that the optimization respects variable substition.
+    slinky::dim dims[2] = {{0, 0, 1}, {0, 2, 1}};
+    raw_buffer_ptr constant_buf = raw_buffer::make(2, 1, dims);
+    fill(*constant_buf);
+
+    raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
+    sliced_buf->slice(1, 0);
+
+    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf,
+                    // No-op crop_dim gets replaced by the source buffer.
+                    crop_dim::make(b2, b1, 0, {0, 0},
+                        // slice_dim of a constant buffer gets replaced by a new constant buffer.
+                        slice_dim::make(b4, b1, 1, 0, call_stmt::make(nullptr, {b4, b2}, {}, {}))))),
+        matches(constant_buffer::make(
+            b1, constant_buf, constant_buffer::make(b4, sliced_buf, call_stmt::make(nullptr, {b4, b1}, {}, {})))));
+  }
 }
 
 TEST(simplify, crop) {

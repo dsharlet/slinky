@@ -2152,7 +2152,6 @@ public:
 
   void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
     std::vector<expr> at(op_at.size());
-    bool changed = op == nullptr;
     std::optional<buffer_info> info = buffers[op_src];
 
     while (info) {
@@ -2162,16 +2161,20 @@ public:
         }
         op_src = c->src;
         info = buffers[op_src];
+        op = nullptr;
       } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
         if (!prove_slice_unaffected_by_crop(c->dim, c->bounds, op_at)) {
           break;
         }
         op_src = c->src;
         info = buffers[op_src];
+        op = nullptr;
       } else {
         break;
       }
     }
+
+    bool changed = op == nullptr;
 
     for (index_t i = static_cast<index_t>(op_at.size()) - 1; i >= 0; --i) {
       if (op_at[i].defined()) {
@@ -2186,7 +2189,7 @@ public:
       if (cb) {
         const_raw_buffer_ptr sliced_buf = fold_slice_of_const_buffer(*cb, at);
         if (sliced_buf) {
-          set_result(constant_buffer::make(op_sym, std::move(sliced_buf), op_body));
+          set_result(mutate(constant_buffer::make(op_sym, std::move(sliced_buf), op_body)));
           return;
         }
       }
