@@ -14,10 +14,10 @@ class ref_counted {
   mutable std::atomic<int> ref_count_{0};
 
 public:
-  int ref_count() const { return ref_count_; }
-  void add_ref() const { ++ref_count_; }
+  int ref_count() const { return ref_count_.load(std::memory_order_relaxed); }
+  void add_ref() const { ref_count_.fetch_add(1, std::memory_order_relaxed); }
   void release() const {
-    if (--ref_count_ == 0) {
+    if (ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
       // This const_cast is ugly, but:
       // https://stackoverflow.com/questions/755196/deleting-a-pointer-to-const-t-const
       T::destroy(const_cast<T*>(static_cast<const T*>(this)));
