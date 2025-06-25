@@ -71,6 +71,19 @@ public:
 
   SLINKY_ALWAYS_INLINE operator T*() { return value; }
   SLINKY_ALWAYS_INLINE operator const T*() const { return value; }
+
+  // Take ownership of the value, does not change reference count.
+  SLINKY_ALWAYS_INLINE T* take() {
+    T* result = value;
+    value = nullptr;
+    return result;
+  }
+  // Assume ownership of the value, does not change the reference count.
+  SLINKY_ALWAYS_INLINE static ref_count assume(T* value) {
+    ref_count result;
+    result.value = value;
+    return result;
+  }
 };
 
 }  // namespace slinky
