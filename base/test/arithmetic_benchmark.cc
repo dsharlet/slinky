@@ -1,4 +1,5 @@
 #include <benchmark/benchmark.h>
+#include <cstdlib>
 
 #include "base/arithmetic.h"
 

@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <numeric>
 
 #include "base/test/seeded_test.h"
 #include "builder/simplify.h"

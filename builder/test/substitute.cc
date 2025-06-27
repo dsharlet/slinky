@@ -2,9 +2,12 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
+#include <cstring>
 
 #include "builder/substitute.h"
+#include "runtime/buffer.h"
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 #include "runtime/print.h"
 
 namespace slinky {

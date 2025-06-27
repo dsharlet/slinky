@@ -2,13 +2,17 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstring>
 #include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
 
+#include "base/arithmetic.h"
 #include "base/chrome_trace.h"
+#include "base/span.h"
 #include "builder/node_mutator.h"
+#include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
 

@@ -24,6 +24,7 @@
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/print.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 
