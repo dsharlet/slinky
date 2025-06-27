@@ -70,6 +70,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(min(x, y), max(x, z)), min(x, y)) ||
       apply(min(x, min(y, max(x, z))), min(x, y)) ||
       apply(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
+      apply(min(min(y, max(x, z)), max(w, z)), min(y, max(min(w, x), z))) ||
       apply(min(x, max(x, y) + may_be<0>(c1)), x, c1 >= 0) ||
       apply(min(x, max(y, x + may_be<0>(c0))), x, c0 >= 0) ||
 
@@ -188,6 +189,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
       apply(max(x, max(y, min(x, z))), max(x, y)) ||
       apply(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
+      apply(max(min(w, z), max(y, min(x, z))), max(y, min(max(w, x), z))) ||
       apply(max(x, min(y, x + may_be<0>(c0))), x, c0 <= 0) ||
       apply(max(x, min(x, y) + may_be<0>(c1)), x, c1 <= 0) ||
 
@@ -504,6 +506,12 @@ bool apply_less_rules(Fn&& apply) {
       apply(x*c0 < y*c0,
         x < y, c0 > 0,
         y < x, c0 < 0) ||
+      apply(x/c0 < c1, 
+        x < c0*c1, c0 > 0,
+        x >= c0*(c1 - 1), c0 < 0) ||
+      apply(c0 < x/c1, 
+        (c0 + 1)*c1 <= x, c1 > 0,
+        c0*c1 > x, c1 < 0) ||
 
       // The following rules are taken from
       // https://github.com/halide/Halide/blob/7636c44acc2954a7c20275618093973da6767359/src/Simplify_LT.cpp#L186-L263
@@ -609,6 +617,15 @@ bool apply_equal_rules(Fn&& apply) {
 
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
+    
+      apply(max(x, c0)/c1 == c2,
+        x/c1 == c2, c1 > 0 && c0/c1 < c2,
+        x < (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
+        false) ||
+      apply(min(x, c0)/c1 == c2,
+        x/c1 == c2, c1 > 0 && c0/c1 > c2,
+        x > (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
+        false) ||
 
       apply(max(x, c0) == max(x, c1), x >= eval(max(c0, c1)), c0 != c1) ||
       apply(min(x, c0) == min(x, c1), x <= eval(min(c0, c1)), c0 != c1) ||

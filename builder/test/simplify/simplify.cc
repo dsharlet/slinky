@@ -228,6 +228,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify((x / 5) * 5 + x % 5), matches(x));
 
   ASSERT_THAT(simplify(((x / 2) * 2 - (x % 2 + -1) / -2)), matches(x + -1));
+
+  ASSERT_THAT(simplify(max(x, 0) / 32 == 0), matches(x < 32));
 }
 
 TEST(simplify, staircase) {
