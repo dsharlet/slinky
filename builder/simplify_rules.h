@@ -547,8 +547,7 @@ bool apply_less_rules(Fn&& apply) {
       apply(min(x, y) < max(x, y), x != y) ||
       apply(max(x, y) < min(x, y), false) ||
 
-      apply(max(x, c0) < (max(x, c1) + c2), false, c2 < 0 && c0 == c1 + c2) ||
-      apply(((max(x, 0) / c3) < ((max(x, c1) / c3) + c2)), false, c1 > 0 && c2 < 0 && c3 > 0 && (c1 / c3 + c2) == 0) ||
+      apply(((max(x, c0) / may_be<1>(c3)) < ((max(x, c1) / may_be<1>(c3)) + c2)), false, c0 >= 0 && c1 >= 0 && c2 < 0 && c3 > 0 && (c1 / c3 + c2) <= c0 / c3) ||
       apply(min(x, y + may_be<0>(c0)) < max(z, y + may_be<0>(c1)), true, c0 < c1) ||
 
       // Subtract terms from both sides within a min/max.
