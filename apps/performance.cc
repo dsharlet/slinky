@@ -14,6 +14,7 @@
 
 namespace slinky {
 
+#if defined(__x86_64__)
 // Unfortunately, here in 2024 on modern OSes, the standard `memcpy` is over 10x slower than this on AMD CPUs. Over a
 // certain size, `memcpy` uses a `rep movsb` sequence, which is apparently really bad on AMD Zen:
 // https://bugs.launchpad.net/ubuntu/+source/glibc/+bug/2030515
@@ -27,6 +28,7 @@ void memcpy_workaround(void* dst, const void* src, std::size_t size) {
     src = offset_bytes_non_null(src, chunk_size);
   }
 }
+#endif
 
 // Copy from input to output.
 index_t copy_2d(const buffer<const void>& in, const buffer<void>& out) {
@@ -34,7 +36,11 @@ index_t copy_2d(const buffer<const void>& in, const buffer<void>& out) {
   void* dst = out.address_at(out.dim(0).min(), out.dim(1).min());
   std::size_t size_bytes = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+#if defined(__x86_64__)
     memcpy_workaround(dst, src, size_bytes);
+#else
+    std::memcpy(dst, src, size_bytes);
+#endif
     dst = offset_bytes_non_null(dst, out.dim(1).stride());
     src = offset_bytes_non_null(src, in.dim(1).stride());
   }
