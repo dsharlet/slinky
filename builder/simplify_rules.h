@@ -512,8 +512,8 @@ bool apply_less_rules(Fn&& apply) {
       apply(c0 < x/c1, 
         (c0 + 1)*c1 <= x, c1 > 0,
         c0*c1 > x, c1 < 0) ||
-      apply(x/may_be<1>(c3) < x/may_be<1>(c3) + c2, true, c2 > 0) ||
-      apply(x/may_be<1>(c3) < x/may_be<1>(c3) + c2, false, c2 < 0) ||
+      apply(x/may_be<1>(c3) < x/may_be<1>(c3) + c2, true, c2 > 0 && c3 > 0) ||
+      apply(x/may_be<1>(c3) < x/may_be<1>(c3) + c2, false, c2 < 0 && c3 > 0) ||
       apply((max(x, c0)/may_be<1>(c3)) < max(x, c1)/may_be<1>(c3) + c2, false, c2 < 0 && c3 > 0 && (c1/c3 + c2) <= c0/c3) ||
       apply((max(x, c0)/may_be<1>(c3)) < max(x, c1)/may_be<1>(c3) + c2, true, c2 > 0 && c3 > 0 && (c1/c3 + c2) > c0/c3) ||
       // The following rules are taken from
