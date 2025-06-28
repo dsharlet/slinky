@@ -6,9 +6,6 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
-#if defined(__x86_64__)
-#include <immintrin.h>
-#endif
 #include <iomanip>
 #include <iostream>
 
