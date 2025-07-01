@@ -100,13 +100,17 @@ public:
 
   // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
   void run_worker(predicate_ref condition);
+
+  // Enters the calling thread into the thread pool as a worker. Returns when there is no work to do.
+  void work_until_idle();
+
   // Because the above API allows adding workers to the thread pool, we might not know how many threads there will be
   // when starting up a task. This allows communicating that information.
   void expect_workers(int n) { expected_thread_count_ = n; }
 
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
-  ref_count<task> enqueue(std::size_t n, task_body t, int max_workers) override;
+  ref_count<task> enqueue(std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) override;
   void wait_for(task* t) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(function_ref<void()> t) override;
