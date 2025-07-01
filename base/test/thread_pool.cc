@@ -79,4 +79,20 @@ TEST(wait_for, barriers) {
   th.join();
 }
 
+TEST(work_until_idle, test) {
+  thread_pool_impl t(/*workers=*/0);
+  for (int n = 0; n < 100; ++n) {
+    std::atomic<int> count = 0;
+    std::atomic<int> sum = 0;
+    t.enqueue(n, [&](size_t i) {
+      count++;
+      sum += i;
+    });
+    t.work_until_idle();
+    ASSERT_EQ(count, n);
+    ASSERT_EQ(sum, sum_arithmetic_sequence(n));
+  }
+
+}
+
 }  // namespace slinky

@@ -187,6 +187,24 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
   }
 }
 
+void thread_pool_impl::work_until_idle() {
+  std::unique_lock l(mutex_);
+  int worker;
+  while (auto task = dequeue(worker)) {
+    l.unlock();
+
+    // Run the task.
+    bool completed = work_on_task(task, worker);
+
+    l.lock();
+
+    if (completed) {
+      // We completed the loop, notify the helper CV in case it is waiting for this loop to complete.
+      cv_helper_.notify_all();
+    }
+  }
+}
+
 void thread_pool_impl::atomic_call(function_ref<void()> t) {
   std::unique_lock l(mutex_);
   t();
