@@ -213,6 +213,7 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
 }
 
 ref_count<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
+  assert(n > 0);
   constexpr int max_shards = 8;
 
   // If the number of workers is less than "infinite", we assume the caller wants a single loop counter.
