@@ -88,6 +88,7 @@ bool thread_pool_impl::task_impl::all_work_started() const {
 }
 
 thread_pool_impl::thread_pool_impl(int workers, function_ref<void()> init) : stop_(false) {
+  expect_workers(workers);
   auto worker = [this, init]() {
     if (init) init();
     run_worker([this]() -> bool { return stop_; });
