@@ -111,6 +111,7 @@ public:
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
   ref_count<task> enqueue(std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) override;
+  using thread_pool::enqueue;
   void wait_for(task* t) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(function_ref<void()> t) override;
