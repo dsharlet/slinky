@@ -92,7 +92,14 @@ TEST(work_until_idle, test) {
     ASSERT_EQ(count, n);
     ASSERT_EQ(sum, sum_arithmetic_sequence(n));
   }
+}
 
+TEST(thread_count, delayed_workers) {
+  // Start a thread pool with workers that are slow to start.
+  thread_pool_impl t(/*workers=*/2, []() { std::this_thread::sleep_for(std::chrono::milliseconds(100)); });
+
+  // We should have two threads even if the workers haven't started yet.
+  ASSERT_EQ(t.thread_count(), 2);
 }
 
 }  // namespace slinky
