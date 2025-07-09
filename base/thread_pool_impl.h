@@ -9,6 +9,7 @@
 #include <limits>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "base/function_ref.h"
 #include "base/ref_count.h"
