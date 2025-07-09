@@ -25,6 +25,18 @@ struct loop_id {
   slinky::var sym() const { return var; }
 };
 
+inline bool operator==(const loop_id& a, const loop_id& b) {
+  if (!a.func) {
+    return !b.func;
+  } else if (a.func == b.func) {
+    assert(a.var.defined());
+    assert(b.var.defined());
+    return a.var == b.var;
+  } else {
+    return false;
+  }
+}
+
 // Represents a symbolic buffer in a pipeline.
 class buffer_expr : public ref_counted<buffer_expr> {
   var sym_;
