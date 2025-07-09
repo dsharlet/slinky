@@ -332,18 +332,6 @@ box_expr compute_input_bounds(
   return crop;
 }
 
-bool operator==(const loop_id& a, const loop_id& b) {
-  if (!a.func) {
-    return !b.func;
-  } else if (a.func == b.func) {
-    assert(a.var.defined());
-    assert(b.var.defined());
-    return a.var == b.var;
-  } else {
-    return false;
-  }
-}
-
 void topological_sort_impl(const func* f, std::set<const func*>& processing, std::set<const func*>& visited,
     std::vector<const func*>& order, std::map<const func*, std::vector<const func*>>& deps) {
   if (visited.count(f) > 0) {
