@@ -487,7 +487,7 @@ public:
               target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
             }
           }
-        } else if (!any_stride_defined(target_info->dims)) {
+        } else if (!any_stride_defined(target_info->dims) && !alias.is_contiguous_copy) {
           assert(info.dims.size() == alias.permutation.size());
           // The target doesn't have any strides, we might have some strides we assumed we could propagate.
           for (std::size_t d = 0; d < info.dims.size(); ++d) {

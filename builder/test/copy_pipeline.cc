@@ -12,6 +12,41 @@
 
 namespace slinky {
 
+TEST(contiguous_copy, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 0, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
+
+  var x(ctx, "x");
+  func add_one = func::make(add_1<int>, {{in, {point(x)}}}, {{intm, {x}}});
+
+  slinky::call_stmt::attributes attrs;
+  attrs.name = "memcpy";
+  func copy = func::make(
+      [](const buffer<const void>& in, const buffer<void>& out) -> index_t {
+        assert(in.size_bytes() == out.size_bytes());
+        memcpy(out.base(), in.base(), out.size_bytes());
+        return 0;
+      },
+      {{intm, {{0, 0}}}}, {{out, {}}}, attrs);
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  buffer<int, 1> in_buf({1});
+  init_random(in_buf);
+  buffer<int> out_buf;
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  ASSERT_EQ(out_buf(), in_buf(0) + 1);
+}
+
 TEST(flip_y, pipeline) {
   // Make the pipeline
   node_context ctx;
