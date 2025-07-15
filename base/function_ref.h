@@ -13,7 +13,7 @@ template <typename Ret, typename... Args>
 class function_ref<Ret(Args...)> {
   // Wrap the function object in something we can definitely call.
   template <typename F>
-  static Ret get_impl(F* fn, Args... args) {
+  static Ret get_impl(const F* fn, Args... args) {
     return (*fn)(args...);
   }
 
