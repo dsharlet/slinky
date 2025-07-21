@@ -2019,4 +2019,67 @@ stmt parallelize_tasks(const stmt& s) {
   return task_parallelizer().mutate(s);
 }
 
+namespace {
+class semaphore_cleaner : public node_mutator {
+public:
+  using node_mutator::visit;
+
+  int loop_counter = 0;
+  std::map<var, std::set<int>> semaphore_users;
+
+  void visit(const call_stmt* op) override {
+    if (op->attrs.name == "init_semaphores") {
+      semaphore_users[op->outputs[0]].insert(loop_counter);
+    }
+
+    node_mutator::visit(op);
+  }
+
+  void visit(const allocate* op) override {
+    stmt body = mutate(op->body);
+    if (semaphore_users.count(op->sym) > 0 && semaphore_users[op->sym].size() == 1) {
+      const block* maybe_block = body.as<block>();
+      if (maybe_block) {
+        const call_stmt* maybe_init = maybe_block->stmts[0].as<call_stmt>();
+        if (maybe_init && maybe_init->attrs.name == "init_semaphores") {
+          std::vector<stmt> new_block(maybe_block->stmts.begin() + 1, maybe_block->stmts.end());
+          body = block::make(new_block);
+          body = substitute(body, op->sym, expr());
+          set_result(body);
+          return;
+        }
+      }
+    }
+
+    set_result(allocate::make(op->sym, op->storage, std::move(op->elem_size), std::move(op->dims), std::move(body)));
+  }
+
+  void visit(const loop* op) override {
+    loop_counter++;
+    node_mutator::visit(op);
+    loop_counter--;
+  }
+
+  void visit(const call* op) override {
+    if (op->intrinsic == intrinsic::semaphore_wait || op->intrinsic == intrinsic::semaphore_signal) {
+      for (auto& su : semaphore_users) {
+        if (depends_on(op, su.first).buffer()) {
+          su.second.insert(loop_counter);
+        }
+      }
+      node_mutator::visit(op);
+      return;
+    } else {
+      node_mutator::visit(op);
+      return;
+    }
+  }
+};
+}  // namespace
+
+stmt cleanup_semaphores(const stmt& s) {
+  scoped_trace trace("cleanup_semaphores");
+  return semaphore_cleaner().mutate(s);
+}
+
 }  // namespace slinky
