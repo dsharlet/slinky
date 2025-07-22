@@ -48,6 +48,9 @@ stmt canonicalize_nodes(const stmt& s);
 // Find opportunities to run stmts in parallel tasks.
 stmt parallelize_tasks(const stmt& s);
 
+// Clean-up semaphores remaining after simplifications.
+stmt cleanup_semaphores(const stmt& s);
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

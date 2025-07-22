@@ -1564,6 +1564,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   // `implement_copies` adds shadowed declarations, remove them before simplifying.
   result = deshadow(result, builder.external_symbols(), ctx);
+  
+  result = cleanup_semaphores(result);
+  
   result = simplify(result);
 
   result = fuse_siblings(result);

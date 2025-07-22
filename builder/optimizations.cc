@@ -2019,4 +2019,97 @@ stmt parallelize_tasks(const stmt& s) {
   return task_parallelizer().mutate(s);
 }
 
+namespace {
+class semaphore_cleaner : public node_mutator {
+  struct alloc_info {
+    // Is this allocation semaphores?
+    bool is_semaphores = false;
+
+    // Is this allocation used asynchronously anywhere?
+    bool used_async = false;
+
+    // Depth of this allocation node.
+    int async_depth = 0;
+  };
+
+  // Each async stmt increases the depth by one. This includes loops and async
+  // nodes.
+  int async_depth = 0;
+  symbol_map<alloc_info> allocations;
+
+public:
+  using node_mutator::visit;
+
+  void visit(const call_stmt* op) override {
+    if (op->attrs.name == "init_semaphores") {
+      allocations[op->outputs[0]]->is_semaphores = true;
+    }
+
+    node_mutator::visit(op);
+  }
+
+  void visit(const allocate* op) override {
+    auto s = set_value_in_scope(allocations, op->sym, alloc_info{false, false, async_depth});
+    stmt body = mutate(op->body);
+    auto info = allocations.lookup(op->sym);
+    if (info->is_semaphores && !info->used_async) {
+      // These semaphores are not needed.
+      const block* maybe_block = body.as<block>();
+      if (maybe_block) {
+        // Remove the initialization call, because otherwise the following
+        // substitute call will fail.
+        const call_stmt* maybe_init = maybe_block->stmts[0].as<call_stmt>();
+        if (maybe_init && maybe_init->attrs.name == "init_semaphores") {
+          std::vector<stmt> new_block(maybe_block->stmts.begin() + 1, maybe_block->stmts.end());
+          body = block::make(new_block);
+          body = substitute(body, op->sym, expr());
+          set_result(std::move(body));
+          return;
+        }
+      }
+    }
+
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(allocate::make(op->sym, op->storage, std::move(op->elem_size), std::move(op->dims), std::move(body)));
+    }
+  }
+
+  void visit(const loop* op) override {
+    int op_async_depth = !is_constant(op->max_workers, 1);
+    async_depth += op_async_depth;
+    node_mutator::visit(op);
+    async_depth -= op_async_depth;
+  }
+
+  void visit(const async* op) override {
+    async_depth++;
+    node_mutator::visit(op);
+    async_depth--;
+  }
+
+  void visit(const call* op) override {
+    if (op->intrinsic == intrinsic::semaphore_wait || op->intrinsic == intrinsic::semaphore_signal) {
+      for (size_t sem_arg = 0; sem_arg < op->args.size(); sem_arg += 2) {
+        auto buffer_at = as_intrinsic(op->args[sem_arg], intrinsic::buffer_at);
+        assert(buffer_at);
+        auto var = as_variable(buffer_at->args[0]);
+        assert(var);
+        alloc_info& info = *allocations[*var];
+        info.used_async = info.used_async || info.async_depth != async_depth;
+      }
+    }
+
+    node_mutator::visit(op);
+    return;
+  }
+};
+}  // namespace
+
+stmt cleanup_semaphores(const stmt& s) {
+  scoped_trace trace("cleanup_semaphores");
+  return semaphore_cleaner().mutate(s);
+}
+
 }  // namespace slinky
