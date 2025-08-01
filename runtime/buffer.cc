@@ -57,9 +57,9 @@ std::size_t raw_buffer::elem_count() const {
   return result;
 }
 
-raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims) {
+raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims, index_t alignment) {
   const std::size_t data_size = rank == 0 || dims ? alloc_size(rank, elem_size, dims) : 0;
-  const std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank + data_size;
+  const std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank + data_size + alignment - 1;
   char* mem = reinterpret_cast<char*>(malloc(size));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
@@ -73,17 +73,18 @@ raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const c
     new (buf->dims) slinky::dim[buf->rank];
   }
   buf->base = data_size > 0 ? mem : nullptr;
+  buf->base = align_up(buf->base, alignment);
   return raw_buffer_ptr(buf, free);
 }
 
-raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
-  auto buf = make(src.rank, src.elem_size, src.dims);
+raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src, index_t alignment) {
+  auto buf = make(src.rank, src.elem_size, src.dims, alignment);
   copy(src, *buf);
   return buf;
 }
 
-raw_buffer_ptr raw_buffer::make_scalar(std::size_t elem_size, const void* value) {
-  auto buf = make(0, elem_size);
+raw_buffer_ptr raw_buffer::make_scalar(std::size_t elem_size, const void* value, index_t alignment) {
+  auto buf = make(0, elem_size, nullptr, alignment);
   memcpy(buf->base, value, elem_size);
   return buf;
 }

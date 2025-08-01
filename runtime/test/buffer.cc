@@ -117,7 +117,7 @@ TEST(raw_buffer, make_copy) {
   buffer<int, 2> src({10, 20});
   init_random(rng, src);
 
-  auto dst = raw_buffer::make_copy(src);
+  auto dst = raw_buffer::make_copy(src, /*alignment=*/4096);
   ASSERT_EQ(src.rank, dst->rank);
   ASSERT_EQ(src.dim(0).min(), dst->dim(0).min());
   ASSERT_EQ(src.dim(0).extent(), dst->dim(0).extent());
@@ -125,6 +125,7 @@ TEST(raw_buffer, make_copy) {
   ASSERT_EQ(src.dim(1).extent(), dst->dim(1).extent());
   ASSERT_EQ(src.size_bytes(), dst->size_bytes());
   ASSERT_NE(src.base(), dst->base);
+  ASSERT_EQ(align_up(dst->base, 4096), dst->base);
 
   for (int i = 0; i < dst->dim(1).extent(); ++i) {
     for (int j = 0; j < dst->dim(0).extent(); ++j) {
