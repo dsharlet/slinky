@@ -123,10 +123,12 @@ void assert_buffer_extents_are(const raw_buffer& buf, const std::vector<int>& ex
   }
 }
 
-stmt make_check(var buffer, std::vector<int> extents) {
+stmt make_check(var buffer, std::vector<int> extents, void* base = nullptr) {
   return call_stmt::make(
       [=](const call_stmt*, eval_context& ctx) -> index_t {
-        assert_buffer_extents_are(*ctx.lookup_buffer(buffer), extents);
+        const raw_buffer& buf = *ctx.lookup_buffer(buffer);
+        assert_buffer_extents_are(buf, extents);
+        assert(buf.base == base);
         return 0;
       },
       {}, {buffer}, {});
@@ -134,94 +136,146 @@ stmt make_check(var buffer, std::vector<int> extents) {
 
 TEST(evaluate, crop_dim) {
   eval_context ctx;
-  buffer<void, 2> buf({10, 20});
+  buffer<int, 2> buf({10, 20});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
-  buffer<void, 1> y_buf({3});
+  buffer<int, 1> y_buf({3});
   ctx[y] = reinterpret_cast<index_t>(&y_buf);
 
   auto buf_before = buf;
 
-  evaluate(crop_dim::make(x, x, 0, {1, 3}, make_check(x, {3, 20})), ctx);
-  evaluate(crop_dim::make(y, x, 0, {1, 3}, block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})), ctx);
-  evaluate(crop_dim::make(y, x, 0, buffer_bounds(y, 0), block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})),
+  evaluate(crop_dim::make(x, x, 0, {1, 3}, make_check(x, {3, 20}, buf.address_at(1, slinky::slice))), ctx);
+  evaluate(crop_dim::make(y, x, 0, {1, 3},
+               block::make({
+                   make_check(x, {10, 20}, buf.base()),
+                   make_check(y, {3, 20}, buf.address_at(1, slinky::slice)),
+               })),
+      ctx);
+  evaluate(crop_dim::make(y, x, 0, buffer_bounds(y, 0),
+               block::make({
+                   make_check(x, {10, 20}, buf.base()),
+                   make_check(y, {3, 20}, buf.base()),
+               })),
       ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, crop_buffer) {
   eval_context ctx;
-  buffer<void, 4> buf({10, 20, 30, 40});
+  buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
-  buffer<void, 4> y_buf({3, 4, 5, 6});
+  buffer<int, 4> y_buf({3, 4, 5, 6});
   ctx[y] = reinterpret_cast<index_t>(&y_buf);
 
   auto buf_before = buf;
 
-  evaluate(crop_buffer::make(x, x, {{1, 3}, {}, {2, 5}}, make_check(x, {3, 20, 4, 40})), ctx);
+  evaluate(
+      crop_buffer::make(x, x, {{1, 3}, {}, {2, 5}}, make_check(x, {3, 20, 4, 40}, buf.address_at(1, slinky::slice, 2))),
+      ctx);
   evaluate(crop_buffer::make(y, x, {{1, 3}, {}, {2, 5}},
-               block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {3, 20, 4, 40})})),
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {3, 20, 4, 40}, buf.address_at(1, slinky::slice, 2)),
+               })),
       ctx);
   evaluate(crop_buffer::make(y, x, {buffer_bounds(y, 0), buffer_bounds(y, 1)},
-               block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {3, 4, 30, 40})})),
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {3, 4, 30, 40}, buf.base()),
+               })),
       ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, slice_dim) {
   eval_context ctx;
-  buffer<void, 3> buf({10, 20, 30});
+  buffer<int, 3> buf({10, 20, 30});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
   auto buf_before = buf;
 
-  evaluate(slice_dim::make(x, x, 1, 2, make_check(x, {10, 30})), ctx);
-  evaluate(slice_dim::make(y, x, 1, 2, block::make({make_check(x, {10, 20, 30}), make_check(y, {10, 30})})), ctx);
+  evaluate(slice_dim::make(x, x, 1, 2, make_check(x, {10, 30}, buf.address_at(slinky::slice, 2))), ctx);
+  evaluate(slice_dim::make(y, x, 1, 2,
+               block::make({
+                   make_check(x, {10, 20, 30}, buf.base()),
+                   make_check(y, {10, 30}, buf.address_at(slinky::slice, 2)),
+               })),
+      ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, slice_buffer) {
   eval_context ctx;
-  buffer<void, 4> buf({10, 20, 30, 40});
+  buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
   auto buf_before = buf;
 
-  evaluate(slice_buffer::make(x, x, {{}, 4, {}, 2}, make_check(x, {10, 30})), ctx);
-  evaluate(
-      slice_buffer::make(y, x, {{}, 4, {}, 2}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 30})})),
+  evaluate(slice_buffer::make(x, x, {{}, 4, {}, 2}, make_check(x, {10, 30}, buf.address_at(slinky::slice, 4, slinky::slice, 2))), ctx);
+  evaluate(slice_buffer::make(y, x, {{}, 4, {}, 2},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {10, 30}, buf.address_at(slinky::slice, 4, slinky::slice, 2)),
+               })),
+      ctx);
+  evaluate(slice_buffer::make(y, x, {{}, 21, {}, 2},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {10, 30}, nullptr),
+               })),
+      ctx);
+  evaluate(slice_buffer::make(y, x, {{}, 21, {}, 42},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {10, 30}, nullptr),
+               })),
       ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, transpose) {
   eval_context ctx;
-  buffer<void, 4> buf({10, 20, 30, 40});
+  buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
   auto buf_before = buf;
 
-  evaluate(transpose::make(x, x, {0, 1}, make_check(x, {10, 20})), ctx);
-  evaluate(transpose::make(x, x, {3, 1}, make_check(x, {40, 20})), ctx);
-  evaluate(transpose::make(y, x, {0, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
-  evaluate(transpose::make(y, x, {2, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {30, 20})})), ctx);
-  evaluate(transpose::make(y, x, {0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10})), ctx);
+  evaluate(transpose::make(x, x, {0, 1}, make_check(x, {10, 20}, buf.base())), ctx);
+  evaluate(transpose::make(x, x, {3, 1}, make_check(x, {40, 20}, buf.base())), ctx);
+  evaluate(transpose::make(y, x, {0, 1},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {10, 20}, buf.base()),
+               })),
+      ctx);
+  evaluate(transpose::make(y, x, {2, 1},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {30, 20}, buf.base()),
+               })),
+      ctx);
+  evaluate(transpose::make(y, x, {0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10}, buf.base())), ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, clone_buffer) {
   eval_context ctx;
-  buffer<void, 2> buf({10, 20});
+  buffer<int, 2> buf({10, 20});
   buf.allocate();
   ctx[y] = reinterpret_cast<index_t>(&buf);
 
   auto buf_before = buf;
 
-  evaluate(clone_buffer::make(x, y, block::make({make_check(x, {10, 20}), make_check(y, {10, 20})})), ctx);
+  evaluate(clone_buffer::make(x, y,
+               block::make({
+                   make_check(x, {10, 20}, buf.base()),
+                   make_check(y, {10, 20}, buf.base()),
+               })),
+      ctx);
   ASSERT_EQ(buf_before, buf);
 }
 

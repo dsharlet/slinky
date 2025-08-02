@@ -750,7 +750,7 @@ public:
 
     for (std::size_t d = 0; d < src_buf->rank; ++d) {
       if (d < op->at.size() && op->at[d].defined()) {
-        if (src_buf->base) {
+        if (sym_buf.base) {
           index_t at_d = eval(op->at[d]);
           if (src_buf->dims[d].contains(at_d)) {
             sym_buf.base = offset_bytes_non_null(sym_buf.base, src_buf->dims[d].flat_offset_bytes(at_d));
