@@ -39,8 +39,9 @@ TEST_P(may_alias, transpose_input) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
-  func transposed = func::make_copy({in, {point(y), point(x)}}, {in_t, {x, y}});
+  func transposed = func::make_copy({in, {point(y), point(x)}}, {in_t, {x, y}}, eval_ctx.copy);
   func add1 = func::make(
       [=](const buffer<const int>& a, const buffer<int>& b) -> index_t {
         if (!may_alias && a.dim(0).stride() != 4) return 1;
@@ -62,7 +63,6 @@ TEST_P(may_alias, transpose_input) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
 
   for (int y = 0; y < H; ++y) {
@@ -97,6 +97,7 @@ TEST_P(may_alias, transpose_output) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   func add1 = func::make(
       [=](const buffer<const int>& a, const buffer<int>& b) -> index_t {
@@ -104,7 +105,7 @@ TEST_P(may_alias, transpose_output) {
         return add_1<int>(a, b);
       },
       {{{in, {point(x), point(y)}}}}, {{{out_t, {x, y}}}}, call_stmt::attributes{.name = "add1"});
-  func transposed = func::make_copy({out_t, {point(y), point(x)}}, {out, {x, y}});
+  func transposed = func::make_copy({out_t, {point(y), point(x)}}, {out, {x, y}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -120,7 +121,6 @@ TEST_P(may_alias, transpose_output) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
 
   for (int y = 0; y < H; ++y) {
@@ -143,6 +143,7 @@ TEST_P(may_alias, aligned) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   intm->dim(0).bounds = align(intm->dim(0).bounds, 2);
 
@@ -159,7 +160,7 @@ TEST_P(may_alias, aligned) {
   out->dim(1).fold_factor = dim::unfolded;
 
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
+  func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -175,7 +176,6 @@ TEST_P(may_alias, aligned) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -200,6 +200,7 @@ TEST_P(may_alias, same_bounds) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to two outputs. We can only alias in this case if we know the two outputs
   // have the same bounds.
@@ -217,8 +218,8 @@ TEST_P(may_alias, same_bounds) {
   out2->dim(1).fold_factor = dim::unfolded;
 
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func copied1 = func::make_copy({intm, {point(x), point(y)}}, {out1, {x, y}});
-  func copied2 = func::make_copy({intm, {point(x), point(y)}}, {out2, {x, y}});
+  func copied1 = func::make_copy({intm, {point(x), point(y)}}, {out1, {x, y}}, eval_ctx.copy);
+  func copied2 = func::make_copy({intm, {point(x), point(y)}}, {out2, {x, y}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out1, out2});
 
@@ -236,7 +237,6 @@ TEST_P(may_alias, same_bounds) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -262,6 +262,7 @@ TEST_P(may_alias, unfolded) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to the output, and we want to fold the intermediate buffer and alias it to
   // the output. We can only alias it if we know the output is unfolded.
@@ -275,7 +276,7 @@ TEST_P(may_alias, unfolded) {
   out->dim(0).fold_factor = dim::unfolded;
 
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
+  func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}}, eval_ctx.copy);
 
   // The fold factor must be > 1, so we can't assume that the intermediate fold factor divides the output fold factor.
   copied.loops({{y, 2}});
@@ -294,7 +295,6 @@ TEST_P(may_alias, unfolded) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -379,12 +379,13 @@ TEST(split_output, cannot_alias) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // This pipeline is tempted to alias the intermediate to the output, but it isn't safe because we don't know it's big
   // enough.
   func add = func::make(add_1<short>, {{{in, {point(x), point(y)}}}}, {{{intm, {x, y}}}});
-  func split1 = func::make_copy({intm, {point(x), point(y)}}, {out1, {x, y}});
-  func split2 = func::make_copy({intm, {point(x), point(y) + out1->dim(1).extent()}}, {out2, {x, y}});
+  func split1 = func::make_copy({intm, {point(x), point(y)}}, {out1, {x, y}}, eval_ctx.copy);
+  func split2 = func::make_copy({intm, {point(x), point(y) + out1->dim(1).extent()}}, {out2, {x, y}}, eval_ctx.copy);
   pipeline p = build_pipeline(ctx, {in}, {out1, out2});
 
   // Run the pipeline.
@@ -402,7 +403,6 @@ TEST(split_output, cannot_alias) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H1; ++y) {

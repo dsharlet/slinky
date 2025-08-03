@@ -91,17 +91,22 @@ func::func(
   add_this_to_buffers();
 }
 
-func::func(input src, output dst, input pad) : func(nullptr, {std::move(src), std::move(pad)}, {std::move(dst)}) {
-  is_padded_copy_ = true;
+func::func(copy_stmt::callable impl, std::vector<input> src, output dst)
+    : copy_impl_(std::move(impl)), inputs_(std::move(src)), outputs_({std::move(dst)}) {
+  add_this_to_buffers();
 }
 
-func::func(std::vector<input> src, output dst) : func(nullptr, std::move(src), {std::move(dst)}) {}
+func::func(copy_stmt::callable impl, input src, output dst, input pad)
+    : func(std::move(impl), {std::move(src), std::move(pad)}, std::move(dst)) {
+  is_padded_copy_ = true;
+}
 
 func::func(func&& m) noexcept { *this = std::move(m); }
 func& func::operator=(func&& m) noexcept {
   if (this == &m) return *this;
   m.remove_this_from_buffers();
   impl_ = std::move(m.impl_);
+  copy_impl_ = std::move(m.copy_impl_);
   inputs_ = std::move(m.inputs_);
   outputs_ = std::move(m.outputs_);
   loops_ = std::move(m.loops_);
@@ -128,7 +133,7 @@ void func::remove_this_from_buffers() {
 
 namespace {
 
-stmt make_copy_func(const func::input& src, const func::output& dst, var padding = var()) {
+stmt make_copy_func(copy_stmt::callable impl, const func::input& src, const func::output& dst, var padding = var()) {
   std::vector<expr> src_x;
   std::vector<var> dst_x;
   for (const interval_expr& i : src.bounds) {
@@ -138,7 +143,7 @@ stmt make_copy_func(const func::input& src, const func::output& dst, var padding
   for (const var& i : dst.dims) {
     dst_x.push_back(i);
   }
-  stmt copy = copy_stmt::make(src.sym(), src_x, dst.sym(), dst_x, padding);
+  stmt copy = copy_stmt::make(impl, src.sym(), src_x, dst.sym(), dst_x, padding);
   if (!src.input_crop.empty()) {
     copy = crop_buffer::make(src.sym(), src.sym(), src.input_crop, copy);
   }
@@ -167,18 +172,18 @@ stmt func::make_call() const {
   } else if (is_padded_copy_) {
     assert(inputs_.size() == 2);
     assert(outputs_.size() == 1);
-    return make_copy_func(inputs_[0], outputs_[0], inputs_[1].sym());
+    return make_copy_func(copy_impl_, inputs_[0], outputs_[0], inputs_[1].sym());
   } else {
     std::vector<stmt> copies;
     assert(outputs_.size() == 1);
     for (const func::input& input : inputs_) {
-      copies.push_back(make_copy_func(input, outputs_[0]));
+      copies.push_back(make_copy_func(copy_impl_, input, outputs_[0]));
     }
     return block::make(std::move(copies));
   }
 }
 
-func func::make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds) {
+func func::make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds, copy_stmt::callable impl) {
   assert(src.size() + 1 == bounds.size());
   std::size_t rank = dst.buffer->rank();
 
@@ -207,10 +212,10 @@ func func::make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t
 
     inputs.push_back(std::move(input));
   }
-  return make_copy(std::move(inputs), std::move(dst));
+  return make_copy(std::move(inputs), std::move(dst), std::move(impl));
 }
 
-func func::make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim) {
+func func::make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, copy_stmt::callable impl) {
   std::size_t rank = dst.buffer->rank();
   assert(dst.dims.size() == rank);
   assert(rank > 0);
@@ -236,7 +241,7 @@ func func::make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t 
   }
   // Also apply the slice to the output dimensions.
   dst.dims.erase(dst.dims.begin() + dim);
-  return make_copy(std::move(inputs), std::move(dst));
+  return make_copy(std::move(inputs), std::move(dst), std::move(impl));
 }
 
 namespace {
@@ -539,7 +544,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
       var src = subs[op->src] ? *subs[op->src] : op->src;
       var pad = subs[op->pad] ? *subs[op->pad] : op->pad;
       if (src != op->src || pad != op->pad) {
-        set_result(copy_stmt::make(src, op->src_x, op->dst, op->dst_x, pad));
+        set_result(copy_stmt::make(op->impl, src, op->src_x, op->dst, op->dst_x, pad));
       } else {
         set_result(op);
       }

@@ -42,8 +42,9 @@ TEST_P(stencil, x_dx) {
 
   var x(ctx, "x");
   var dx(ctx, "dx");
+  test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x * S + dx * D)}}, {out, {x, dx}});
+  func copy = func::make_copy({in, {point(x * S + dx * D)}}, {out, {x, dx}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -63,7 +64,7 @@ TEST_P(stencil, x_dx) {
       // Not having span(std::initializer_list<T>) is unfortunate.
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
-      test_context eval_ctx;
+      eval_ctx.copy_calls = 0;
       p.evaluate(inputs, outputs, eval_ctx);
 
       for (int n = min_n; n < min_n + N; ++n) {
@@ -90,8 +91,9 @@ TEST_P(stencil, dx_x) {
 
   var x(ctx, "x");
   var dx(ctx, "dx");
+  test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x * S + dx * D)}}, {out, {dx, x}});
+  func copy = func::make_copy({in, {point(x * S + dx * D)}}, {out, {dx, x}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -111,7 +113,7 @@ TEST_P(stencil, dx_x) {
       // Not having span(std::initializer_list<T>) is unfortunate.
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
-      test_context eval_ctx;
+      eval_ctx.copy_calls = 0;
       p.evaluate(inputs, outputs, eval_ctx);
 
       for (int n = min_n; n < min_n + N; ++n) {
@@ -140,8 +142,9 @@ TEST_P(stencil, x_y_dx_dy) {
   var y(ctx, "y");
   var dx(ctx, "dx");
   var dy(ctx, "dy");
+  test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, y, dx, dy}});
+  func copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, y, dx, dy}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -163,7 +166,7 @@ TEST_P(stencil, x_y_dx_dy) {
           // Not having span(std::initializer_list<T>) is unfortunate.
           const raw_buffer* inputs[] = {&in_buf};
           const raw_buffer* outputs[] = {&out_buf};
-          test_context eval_ctx;
+          eval_ctx.copy_calls = 0;
           p.evaluate(inputs, outputs, eval_ctx);
 
           for (int y = min_y; y < min_y + H; ++y) {
@@ -198,8 +201,9 @@ TEST_P(stencil, x_dx_y_dy) {
   var y(ctx, "y");
   var dx(ctx, "dx");
   var dy(ctx, "dy");
+  test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, dx, y, dy}});
+  func copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, dx, y, dy}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -222,7 +226,7 @@ TEST_P(stencil, x_dx_y_dy) {
           // Not having span(std::initializer_list<T>) is unfortunate.
           const raw_buffer* inputs[] = {&in_buf};
           const raw_buffer* outputs[] = {&out_buf};
-          test_context eval_ctx;
+          eval_ctx.copy_calls = 0;
           p.evaluate(inputs, outputs, eval_ctx);
 
           for (int y = min_y; y < min_y + H; ++y) {

@@ -91,18 +91,18 @@ TEST(depends_on, basic) {
 }
 
 TEST(depends_on, copy) {
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x),
+  ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z}, y, {z}, {}), x),
       (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, w), x),
+  ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z}, y, {z}, w), x),
       (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true, .buffer_bounds = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y),
+  ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z}, y, {z}, {}), y),
       (depends_on_result{.var = true, .buffer_dst = true, .buffer_dims = true, .buffer_bounds = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, w), y),
+  ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z}, y, {z}, w), y),
       (depends_on_result{.var = true, .buffer_dst = true, .buffer_dims = true, .buffer_bounds = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, w), w),
+  ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z}, y, {z}, w), w),
       (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true}));
-    ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
+    ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
+  ASSERT_EQ(depends_on(copy_stmt::make(nullptr, x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
 
 TEST(depends_on, is_pure) {
@@ -146,8 +146,8 @@ TEST(find_dependencies, basic) {
   ASSERT_THAT(find_dependencies(crop_dim::make(x, y, 0, {z, z}, call_stmt::make(nullptr, {w}, {u}, {}))),
       testing::ElementsAre(y, z, w, u));
   ASSERT_THAT(find_dependencies(block::make({check::make(x), check::make(y)})), testing::ElementsAre(x, y));
-  ASSERT_THAT(find_dependencies(copy_stmt::make(x, {w}, y, {w}, z)), testing::ElementsAre(x, y, z));
-  ASSERT_THAT(find_dependencies(copy_stmt::make(x, {w + u}, y, {w}, var())), testing::ElementsAre(x, y, u));
+  ASSERT_THAT(find_dependencies(copy_stmt::make(nullptr, x, {w}, y, {w}, z)), testing::ElementsAre(x, y, z));
+  ASSERT_THAT(find_dependencies(copy_stmt::make(nullptr, x, {w + u}, y, {w}, var())), testing::ElementsAre(x, y, u));
 }
 
 }  // namespace slinky

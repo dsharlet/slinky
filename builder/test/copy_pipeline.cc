@@ -139,6 +139,7 @@ TEST_P(padded_copy, pipeline) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func padding_func;
@@ -156,7 +157,7 @@ TEST_P(padded_copy, pipeline) {
   }
   func crop = func::make_copy(
       {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
-      {padded_intm, {x, y}}, {padding, {point(x), point(y)}});
+      {padded_intm, {x, y}}, {padding, {point(x), point(y)}}, eval_ctx.copy);
   func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (split_y > 0) {
@@ -182,7 +183,6 @@ TEST_P(padded_copy, pipeline) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -232,6 +232,7 @@ TEST_P(copy_sequence, pipeline) {
   out->dim(0).fold_factor = dim::unfolded;
 
   var x(ctx, "x");
+  test_context eval_ctx;
 
   const int N = 32;
 
@@ -244,9 +245,9 @@ TEST_P(copy_sequence, pipeline) {
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
       return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}},
-          {buffer_expr::make_scalar<char>(ctx, "padding", stage)});
+          {buffer_expr::make_scalar<char>(ctx, "padding", stage)}, eval_ctx.copy);
     } else {
-      return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
+      return func::make_copy({src, {point(x + 1)}}, {dst, {x}}, eval_ctx.copy);
     }
   };
 
@@ -270,7 +271,6 @@ TEST_P(copy_sequence, pipeline) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int n = 0; n < N; ++n) {
@@ -324,10 +324,11 @@ TEST_P(copied_output, pipeline) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func stencil = func::make(sum3x3<short>, {{in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm, {x, y}}});
-  func copied = func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}}, {out, {x, y}});
+  func copied = func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}}, {out, {x, y}}, eval_ctx.copy);
 
   switch (schedule) {
   case 0: break;
@@ -353,7 +354,6 @@ TEST_P(copied_output, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -399,9 +399,10 @@ TEST_P(copied_input, pipeline) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-  func copied = func::make_copy({in, {point(x + offset_x), point(y + offset_y)}}, {intm, {x, y}});
+  func copied = func::make_copy({in, {point(x + offset_x), point(y + offset_y)}}, {intm, {x, y}}, eval_ctx.copy);
   func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
   switch (schedule) {
@@ -428,7 +429,6 @@ TEST_P(copied_input, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -470,12 +470,13 @@ TEST_P(concatenated_output, pipeline) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
   func concatenated =
-      func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
+      func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -494,7 +495,6 @@ TEST_P(concatenated_output, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H1 + H2; ++y) {
@@ -542,11 +542,12 @@ TEST_P(transposed_output, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
   func transposed =
-      func::make_copy({intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}});
+      func::make_copy({intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -563,7 +564,6 @@ TEST_P(transposed_output, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -596,6 +596,7 @@ TEST(stacked_output, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   // If we want to alias intermediate buffer to the output buffer,
   // we need to tell aliaser that output is unfolded and it's safe to alias.
@@ -606,7 +607,7 @@ TEST(stacked_output, pipeline) {
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-  func stacked = func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
+  func stacked = func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
@@ -624,7 +625,6 @@ TEST(stacked_output, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -724,6 +724,7 @@ TEST_P(broadcasted_elementwise, internal) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   func f = func::make(add_1<int>, {{in2, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.name = "f"});
 
@@ -732,7 +733,7 @@ TEST_P(broadcasted_elementwise, internal) {
       select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
       select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
   };
-  func broadcast = func::make_copy({intm, bounds}, {intm_broadcasted, {x, y}});
+  func broadcast = func::make_copy({intm, bounds}, {intm_broadcasted, {x, y}}, eval_ctx.copy);
   func g = func::make(subtract<int>, {{in1, {point(x), point(y)}}, {intm_broadcasted, {point(x), point(y)}}},
       {{out, {x, y}}}, call_stmt::attributes{.name = "g"});
 
@@ -756,7 +757,6 @@ TEST_P(broadcasted_elementwise, internal) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -873,10 +873,11 @@ TEST_P(constrained_transpose, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add_in = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm1, {x, y, z}}}});
-  func transposed = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}});
+  func transposed = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}}, eval_ctx.copy);
   func add_out = func::make(add_1<short>, {{intm2, {point(x), point(y), point(z)}}}, {{{out, {x, y, z}}}});
 
   if (std::get<3>(GetParam())) {
@@ -899,7 +900,6 @@ TEST_P(constrained_transpose, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {

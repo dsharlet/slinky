@@ -35,9 +35,10 @@ public:
   memory_info heap;
   int copy_calls = 0;
   int copy_elements = 0;
-  int pad_calls = 0;
 
   eval_config config;
+
+  copy_stmt::callable copy;
 
   test_context();
 };

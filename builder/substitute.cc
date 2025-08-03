@@ -278,6 +278,12 @@ public:
     if (!try_match(cs->dst, op->dst)) return;
     if (!try_match(cs->dst_x, op->dst_x)) return;
     if (!try_match(cs->pad, op->pad)) return;
+    if (cs->impl && op->impl) {
+      // If std::function-s are defined we can't compare the functions, compare the pointers instead.
+      if (!try_match(cs, op)) return;
+    } else {
+      if (!try_match(!cs->impl, !op->impl)) return;
+    }
   }
 
   void visit(const allocate* op) override {
@@ -740,7 +746,7 @@ void substitutor::visit(const copy_stmt* op) {
   }
   exit_decls(decls_entered);
   if (changed || src != op->src || dst != op->dst || pad != op->pad) {
-    set_result(copy_stmt::make(src, std::move(src_x), dst, std::move(dst_x), pad));
+    set_result(copy_stmt::make(op->impl, src, std::move(src_x), dst, std::move(dst_x), pad));
   } else {
     set_result(op);
   }
