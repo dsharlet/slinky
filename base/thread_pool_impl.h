@@ -3,17 +3,16 @@
 
 #include <atomic>
 #include <cassert>
-#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <limits>
-#include <mutex>
 #include <thread>
 #include <vector>
 
 #include "base/function_ref.h"
 #include "base/ref_count.h"
 #include "base/thread_pool.h"
+#include "base/thread_synchronization.h"
 
 namespace slinky {
 
@@ -78,16 +77,16 @@ private:
   std::atomic<bool> stop_;
 
   std::deque<ref_count<task_impl>> task_queue_;
-  std::mutex mutex_;
+  mutex mutex_;
   // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
   // - cv_helper_ is waited on by threads that are helping the worker threads while waiting for a condition.
   // - cv_worker_ is waited on by worker threads.
   // Enqueuing a task wakes up a thread from each condition variable.
   // cv_helper_ is only notified when the state of a condition may change (a task completes, or an `atomic_call` runs).
-  std::condition_variable cv_helper_;
-  std::condition_variable cv_worker_;
+  condition_variable cv_helper_;
+  condition_variable cv_worker_;
 
-  void wait_for(predicate_ref condition, std::condition_variable& cv);
+  void wait_for(predicate_ref condition, condition_variable& cv);
 
   ref_count<task_impl> dequeue(int& worker);
 
