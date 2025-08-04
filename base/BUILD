@@ -42,6 +42,7 @@ cc_library(
         "function_ref.h",
         "ref_count.h",
         "thread_pool_impl.h",
+        "thread_synchronization.h",
         "util.h"
     ],
     deps = [":thread_pool"],
