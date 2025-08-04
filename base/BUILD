@@ -35,6 +35,11 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+config_setting(
+    name = "use_absl_synchronization",
+    define_values = {"slinky_use_absl_synchronization": "true"},
+)
+
 cc_library(
     name = "thread_pool_impl",
     srcs = ["thread_pool_impl.cc"],
@@ -45,7 +50,14 @@ cc_library(
         "thread_synchronization.h",
         "util.h"
     ],
-    deps = [":thread_pool"],
+    defines = select({
+        ":use_absl_synchronization": ["SLINKY_USE_ABSL_SYNCHRONIZATION"],
+        "//conditions:default": [],
+    }),
+    deps = [":thread_pool"] + select({
+        ":use_absl_synchronization": ["@abseil-cpp//absl/synchronization"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 
