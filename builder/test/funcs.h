@@ -25,7 +25,7 @@ void init_random(buffer<T, N>& x) {
 // Copy from input to output.
 // TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
-index_t copy_2d(const buffer<const T>& in, const buffer<T>& out) {
+index_t opaque_copy(const buffer<const T>& in, const buffer<T>& out) {
   copy(in, out);
   return 0;
 }

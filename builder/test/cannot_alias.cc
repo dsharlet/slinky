@@ -688,7 +688,7 @@ TEST(cannot_alias, padded_constant) {
 
   func crop =
       func::make_copy({in, {point(x), point(y)}, in->bounds()}, {padded_in, {x, y}}, {padding, {point(x), point(y)}});
-  func copy_out = func::make(copy_2d<char>, {{padded_in, {point(x), point(y)}}}, {{out, {x, y}}});
+  func copy_out = func::make(opaque_copy<char>, {{padded_in, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -713,6 +713,81 @@ TEST(cannot_alias, padded_constant) {
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   ASSERT_EQ(eval_ctx.copy_calls, 1);
+}
+
+class constrained_stencil : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(alias_split, constrained_stencil, testing::Values(1, 5));
+
+TEST_P(constrained_stencil, may_alias) {
+  const int S = GetParam();
+  const int D = 1;
+  const int K = 5;
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  in->dim(0).fold_factor = dim::unfolded;
+
+  auto in_copy = buffer_expr::make(ctx, "in_copy", 1, sizeof(short));
+  auto stencil = buffer_expr::make(ctx, "stencil", 2, sizeof(short));
+
+  stencil->dim(0).stride = sizeof(short);
+  stencil->dim(1).stride = sizeof(short) * S;
+
+  var x(ctx, "x");
+  var dx(ctx, "dx");
+
+  // This test computes the following stencil operation, in this case a convolution with a kernel of 1s:
+  //
+  //  for i in [0, N):
+  //    for k in [0, K):
+  //      out[i] += in[i * S + k * D]
+  //
+  // Using the following approach:
+  // 1. Make a copy of the input such that stencil(x, dx) = in(x * S + dx * D)
+  // 2. Compute a reduction of the dx dimension
+  //
+  // We expect slinky to alias the copy.
+  func pre_copy = func::make(opaque_copy<short>, {{in, {point(x)}}}, {{in_copy, {x}}});
+  func stencil_copy = func::make_copy({in_copy, {point(x * S + dx * D)}}, {stencil, {dx, x}});
+  func post_copy = func::make(opaque_copy<short>, {{stencil, {point(dx), point(x)}}}, {{out, {dx, x}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+
+  const int N = 10;
+
+  buffer<short, 2> out_buf({K, N});
+  out_buf.allocate();
+
+  buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
+  init_random(in_buf);
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int n = 0; n < N; ++n) {
+    for (int k = 0; k < K; ++k) {
+      ASSERT_EQ(out_buf(k, n), in_buf(n * S + k * D));
+    }
+  }
+
+  if (S == 1) {
+    // When S is 1, both stencil dimensions can be aliased without violating the stride constraint for either dimension.
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
+  }
 }
 
 }  // namespace slinky
