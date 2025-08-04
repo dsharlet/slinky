@@ -649,11 +649,11 @@ const buffer<NewT>& raw_buffer::cast() const {
 }
 
 // Copy the contents of `src` to `dst`.
-// If `padding` is nullptr, every index of `dst` must be in bounds of `src`.
-// If `padding` is not nullptr, `dst` will be copied from `src` if it is in bounds, otherwise it will be copied from
+// If `padding` is `no_padding, every index of `dst` must be in bounds of `src`.
+// If `padding` is not `no_padding`, `dst` will be copied from `src` if it is in bounds, otherwise it will be copied from
 // `padding`, which must be in bounds.
-void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer* pad = nullptr);
-inline void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad) { copy(src, dst, &pad); }
+static constexpr raw_buffer no_padding = {};
+void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad = no_padding);
 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
 void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);

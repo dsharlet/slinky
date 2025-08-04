@@ -29,8 +29,9 @@ TEST(trivial_scalar, copy) {
   auto out = buffer_expr::make(ctx, "out", 0, sizeof(int));
 
   var x(ctx, "x");
+  test_context eval_ctx;
 
-  func copy = func::make_copy({in, {}}, {out, {}});
+  func copy = func::make_copy({in, {}}, {out, {}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -43,7 +44,6 @@ TEST(trivial_scalar, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   ASSERT_EQ(out_buf(), in_buf());
@@ -59,11 +59,12 @@ TEST(trivial_1d, copy) {
   auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
   var x(ctx, "x");
+  test_context eval_ctx;
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
   func copy =
-      func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, {buffer_expr::make_scalar<int>(ctx, "padding", 0)});
+      func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, {buffer_expr::make_scalar<int>(ctx, "padding", 0)}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -79,7 +80,7 @@ TEST(trivial_1d, copy) {
 
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
+    eval_ctx.copy_calls = 0;
     p.evaluate(inputs, outputs, eval_ctx);
 
     for (int x = 0; x < W; ++x) {
@@ -104,10 +105,11 @@ TEST(trivial_2d, copy) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, {pad, {point(x), point(y)}});
+  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, {pad, {point(x), point(y)}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in, pad}, {out});
 
@@ -132,7 +134,7 @@ TEST(trivial_2d, copy) {
 
       const raw_buffer* inputs[] = {&in_buf, &pad_buf};
       const raw_buffer* outputs[] = {&out_buf};
-      test_context eval_ctx;
+      eval_ctx.copy_calls = 0;
       p.evaluate(inputs, outputs, eval_ctx);
 
       for (int y = 0; y < H; ++y) {
@@ -160,8 +162,9 @@ TEST(trivial_3d, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x), point(y), point(z)}}, {out, {x, y, z}});
+  func copy = func::make_copy({in, {point(x), point(y), point(z)}}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -176,7 +179,6 @@ TEST(trivial_3d, copy) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -199,12 +201,13 @@ TEST(padded, copy) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   int padding_x = 3;
   int padding_y = 2;
 
   func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}},
-      {buffer_expr::make_scalar<int>(ctx, "padding", 0)});
+      {buffer_expr::make_scalar<int>(ctx, "padding", 0)}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -219,7 +222,6 @@ TEST(padded, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H + padding_y * 2; ++y) {
@@ -244,13 +246,14 @@ TEST(custom_pad, copy) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
   const int x_min = 1;
   const int x_max = 8;
   const int y_min = 2;
   const int y_max = 4;
   func copy = func::make_copy({in, {point(x), point(y)}, {{x_min, x_max}, {y_min, y_max}}}, {out, {x, y}},
-      {buffer_expr::make_scalar<int>(ctx, "padding", 0)});
+      {buffer_expr::make_scalar<int>(ctx, "padding", 0)}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -265,7 +268,6 @@ TEST(custom_pad, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -289,8 +291,9 @@ TEST(flip_x, copy) {
   auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
   var x(ctx, "x");
+  test_context eval_ctx;
 
-  func flip = func::make_copy({in, {point(-x)}}, {out, {x}});
+  func flip = func::make_copy({in, {point(-x)}}, {out, {x}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -304,7 +307,6 @@ TEST(flip_x, copy) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int x = 0; x < W; ++x) {
@@ -332,8 +334,9 @@ TEST_P(flip_y, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
-  func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
+  func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}}, eval_ctx.copy);
 
   if (split > 0) {
     flip.loops({{y, split}});
@@ -353,7 +356,6 @@ TEST_P(flip_y, copy) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -384,8 +386,9 @@ TEST_P(upsample_y, copy) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
-  func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
+  func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}}, eval_ctx.copy);
 
   if (split > 0) {
     upsample.loops({{y, split}});
@@ -403,7 +406,6 @@ TEST_P(upsample_y, copy) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -433,8 +435,9 @@ TEST_P(downsample_y, copy) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
-  func downsample = func::make_copy({in, {point(x), point(y * 2)}}, {out, {x, y}});
+  func downsample = func::make_copy({in, {point(x), point(y * 2)}}, {out, {x, y}}, eval_ctx.copy);
 
   if (split > 0) {
     downsample.loops({{y, split}});
@@ -452,7 +455,6 @@ TEST_P(downsample_y, copy) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -486,8 +488,9 @@ TEST_P(transpose_test, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
-  func t = func::make_copy({in, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}});
+  func t = func::make_copy({in, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -502,7 +505,6 @@ TEST_P(transpose_test, copy) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -534,10 +536,11 @@ TEST_P(broadcast, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   box_expr bounds = {point(x), point(y), point(z)};
   bounds[broadcast_dim] = point(0);
-  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -555,7 +558,6 @@ TEST_P(broadcast, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -583,10 +585,11 @@ TEST_P(broadcast, copy_sliced) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   box_expr bounds = {point(x), point(y), point(z)};
   bounds.erase(bounds.begin() + broadcast_dim);
-  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -605,7 +608,6 @@ TEST_P(broadcast, copy_sliced) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -631,13 +633,14 @@ TEST_P(broadcast, optional) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   box_expr bounds = {
       select(in->dim(0).extent() == 1, point(in->dim(0).min()), point(x)),
       select(in->dim(1).extent() == 1, point(in->dim(1).min()), point(y)),
       select(in->dim(2).extent() == 1, point(in->dim(2).min()), point(z)),
   };
-  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -656,7 +659,6 @@ TEST_P(broadcast, optional) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -688,8 +690,9 @@ TEST_P(concatenate, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
-  func concat = func::make_concat({in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).max() + 1, out->dim(1).extent()});
+  func concat = func::make_concat({in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).max() + 1, out->dim(1).extent()}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
@@ -711,7 +714,6 @@ TEST_P(concatenate, copy) {
 
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
@@ -736,9 +738,10 @@ TEST(split, copy) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
-  func copy1 = func::make_copy({in, {slinky::point(x), slinky::point(y)}}, {out1, {x, y}});
-  func copy2 = func::make_copy({in, {slinky::point(x), slinky::point(y) + out1->dim(1).extent()}}, {out2, {x, y}});
+  func copy1 = func::make_copy({in, {slinky::point(x), slinky::point(y)}}, {out1, {x, y}}, eval_ctx.copy);
+  func copy2 = func::make_copy({in, {slinky::point(x), slinky::point(y) + out1->dim(1).extent()}}, {out2, {x, y}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out1, out2});
 
@@ -757,7 +760,6 @@ TEST(split, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H1; ++y) {
@@ -786,8 +788,9 @@ TEST(stack, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
-  func concat = func::make_stack({in1, in2}, {out, {x, y, z}});
+  func concat = func::make_stack({in1, in2}, {out, {x, y, z}}, -1, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
@@ -805,7 +808,6 @@ TEST(stack, copy) {
 
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -843,6 +845,7 @@ TEST_P(reshape, copy) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+  test_context eval_ctx;
 
   // Compute the "flat" index of the coordinates in the output.
   expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
@@ -866,7 +869,7 @@ TEST_P(reshape, copy) {
         {{in, bounds}}, {{out, {x, y, z}}});
   } else {
     // Use a slinky copy
-    copy = func::make_copy({in, bounds}, {out, {x, y, z}});
+    copy = func::make_copy({in, bounds}, {out, {x, y, z}}, eval_ctx.copy);
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -885,7 +888,6 @@ TEST_P(reshape, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   // This should have been a "flat" copy.
@@ -924,6 +926,7 @@ TEST_P(batch_reshape, copy) {
   var y(ctx, "y");
   var z(ctx, "z");
   var w(ctx, "w");
+  test_context eval_ctx;
 
   // Compute the "flat" index of the coordinates in the output.
   expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
@@ -947,7 +950,7 @@ TEST_P(batch_reshape, copy) {
         {{in, bounds}}, {{out, {x, y, z, w}}});
   } else {
     // Use a slinky copy
-    copy = func::make_copy({in, bounds}, {out, {x, y, z, w}});
+    copy = func::make_copy({in, bounds}, {out, {x, y, z, w}}, eval_ctx.copy);
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -967,7 +970,6 @@ TEST_P(batch_reshape, copy) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   // This should have been a "flat" copy.

@@ -356,12 +356,12 @@ void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
 
 }  // namespace
 
-SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer* pad) {
+SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad) {
   assert(dst.elem_size == src.elem_size);
   assert(dst.base || dst.elem_count() == 0);
   if (dst.rank == 0) {
-    assert(src.base || (pad && pad->base));
-    memcpy(dst.base, !src.base && pad ? pad->base : src.base, dst.elem_size);
+    assert(src.base || pad.base);
+    memcpy(dst.base, !src.base && pad.base ? pad.base : src.base, dst.elem_size);
     return;
   }
 
@@ -375,12 +375,12 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   internal::copy_small_n(src.dims, src.rank, src_opt.dims);
 
   // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
-  if (src_opt.rank > 0 && pad && pad->base) {
-    assert(dst_opt.elem_size == pad->elem_size);
+  if (src_opt.rank > 0 && pad.base) {
+    assert(dst_opt.elem_size == pad.elem_size);
 
-    raw_buffer pad_opt = *pad;
-    pad_opt.dims = SLINKY_ALLOCA(dim, pad->rank);
-    internal::copy_small_n(pad->dims, pad->rank, pad_opt.dims);
+    raw_buffer pad_opt = pad;
+    pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
+    internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
 
     optimize_dims(dst_opt, src_opt, pad_opt);
 

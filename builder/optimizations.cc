@@ -1171,15 +1171,16 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   call_stmt::attributes copy_attrs;
   copy_attrs.name = "copy";
   stmt result = call_stmt::make(
-      [](const call_stmt* op, const eval_context& ctx) -> index_t {
+      [impl = op->impl](const call_stmt* op, const eval_context& ctx) -> index_t {
         // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
         // don't matter. But in this case, they do...
         const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
         const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-        const raw_buffer* pad_buf = op->outputs[2].defined() ? ctx.lookup_buffer(op->outputs[2]) : nullptr;
+        const raw_buffer* pad_buf = op->outputs[2].defined() ? ctx.lookup_buffer(op->outputs[2]) : &no_padding;
         assert(src_buf);
         assert(dst_buf);
-        ctx.config->copy(*src_buf, *dst_buf, pad_buf);
+        assert(pad_buf);
+        impl(*src_buf, *dst_buf, *pad_buf);
         return 0;
       },
       {}, {op->src, dst, op->pad}, std::move(copy_attrs));

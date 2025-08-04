@@ -250,8 +250,8 @@ TEST(optimizations, deshadow_speed) {
 TEST(optimizations, canonicalize_nodes) {
   ASSERT_THAT(canonicalize_nodes(x + x), unique_node_count_is(2));
   ASSERT_THAT(canonicalize_nodes(x + y), unique_node_count_is(3));
-  ASSERT_THAT(canonicalize_nodes(
-                  block::make({copy_stmt::make(x, {z, w}, y, {z, w}, {}), copy_stmt::make(x, {z, w}, y, {z, w}, {})})),
+  ASSERT_THAT(canonicalize_nodes(block::make({copy_stmt::make(nullptr, x, {z, w}, y, {z, w}, {}),
+                  copy_stmt::make(nullptr, x, {z, w}, y, {z, w}, {})})),
       unique_node_count_is(4));
   ASSERT_THAT(
       canonicalize_nodes(block::make({call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {y}, {})})),

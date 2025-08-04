@@ -217,7 +217,7 @@ void node_mutator::visit(const copy_stmt* op) {
   if (!changed) {
     set_result(op);
   } else {
-    set_result(copy_stmt::make(op->src, std::move(src_x), op->dst, op->dst_x, op->pad));
+    set_result(copy_stmt::make(op->impl, op->src, std::move(src_x), op->dst, op->dst_x, op->pad));
   }
 }
 void node_mutator::visit(const allocate* op) {

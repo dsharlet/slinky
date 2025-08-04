@@ -165,6 +165,8 @@ public:
 
 class copy_stmt : public stmt_node<copy_stmt> {
 public:
+  using callable = std::function<void(const raw_buffer&, const raw_buffer&, const raw_buffer& pad)>;
+
   var src;
   std::vector<expr> src_x;
   var dst;
@@ -172,9 +174,13 @@ public:
   // If defined, the copy will be padded with the values from this buffer when `src` is out of bounds of `dst`.
   var pad;
 
+  // This function implements the copy operation. `slinky::copy` is always a suitable implementation of this.
+  // The implementation must only perform a copy and no other operations.
+  callable impl;
+
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad);
+  static stmt make(callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad);
 
   static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };

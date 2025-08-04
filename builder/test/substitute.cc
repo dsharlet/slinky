@@ -7,8 +7,8 @@
 #include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/expr.h"
-#include "runtime/stmt.h"
 #include "runtime/print.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 
@@ -62,11 +62,14 @@ TEST(substitute, shadowed) {
   ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(u, 3)),
       matches(slice_dim::make(x, u, 2, 0, check::make(buffer_max(u, 3) == buffer_min(x, 3)))));
 
-  ASSERT_THAT(
-      substitute(copy_stmt::make(x, {y, z}, w, {y, z}, {}), y, z), matches(copy_stmt::make(x, {y, z}, w, {y, z}, {})));
-  ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {y}, {}), y, z), matches(copy_stmt::make(x, {y}, w, {y}, {})));
-  ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {z}, {}), y, u), matches(copy_stmt::make(x, {u}, w, {z}, {})));
-  ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {z}, u), u, v), matches(copy_stmt::make(x, {y}, w, {z}, v)));
+  ASSERT_THAT(substitute(copy_stmt::make(nullptr, x, {y, z}, w, {y, z}, {}), y, z),
+      matches(copy_stmt::make(nullptr, x, {y, z}, w, {y, z}, {})));
+  ASSERT_THAT(substitute(copy_stmt::make(nullptr, x, {y}, w, {y}, {}), y, z),
+      matches(copy_stmt::make(nullptr, x, {y}, w, {y}, {})));
+  ASSERT_THAT(substitute(copy_stmt::make(nullptr, x, {y}, w, {z}, {}), y, u),
+      matches(copy_stmt::make(nullptr, x, {u}, w, {z}, {})));
+  ASSERT_THAT(substitute(copy_stmt::make(nullptr, x, {y}, w, {z}, u), u, v),
+      matches(copy_stmt::make(nullptr, x, {y}, w, {z}, v)));
 }
 
 TEST(match, basic) {

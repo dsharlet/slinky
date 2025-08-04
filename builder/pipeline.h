@@ -186,6 +186,7 @@ public:
 private:
   call_stmt::callable impl_;
   call_stmt::attributes attrs_;
+  copy_stmt::callable copy_impl_;
   // A pointer to the optional user data.
   void* user_data_ = nullptr;
 
@@ -204,8 +205,8 @@ public:
   func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs,
       call_stmt::attributes attrs = {});
-  func(std::vector<input> inputs, output out);
-  func(input src, output dst, input pad);
+  func(copy_stmt::callable impl, std::vector<input> inputs, output out);
+  func(copy_stmt::callable impl, input src, output dst, input pad);
   func(func&&) noexcept;
   func& operator=(func&&) noexcept;
   ~func();
@@ -309,21 +310,31 @@ public:
     return make_impl(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
+  // The following functions make various forms of copy operations. `impl` is a function that can customize the
+  // implementation of the copy. The function must be equivalent to `slinky::copy`. The `impl` function may not be
+  // called if the copy is aliased.
+
   // Make a copy from a single input to a single output.
-  static func make_copy(input src, output dst) { return func({std::move(src)}, std::move(dst)); }
+  static func make_copy(input src, output dst, copy_stmt::callable impl = slinky::copy) {
+    return func(std::move(impl), {std::move(src)}, std::move(dst));
+  }
   // Make a copy from a single input to a single output, with padding outside the output crop.
-  static func make_copy(input src, output dst, input pad) {
-    return func(std::move(src), std::move(dst), std::move(pad));
+  static func make_copy(input src, output dst, input pad, copy_stmt::callable impl = slinky::copy) {
+    return func(std::move(impl), std::move(src), std::move(dst), std::move(pad));
   }
   // Make a copy from multiple inputs with undefined padding.
-  static func make_copy(std::vector<input> src, output dst) { return func(std::move(src), std::move(dst)); }
+  static func make_copy(std::vector<input> src, output dst, copy_stmt::callable impl = slinky::copy) {
+    return func(std::move(impl), std::move(src), std::move(dst));
+  }
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
   // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
-  static func make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds);
+  static func make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds,
+      copy_stmt::callable impl = slinky::copy);
   // Make a stack copy. This is a helper function for `make_copy`, where the crop for input i is a `slice_dim` of
   // dimension `dim` at i. If `dim` is greater than the rank of `out` (the default), the new stack dimension will be the
   // last dimension of the output.
-  static func make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim = -1);
+  static func make_stack(
+      std::vector<buffer_expr_ptr> src, output dst, std::size_t dim = -1, copy_stmt::callable impl = slinky::copy);
 
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
