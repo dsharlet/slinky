@@ -429,7 +429,9 @@ public:
   }
 
   void visit(const constant_buffer* op) override {
-    auto s = set_value_in_scope(buffers, op->sym, buffer_info(buffer_dims(*op->value), op->value->elem_size));
+    // Constants are similar to inputs in that they cannot be mutated.
+    auto s = set_value_in_scope(
+        buffers, op->sym, buffer_info(buffer_dims(*op->value), op->value->elem_size, /*is_input=*/true));
     stmt_mutator::visit(op);
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.

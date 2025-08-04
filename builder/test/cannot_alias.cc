@@ -667,6 +667,54 @@ TEST(multiple_producers, cannot_alias) {
   }
 }
 
+TEST(cannot_alias, padded_constant) {
+  const int padding_value = 3;
+
+  // Make the pipeline
+  node_context ctx;
+
+  const int W = 10;
+  const int H = 7;
+  buffer<char, 2> in_buf({W - 2, H - 2});
+  init_random(in_buf);
+
+  auto in = buffer_expr::make_constant(ctx, "in", raw_buffer::make_copy(in_buf));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto padded_in = buffer_expr::make(ctx, "padded_intm", 2, sizeof(char));
+  auto padding = buffer_expr::make_scalar<char>(ctx, "padding", padding_value);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func crop =
+      func::make_copy({in, {point(x), point(y)}, in->bounds()}, {padded_in, {x, y}}, {padding, {point(x), point(y)}});
+  func copy_out = func::make(opaque_copy<char>, {{padded_in, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline
+  buffer<char, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      if (in_buf.contains(x, y)) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+      } else {
+        ASSERT_EQ(out_buf(x, y), padding_value);
+      }
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+}
+
 class constrained_stencil : public testing::TestWithParam<int> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_split, constrained_stencil, testing::Values(1, 5));

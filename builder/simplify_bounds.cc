@@ -141,22 +141,42 @@ interval_expr simple_or_unbounded(expr min, expr max) {
   return {min, max};
 }
 
+struct constant_interval {
+  std::optional<index_t> min;
+  std::optional<index_t> max;
+
+  constant_interval(const interval_expr& x) {
+    min = evaluate_constant_lower_bound(x.min);
+    max = evaluate_constant_upper_bound(x.max);
+  }
+
+  bool is_positive() const { return min && *min > 0; }
+  bool is_negative() const { return max && *max < 0; }
+  bool is_non_negative() const { return min && *min >= 0; }
+  bool is_non_positive() const { return max && *max <= 0; }
+};
+
 }  // namespace
 
 interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
   if (a.is_point() && b.is_point()) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
-  } else if (is_non_negative(a.min) && is_non_negative(b.min)) {
+  } 
+  
+  constant_interval a_const(a);
+  constant_interval b_const(b);
+
+  if (a_const.is_non_negative() && b_const.is_non_negative()) {
     // Both are >= 0, neither intervals flip.
     return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.max)};
-  } else if (is_non_positive(a.max) && is_non_positive(b.max)) {
+  } else if (a_const.is_non_positive() && b_const.is_non_positive()) {
     // Both are <= 0, both intervals flip.
     return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.min)};
   } else if (b.is_point()) {
-    if (is_non_negative(b.min)) {
+    if (b_const.is_non_negative()) {
       return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
-    } else if (is_non_positive(b.min)) {
+    } else if (b_const.is_non_positive()) {
       return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.min)};
     } else {
       expr corners[] = {
@@ -167,9 +187,9 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
           simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]));
     }
   } else if (a.is_point()) {
-    if (is_non_negative(a.min)) {
+    if (a_const.is_non_negative()) {
       return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.min, b.max)};
-    } else if (is_non_positive(a.min)) {
+    } else if (a_const.is_non_positive()) {
       return {simplify(op_simplified(), op, a.min, b.max), simplify(op_simplified(), op, a.min, b.min)};
     } else {
       expr corners[] = {
@@ -220,31 +240,34 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
+  constant_interval a_const(a);
+  constant_interval b_const(b);
+
   if (b.is_point()) {
     if (is_zero(b.min)) {
       return {0, 0};
     } else if (a.is_point()) {
       return point(simplify(op_simplified(), op, a.min, b.min));
-    } else if (is_non_negative(b.min)) {
+    } else if (b_const.is_non_negative()) {
       return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
-    } else if (is_non_positive(b.min)) {
+    } else if (b_const.is_non_positive()) {
       return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.min)};
     }
-  } else if (is_positive(b.min)) {
+  } else if (b_const.is_positive()) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
-    if (is_non_negative(a.min)) {
+    if (a_const.is_non_negative()) {
       return {simplify(op_simplified(), op, a.min, b.max), simplify(op_simplified(), op, a.max, b.min)};
-    } else if (is_non_positive(a.max)) {
+    } else if (a_const.is_non_positive()) {
       return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
       return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
     }
-  } else if (is_negative(b.max)) {
+  } else if (b_const.is_negative()) {
     // b < 0 => the biggest result in absolute value occurs at the max of b.
-    if (is_non_negative(a.min)) {
+    if (a_const.is_non_negative()) {
       return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.min)};
-    } else if (is_non_positive(a.max)) {
+    } else if (a_const.is_non_positive()) {
       return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
@@ -258,13 +281,14 @@ interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   }
   expr max_b;
-  if (is_non_negative(b.min)) {
+  constant_interval b_const(b);
+  if (b_const.is_non_negative()) {
     max_b = b.max;
   } else if (b.is_point()) {
-    assert(!is_non_negative(b.max));
+    assert(!b_const.is_non_negative());
     max_b = simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max});
   } else {
-    if (is_non_negative(b.max)) {
+    if (b_const.is_non_negative()) {
       max_b = simplify(static_cast<const class max*>(nullptr),
           simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}), b.max);
     } else {
