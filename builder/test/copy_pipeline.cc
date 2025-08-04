@@ -58,7 +58,7 @@ TEST(flip_y, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func copy = func::make(opaque_copy<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func flip = func::make(flip_y<char>, {{intm, {point(x), point(-y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -140,7 +140,7 @@ TEST_P(padded_copy, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func copy_in = func::make(opaque_copy<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func padding_func;
   if (compute_padding) {
     auto iota2 = [=](const buffer<char>& out) -> slinky::index_t {
@@ -157,7 +157,7 @@ TEST_P(padded_copy, pipeline) {
   func crop = func::make_copy(
       {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
       {padded_intm, {x, y}}, {padding, {point(x), point(y)}});
-  func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
+  func copy_out = func::make(opaque_copy<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (split_y > 0) {
     copy_in.compute_root();
