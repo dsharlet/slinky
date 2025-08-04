@@ -359,6 +359,7 @@ class copy_aliaser : public stmt_mutator {
       alias.assume_in_bounds = in_bounds;
     }
 
+    // If the target doesn't have strides, we can propagate our strides there, but we need to make sure there are no
     // contradictions when we do so. This tracks what we want the strides to be.
     std::vector<expr> target_stride(target_info.dims.size());
     for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
@@ -374,8 +375,6 @@ class copy_aliaser : public stmt_mutator {
       } else if (!alloc_has_stride) {
         // The allocation doesn't care what the strides are.
       } else if (!target_has_stride) {
-        // We can propagate our strides to the target, but, we need to make sure that there are no contradictions when
-        // we do so.
         if (!alloc_info.dims[d].stride.defined()) continue;
         int target_d = alias.permutation[d];
         if (target_d >= 0) {
