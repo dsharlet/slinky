@@ -359,6 +359,8 @@ class copy_aliaser : public stmt_mutator {
       alias.assume_in_bounds = in_bounds;
     }
 
+    // contradictions when we do so. This tracks what we want the strides to be.
+    std::vector<expr> target_stride(target_info.dims.size());
     for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
       const dim_expr& alias_dim = alias_dims[d];
       if (!alias.assume_in_bounds) {
@@ -369,8 +371,21 @@ class copy_aliaser : public stmt_mutator {
             return false;
           }
         }
-      } else if (!alloc_has_stride || !target_has_stride) {
-        // Either the allocation or the target can assume the strides of the other.
+      } else if (!alloc_has_stride) {
+        // The allocation doesn't care what the strides are.
+      } else if (!target_has_stride) {
+        // We can propagate our strides to the target, but, we need to make sure that there are no contradictions when
+        // we do so.
+        if (!alloc_info.dims[d].stride.defined()) continue;
+        int target_d = alias.permutation[d];
+        if (target_d >= 0) {
+          expr& target_stride_d = target_stride[target_d];
+          if (target_stride_d.defined() && !prove_true(target_stride_d == alloc_info.dims[d].stride)) {
+            // We tried to set the same dimension to two different strides.
+            return false;
+          }
+          target_stride_d = alloc_info.dims[d].stride;
+        }
       } else {
         // There are strides on both the allocation and the target, they must be equal.
         if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
@@ -491,11 +506,15 @@ public:
           assert(info.dims.size() == alias.permutation.size());
           // The target doesn't have any strides, we might have some strides we assumed we could propagate.
           for (std::size_t d = 0; d < info.dims.size(); ++d) {
+            if (!info.dims[d].stride.defined()) continue;
             int alias_d = alias.permutation[d];
             if (alias_d >= 0) {
               assert(alias_d < static_cast<int>(target_info->dims.size()));
-              assert(!target_info->dims[alias_d].stride.defined());
-              target_info->dims[alias_d].stride = info.dims[d].stride;
+              if (target_info->dims[alias_d].stride.defined()) {
+                assert(prove_true(target_info->dims[alias_d].stride == info.dims[d].stride));
+              } else {
+                target_info->dims[alias_d].stride = info.dims[d].stride;
+              }
             }
           }
         }
