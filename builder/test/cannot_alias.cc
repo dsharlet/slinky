@@ -685,9 +685,10 @@ TEST(cannot_alias, padded_constant) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  test_context eval_ctx;
 
-  func crop =
-      func::make_copy({in, {point(x), point(y)}, in->bounds()}, {padded_in, {x, y}}, {padding, {point(x), point(y)}});
+  func crop = func::make_copy(
+      {in, {point(x), point(y)}, in->bounds()}, {padded_in, {x, y}}, {padding, {point(x), point(y)}}, eval_ctx.copy);
   func copy_out = func::make(opaque_copy<char>, {{padded_in, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -698,7 +699,6 @@ TEST(cannot_alias, padded_constant) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -740,6 +740,7 @@ TEST_P(constrained_stencil, may_alias) {
 
   var x(ctx, "x");
   var dx(ctx, "dx");
+  test_context eval_ctx;
 
   // This test computes the following stencil operation, in this case a convolution with a kernel of 1s:
   //
@@ -753,7 +754,7 @@ TEST_P(constrained_stencil, may_alias) {
   //
   // We expect slinky to alias the copy.
   func pre_copy = func::make(opaque_copy<short>, {{in, {point(x)}}}, {{in_copy, {x}}});
-  func stencil_copy = func::make_copy({in_copy, {point(x * S + dx * D)}}, {stencil, {dx, x}});
+  func stencil_copy = func::make_copy({in_copy, {point(x * S + dx * D)}}, {stencil, {dx, x}}, eval_ctx.copy);
   func post_copy = func::make(opaque_copy<short>, {{stencil, {point(dx), point(x)}}}, {{out, {dx, x}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -771,7 +772,6 @@ TEST_P(constrained_stencil, may_alias) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int n = 0; n < N; ++n) {
