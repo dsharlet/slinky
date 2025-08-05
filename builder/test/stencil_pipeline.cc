@@ -217,12 +217,11 @@ TEST_P(stencil_variable, 1d) {
 
   pipeline p = build_pipeline(ctx, {s, d}, {in}, {out}, {}, build_options{.no_alias_buffers = no_alias_buffers});
 
-  // Run the pipeline.
-
-  const int N = 10;
-
+  // Run the pipeline with varying stride/dilation parameters.
   for (int S : {1, 2, 3}) {
     for (int D : {1, 2, 3}) {
+      const int N = 10;
+
       buffer<short, 1> out_buf({N});
       out_buf.allocate();
 

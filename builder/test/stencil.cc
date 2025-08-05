@@ -265,14 +265,14 @@ TEST(stencil_variable, x_dx) {
 
   pipeline p = build_pipeline(ctx, {s, d}, {in}, {out});
 
-  // Run the pipeline.
-  const int N = 10;
-  const int K = 5;
-
+  // Run the pipeline with varying stride/dilation parameters.
   for (index_t S : {1, 2, 3}) {
     for (index_t D : {1, 2, 3}) {
       for (int min_n : offsets) {
         for (int min_k : offsets) {
+          const int N = 10;
+          const int K = 5;
+
           buffer<short, 2> out_buf({N, K});
           out_buf.allocate();
           out_buf.translate(min_n, min_k);
