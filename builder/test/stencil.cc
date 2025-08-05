@@ -144,7 +144,8 @@ TEST_P(stencil, x_y_dx_dy) {
   var dy(ctx, "dy");
   test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, y, dx, dy}}, eval_ctx.copy);
+  func copy =
+      func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, y, dx, dy}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -203,7 +204,8 @@ TEST_P(stencil, x_dx_y_dy) {
   var dy(ctx, "dy");
   test_context eval_ctx;
 
-  func copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, dx, y, dy}}, eval_ctx.copy);
+  func copy =
+      func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {out, {x, dx, y, dy}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -236,6 +238,59 @@ TEST_P(stencil, x_dx_y_dy) {
                   ASSERT_EQ(out_buf(x, dx, y, dy), in_buf(x * S + dx * D, y * S + dy * D));
                 }
               }
+            }
+          }
+
+          ASSERT_EQ(eval_ctx.copy_calls, 1);
+        }
+      }
+    }
+  }
+}
+
+TEST(stencil_variable, x_dx) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var dx(ctx, "dx");
+  var s(ctx, "s");
+  var d(ctx, "d");
+  test_context eval_ctx;
+
+  func copy = func::make_copy({in, {point(x * max(1, s) + dx * max(1, d))}}, {out, {x, dx}}, eval_ctx.copy);
+
+  pipeline p = build_pipeline(ctx, {s, d}, {in}, {out});
+
+  // Run the pipeline with varying stride/dilation parameters.
+  for (index_t S : {1, 2, 3}) {
+    for (index_t D : {1, 2, 3}) {
+      for (int min_n : offsets) {
+        for (int min_k : offsets) {
+          const int N = 10;
+          const int K = 5;
+
+          buffer<short, 2> out_buf({N, K});
+          out_buf.allocate();
+          out_buf.translate(min_n, min_k);
+
+          buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
+          init_random(in_buf);
+          in_buf.translate(min_n * S + min_k * D);
+
+          // Not having span(std::initializer_list<T>) is unfortunate.
+          index_t args[] = {S, D};
+          const raw_buffer* inputs[] = {&in_buf};
+          const raw_buffer* outputs[] = {&out_buf};
+          eval_ctx.copy_calls = 0;
+          p.evaluate(args, inputs, outputs, eval_ctx);
+
+          for (int n = min_n; n < min_n + N; ++n) {
+            for (int k = min_k; k < min_k + K; ++k) {
+              ASSERT_EQ(out_buf(n, k), in_buf(n * S + k * D));
             }
           }
 
