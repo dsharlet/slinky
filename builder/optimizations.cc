@@ -134,7 +134,8 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     scale = simplify(scale);
     offset = simplify(offset);
 
-    if (!is_non_negative(scale)) {
+    std::optional<index_t> scale_bound = evaluate_constant_lower_bound(scale);
+    if (!scale_bound || *scale_bound < 0) {
       // TODO: Maybe we could handle negative stride copies.
       return false;
     }

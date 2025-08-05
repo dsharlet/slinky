@@ -168,4 +168,90 @@ TEST_P(stencil, 2d) {
   }
 }
 
+class stencil_variable : public testing::TestWithParam<std::tuple<bool, int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(alias_size_split, stencil_variable,
+    testing::Combine(testing::Bool(), testing::Values(1, 2, 3), testing::Values(0, 3)),
+    test_params_to_string<stencil_variable::ParamType>);
+
+TEST_P(stencil_variable, 1d) {
+  const bool no_alias_buffers = std::get<0>(GetParam());
+  const int K = std::get<1>(GetParam());
+  const int split = std::get<2>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(short));
+
+  in->dim(0).fold_factor = dim::unfolded;
+
+  auto stencil = buffer_expr::make(ctx, "stencil", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var dx(ctx, "dx");
+  var s(ctx, "s");
+  var d(ctx, "d");
+
+  // This test computes the following stencil operation, in this case a convolution with a kernel of 1s:
+  //
+  //  for i in [0, N):
+  //    for k in [0, K):
+  //      out[i] += in[i * s + k * d]
+  //
+  // Using the following approach:
+  // 1. Make a copy of the input such that stencil(x, dx) = in(x * s + dx * d)
+  // 2. Compute a reduction of the dx dimension
+  //
+  // We expect slinky to alias the copy.
+  func stencil_copy = func::make_copy({in, {point(x * max(1, s) + dx * max(1, d))}}, {stencil, {x, dx}});
+  auto sum_1 = [K](const buffer<const short>& in, const buffer<short>& out) {
+    return sum(in, out, /*dims=*/{{1, 0, K - 1}});
+  };
+  func reduce = func::make(std::move(sum_1), {{stencil, {point(x), min_extent(0, K)}}}, {{{out, {x}}}});
+
+  if (split > 0) {
+    reduce.loops({{x, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {s, d}, {in}, {out}, {}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+
+  const int N = 10;
+
+  for (int S : {1, 2, 3}) {
+    for (int D : {1, 2, 3}) {
+      buffer<short, 1> out_buf({N});
+      out_buf.allocate();
+
+      buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
+      init_random(in_buf);
+
+      // Not having span(std::initializer_list<T>) is unfortunate.
+      index_t args[] = {S, D};
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      test_context eval_ctx;
+      p.evaluate(args, inputs, outputs, eval_ctx);
+
+      for (int n = 0; n < N; ++n) {
+        int expected = 0;
+        for (int k = 0; k < K; ++k) {
+          expected += in_buf(n * S + k * D);
+        }
+        ASSERT_EQ(expected, out_buf(n));
+      }
+
+      if (!no_alias_buffers) {
+        ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+        ASSERT_EQ(eval_ctx.copy_calls, 0);
+      } else {
+        ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+      }
+    }
+  }
+}
+
 }  // namespace slinky
