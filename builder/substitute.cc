@@ -163,14 +163,24 @@ public:
     return true;
   }
 
-  template <template <class> class Container, class T>
-  bool try_match(const Container<T>& self, const Container<T>& op) {
+  template <typename Container>
+  bool try_match_container(const Container& self, const Container& op) {
     if (!try_match(self.size(), op.size())) return false;
     for (std::size_t i = 0; i < self.size(); ++i) {
       if (!try_match(self[i], op[i])) return false;
     }
 
     return true;
+  }
+
+  template <typename T>
+  bool try_match(const span<T>& self, const span<T>& op) {
+    return try_match_container(self, op);
+  }
+
+  template <typename T>
+  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+    return try_match_container(self, op);
   }
 
   template <typename T>
