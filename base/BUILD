@@ -36,8 +36,22 @@ cc_library(
 )
 
 config_setting(
-    name = "use_absl_synchronization",
+    name = "use_absl_synchronization_true",
     define_values = {"slinky_use_absl_synchronization": "true"},
+)
+
+config_setting(
+    name = "use_absl_synchronization_false",
+    define_values = {"slinky_use_absl_synchronization": "false"},
+)
+
+alias(
+    name = "use_absl_synchronization",
+    actual = select({
+        ":use_absl_synchronization_true": ":use_absl_synchronization_true",
+        ":use_absl_synchronization_false": ":use_absl_synchronization_true",
+        "//conditions:default": ":use_absl_synchronization_true",
+    })
 )
 
 cc_library(
