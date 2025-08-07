@@ -18,21 +18,22 @@ namespace slinky {
 
 using mutex = absl::Mutex;
 
-class unique_lock {
+class ABSL_SCOPED_LOCKABLE unique_lock {
   friend class condition_variable;
   mutex& m_;
 
 public:
-  unique_lock(mutex& m) : m_(m) { m_.Lock(); }
+  unique_lock(mutex& m) ABSL_EXCLUSIVE_LOCK_FUNCTION(m_) : m_(m) { m_.Lock(); }
+  ~unique_lock() ABSL_UNLOCK_FUNCTION(m_) { m_.Unlock(); }
+
   unique_lock(const unique_lock&) = delete;
-  unique_lock(unique_lock&&) = default;
-  ~unique_lock() { m_.Unlock(); }
+  unique_lock(unique_lock&& l) ABSL_EXCLUSIVE_LOCK_FUNCTION(l.m_) = default;
 
   unique_lock& operator=(const unique_lock&) = delete;
-  unique_lock& operator=(unique_lock&&) = default;
+  unique_lock& operator=(unique_lock&& l) ABSL_EXCLUSIVE_LOCK_FUNCTION(l.m_) = default;
 
-  void lock() { m_.Lock(); }
-  void unlock() { m_.Unlock(); }
+  void lock() ABSL_EXCLUSIVE_LOCK_FUNCTION(m_) { m_.Lock(); }
+  void unlock() ABSL_UNLOCK_FUNCTION(m_) { m_.Unlock(); }
 };
 
 class condition_variable {
