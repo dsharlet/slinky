@@ -140,19 +140,18 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
       return false;
     }
 
-    src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
     src_dim.stride = buffer_stride(src, src_d) * scale;
     src_dim.fold_factor = buffer_fold_factor(src, src_d);
-    at = buffer_min(src, src_d);
-    if (!depends_on(offset, dst).any()) {
-      at += offset * (scale - 1);
-    } else {
-      // This offset is going to be handled by another dimension... we assume.
-    }
 
-    // Alternative definitions that may be useful in the future and were difficult to determine:
-    // src_dim.bounds = buffer_bounds(dst, dst_d);
-    // at = buffer_min(dst, dst_d) * scale + offset;
+    // Both branches of this if should be equivalent if the copy is fully in bounds (not padded).
+    if (!depends_on(offset, dst).any()) {
+      src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
+      at = buffer_min(src, src_d) + offset * (scale - 1);
+    } else {
+      // This formulation is simpler and would be nice to use all the time, however, it assumes there is no padding on the copy.
+      src_dim.bounds = buffer_bounds(dst, dst_d);
+      at = buffer_min(dst, dst_d) * scale + offset;
+    }
 
     return true;
   }
