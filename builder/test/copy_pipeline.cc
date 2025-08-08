@@ -923,4 +923,61 @@ TEST_P(constrained_transpose, pipeline) {
   }
 }
 
+class tile_untile : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(split_factor, tile_untile, testing::Values(0, 4));
+
+TEST_P(tile_untile, copy) {
+  const int split = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto tiled = buffer_expr::make(ctx, "in", 4, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var xi(ctx, "xi");
+  var yi(ctx, "yi");
+  var xo(ctx, "xo");
+  var yo(ctx, "yo");
+  var x(ctx, "x");
+  var y(ctx, "y");
+  test_context eval_ctx;
+
+  const int N = 4;
+
+  func copy1 = func::make_copy({in, {point(xo * N + xi), point(yo * N + yi)}}, {tiled, {xi, yi, xo, yo}}, eval_ctx.copy);
+  // TODO: Try to optimize this copy.
+  func copy2 =
+      func::make_copy({tiled, {point(x % N), point(y % N), point(x / N), point(y / N)}}, {out, {x, y}}, eval_ctx.copy);
+
+  if (split > 0) {
+    copy2.loops({{y, split * N}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 3;
+  const int H = 2;
+
+  // Run the pipeline.
+  buffer<int, 4> in_buf({W * N, H * N});
+  init_random(in_buf);
+
+  // The output should be the same size as the input, but with permuted dimensions.
+  buffer<int, 4> out_buf({W * N, H * N});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H * N; ++y) {
+    for (int x = 0; x < W * N; ++x) {
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+    }
+  }
+}
+
 }  // namespace slinky

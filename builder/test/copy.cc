@@ -63,8 +63,8 @@ TEST(trivial_1d, copy) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy =
-      func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, {buffer_expr::make_scalar<int>(ctx, "padding", 0)}, eval_ctx.copy);
+  func copy = func::make_copy(
+      {in, {point(x)}, output_crop}, {out, {x}}, {buffer_expr::make_scalar<int>(ctx, "padding", 0)}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -109,7 +109,8 @@ TEST(trivial_2d, copy) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, {pad, {point(x), point(y)}}, eval_ctx.copy);
+  func copy = func::make_copy(
+      {in, {point(x), point(y)}, output_crop}, {out, {x, y}}, {pad, {point(x), point(y)}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in, pad}, {out});
 
@@ -490,7 +491,8 @@ TEST_P(transpose_test, copy) {
   var z(ctx, "z");
   test_context eval_ctx;
 
-  func t = func::make_copy({in, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}}, eval_ctx.copy);
+  func t = func::make_copy(
+      {in, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -692,7 +694,8 @@ TEST_P(concatenate, copy) {
   var z(ctx, "z");
   test_context eval_ctx;
 
-  func concat = func::make_concat({in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).max() + 1, out->dim(1).extent()}, eval_ctx.copy);
+  func concat = func::make_concat(
+      {in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).max() + 1, out->dim(1).extent()}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
@@ -741,7 +744,8 @@ TEST(split, copy) {
   test_context eval_ctx;
 
   func copy1 = func::make_copy({in, {slinky::point(x), slinky::point(y)}}, {out1, {x, y}}, eval_ctx.copy);
-  func copy2 = func::make_copy({in, {slinky::point(x), slinky::point(y) + out1->dim(1).extent()}}, {out2, {x, y}}, eval_ctx.copy);
+  func copy2 = func::make_copy(
+      {in, {slinky::point(x), slinky::point(y) + out1->dim(1).extent()}}, {out2, {x, y}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out1, out2});
 
@@ -985,6 +989,60 @@ TEST_P(batch_reshape, copy) {
     ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
     ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
   }
+}
+
+class tile : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(split_factor, tile, testing::Values(0, 1));
+
+TEST_P(tile, copy) {
+  const int split = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 4, sizeof(int));
+
+  var xi(ctx, "xi");
+  var yi(ctx, "yi");
+  var xo(ctx, "xo");
+  var yo(ctx, "yo");
+  test_context eval_ctx;
+
+  const int N = 4;
+
+  func copy = func::make_copy({in, {point(xo * N + xi), point(yo * N + yi)}}, {out, {xi, yi, xo, yo}}, eval_ctx.copy);
+
+  if (split > 0) {
+    copy.loops({{xo, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 3;
+  const int H = 2;
+
+  // Run the pipeline.
+  buffer<int, 4> in_buf({W * N, H * N});
+  init_random(in_buf);
+
+  // The output should be the same size as the input, but with permuted dimensions.
+  buffer<int, 4> out_buf({N, N, W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H * N; ++y) {
+    for (int x = 0; x < W * N; ++x) {
+      ASSERT_EQ(out_buf(x % N, y % N, x / N, y / N), in_buf(x, y));
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.copy_calls, split ? W / split : 1);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * N * N);
 }
 
 }  // namespace slinky
