@@ -23,8 +23,7 @@ const dim& dim::broadcast() { return broadcast_dim; }
 namespace {
 
 index_t alloc_extent(const dim& dim) {
-  if (dim.fold_factor() != dim::unfolded) {
-    // TODO: We can do better than this if the dim doesn't cross a fold boundary.
+  if (dim.is_folded()) {
     return dim.fold_factor();
   } else {
     return dim.extent();
