@@ -1410,12 +1410,14 @@ public:
     }
     auto sd = symbol_to_sliceable_dims_.lookup(op->src, {});
     sd.set(op->dim);
+
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
     std::optional<box_expr> bounds = buffer_bounds.lookup(op->src);
     if (bounds) {
       merge_crop(bounds, op->dim, op->bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+
     stmt_mutator::visit(op);
   }
 
@@ -1425,7 +1427,6 @@ public:
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
 
     std::optional<box_expr> bounds = buffer_bounds.lookup(op->src);
-
     if (bounds) {
       for (size_t i = 0; i < op->bounds.size(); ++i) {
         merge_crop(bounds, i, op->bounds[i]);
@@ -1439,24 +1440,28 @@ public:
   void visit(const allocate* op) override {
     sliceable_dims sd = find_sliceable(op->dims);
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+
     box_expr bounds;
     bounds.reserve(op->dims.size());
     for (const dim_expr& d : op->dims) {
       bounds.push_back(d.bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+
     stmt_mutator::visit(op);
   }
 
   void visit(const make_buffer* op) override {
     sliceable_dims sd = find_sliceable(op->dims);
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+
     box_expr bounds;
     bounds.reserve(op->dims.size());
     for (const dim_expr& d : op->dims) {
       bounds.push_back(d.bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+
     stmt_mutator::visit(op);
   }
 
@@ -1473,8 +1478,10 @@ public:
 
   void visit(const clone_buffer* op) override {
     sliceable_dims sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
+
     stmt_mutator::visit(op);
   }
 
@@ -1489,7 +1496,6 @@ public:
 
     std::optional<box_expr> bounds = buffer_bounds.lookup(op->src);
     box_expr new_bounds(op->dims.size());
-
     if (bounds) {
       for (size_t d = 0; d < op->dims.size(); d++) {
         new_bounds[d] = (*bounds)[op->dims[d]];
@@ -1505,11 +1511,13 @@ public:
     sliceable_dims src_sd = symbol_to_sliceable_dims_.lookup(op->src, {});
     sliceable_dims sd = erase_dim(src_sd, op->dim);
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+
     std::optional<box_expr> bounds = buffer_bounds.lookup(op->src);
     if (bounds) {
       bounds->erase(bounds->begin() + op->dim);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+
     stmt_mutator::visit(op);
   }
 
@@ -1521,6 +1529,7 @@ public:
       }
     }
     auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+
     std::optional<box_expr> bounds = buffer_bounds.lookup(op->src);
     if (bounds) {
       for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
@@ -1529,6 +1538,7 @@ public:
       }
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+
     stmt_mutator::visit(op);
   }
 
