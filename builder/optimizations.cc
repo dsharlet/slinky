@@ -636,9 +636,9 @@ public:
 
     alias_info a;
     a.target = op->src;
-    a.at.resize(op->src_x.size());
+    a.at = op->src_x;
     a.permutation.resize(op->dst_x.size());
-    a.dims = info->dims;
+    a.dims.resize(info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
       if (!is_copy_dst_dim(op, dst_d, src_d)) {

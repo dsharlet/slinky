@@ -1615,4 +1615,52 @@ TEST_P(upsample, pipeline) {
   }
 }
 
+TEST(add_slices, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto in0 = buffer_expr::make(ctx, "in0", 2, sizeof(short));
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  in->dim(0).fold_factor = dim::unfolded;
+  in->dim(2).fold_factor = dim::unfolded;
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  // Slice dimension 1 at 0 and 1.
+  func slice0 = func::make_copy({in, {point(x), point(0), point(y)}}, {in0, {x, y}});
+  func slice1 = func::make_copy({in, {point(x), point(1), point(y)}}, {in1, {x, y}});
+
+  // Subtract the two slices.
+  func sub_slices = func::make(subtract<short>, {{in0, {point(x), point(y)}}, {in1, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 3> in_buf({W, 2, H});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(in_buf(x, 0, y) - in_buf(x, 1, y), out_buf(x, y));
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+}
+
 }  // namespace slinky
