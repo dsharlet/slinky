@@ -133,11 +133,11 @@ TEST(optimizations, remove_pure_dims) {
   {
     // Test support for allocate.
     stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
-    stmt alloc = allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, call);
+    stmt alloc = allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{2, 2}}}, call);
 
     stmt result = remove_pure_dims(alloc);
-    ASSERT_THAT(result, matches(allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}},
-                            slice_buffer::make(y, y, {{}, buffer_min(y, 1)}, call))));
+    ASSERT_THAT(result, matches(allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{2, 2}}},
+                            slice_buffer::make(y, y, {{}, 2}, call))));
   }
 
   {
@@ -159,7 +159,7 @@ TEST(optimizations, remove_pure_dims) {
 
     stmt result = remove_pure_dims(alloc);
     ASSERT_THAT(result, matches(allocate::make(z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}},
-                            clone_buffer::make(y, z, slice_buffer::make(y, y, {{}, buffer_min(y, 1)}, call)))));
+                            clone_buffer::make(y, z, slice_buffer::make(y, y, {{}, 0}, call)))));
   }
 
   {
@@ -170,7 +170,7 @@ TEST(optimizations, remove_pure_dims) {
 
     stmt result = remove_pure_dims(alloc);
     ASSERT_THAT(result, matches(allocate::make(z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}},
-                            transpose::make(y, z, {1, 0}, slice_buffer::make(y, y, {buffer_min(y, 0)}, call)))));
+                            transpose::make(y, z, {1, 0}, slice_buffer::make(y, y, {0}, call)))));
   }
 
   {
