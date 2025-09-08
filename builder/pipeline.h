@@ -76,7 +76,8 @@ public:
   }
 
   var sym() const { return sym_; }
-  expr elem_size() const { return elem_size_; }
+  expr& elem_size() { return elem_size_; }
+  const expr& elem_size() const { return elem_size_; }
   std::size_t rank() const { return dims_.size(); }
   const std::vector<dim_expr>& dims() const { return dims_; }
   dim_expr& dim(int i) { return dims_[i]; }
