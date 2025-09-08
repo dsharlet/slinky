@@ -385,7 +385,8 @@ public:
   const buffer<NewT>& cast() const;
 
   // Make a pointer to a buffer with an allocation for the dims and (optionally) elements in the same allocation.
-  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size, const class dim* dims = nullptr, index_t alignment = 1);
+  static raw_buffer_ptr make(
+      std::size_t rank, std::size_t elem_size = 0, const class dim* dims = nullptr, index_t alignment = 1);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src, index_t alignment = 1);
@@ -650,8 +651,8 @@ const buffer<NewT>& raw_buffer::cast() const {
 
 // Copy the contents of `src` to `dst`.
 // If `padding` is `no_padding, every index of `dst` must be in bounds of `src`.
-// If `padding` is not `no_padding`, `dst` will be copied from `src` if it is in bounds, otherwise it will be copied from
-// `padding`, which must be in bounds.
+// If `padding` is not `no_padding`, `dst` will be copied from `src` if it is in bounds, otherwise it will be copied
+// from `padding`, which must be in bounds.
 static constexpr raw_buffer no_padding = {};
 void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad = no_padding);
 
