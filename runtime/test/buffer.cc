@@ -930,14 +930,14 @@ TEST(fuse_contiguous_dims, same_rank) {
 
 TEST(fuse_contiguous_dims, fuse0) {
   buffer<int, 1> a({}), b({});
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 0);
   ASSERT_EQ(a.rank, 0);
   ASSERT_EQ(b.rank, 0);
 }
 
 TEST(fuse_contiguous_dims, fuse1) {
   buffer<int, 1> a({3}), b({3});
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 0);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 3);
@@ -946,7 +946,7 @@ TEST(fuse_contiguous_dims, fuse1) {
 
 TEST(fuse_contiguous_dims, fuse2) {
   buffer<int, 2> a({4, 5}), b({4, 5});
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 4 * 5);
@@ -956,7 +956,7 @@ TEST(fuse_contiguous_dims, fuse2) {
 TEST(fuse_contiguous_dims, fuse2_with_broadcast) {
   buffer<int, 2> a({4, 5});
   buffer<int, 0> b;
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 0);
   ASSERT_EQ(a.dim(0).extent(), 4 * 5);
@@ -965,7 +965,7 @@ TEST(fuse_contiguous_dims, fuse2_with_broadcast) {
 TEST(fuse_contiguous_dims, fuse3_with_broadcast) {
   buffer<int, 3> a({4, 5, 6});
   buffer<int, 1> b({4});
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 4);
@@ -976,7 +976,7 @@ TEST(fuse_contiguous_dims, fuse3_with_broadcast) {
 TEST(fuse_contiguous_dims, cant_fuse2_with_broadcast) {
   buffer<int, 2> a({4, 5});
   buffer<int, 1> b({4});
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 0);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 4);
@@ -986,7 +986,7 @@ TEST(fuse_contiguous_dims, cant_fuse2_with_broadcast) {
 
 TEST(fuse_contiguous_dims, fuse3) {
   buffer<int, 3> a({6, 7, 8}), b({6, 7, 8});
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 2);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 6 * 7 * 8);
@@ -996,7 +996,7 @@ TEST(fuse_contiguous_dims, fuse3) {
 TEST(fuse_contiguous_dims, fuse_folded) {
   buffer<int, 3> a({6, 7, 8}), b({6, 7, 8});
   a.dim(2).set_fold_factor(3);
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 2);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 6 * 7 * 8);
@@ -1012,7 +1012,7 @@ TEST(fuse_contiguous_dims, fuse_broadcasted) {
   b.dim(1) = dim::broadcast();
   b.dim(2) = dim::broadcast();
 
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
   ASSERT_EQ(a.dim(0).extent(), 6);
@@ -1028,7 +1028,7 @@ TEST(fuse_contiguous_dims, fuse_implicit_broadcasted) {
   a.dim(1) = dim::broadcast();
   a.dim(2) = dim::broadcast();
 
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 6);
@@ -1041,7 +1041,7 @@ TEST(fuse_contiguous_dims, fuse_implicit_broadcasted) {
 TEST(fuse_contiguous_dims, fuse_extent1) {
   buffer<char, 3> a({1, 4, 3}), b({1, 3, 4});
 
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
   ASSERT_EQ(a.dim(0).extent(), 4);
@@ -1058,7 +1058,7 @@ TEST(fuse_contiguous_dims, cant_fuse_extent1) {
   buffer<char, 3> a({1, 4, 3}), b({1, 3, 4});
   a.dim(1).set_stride(0);
 
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 0);
   ASSERT_EQ(a.rank, 3);
   ASSERT_EQ(b.rank, 3);
 }
@@ -1069,7 +1069,7 @@ TEST(fuse_contiguous_dims, cant_fuse) {
   ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
   std::swap(a.dim(2), a.dim(3));
   std::swap(b.dim(2), b.dim(3));
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 3);
   ASSERT_EQ(b.rank, 3);
   ASSERT_EQ(a.dim(0).extent(), 6);
@@ -1083,7 +1083,7 @@ TEST(fuse_contiguous_dims, cant_fuse) {
 TEST(fuse_contiguous_dims, cant_fuse_broadcasted_inner) {
   buffer<int, 3> a({1, 7, 8}), b({6, 7, 8});
   a.dim(0) = dim::broadcast();
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
   ASSERT_EQ(a.dim(0).stride(), 0);
@@ -1098,7 +1098,7 @@ TEST(fuse_contiguous_dims, cant_fuse_broadcasted_inner) {
 TEST(fuse_contiguous_dims, cant_fuse_broadcasted_outer) {
   buffer<int, 3> a({6, 7, 1}), b({6, 7, 8});
   a.dim(2) = dim::broadcast();
-  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
   ASSERT_EQ(a.dim(0).extent(), 6 * 7);
@@ -1115,7 +1115,7 @@ TEST(fuse_contiguous_dims, fuse_sets) {
   ASSERT_NE(a.dim(0).stride(), 0);
   ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
   const int dims_sets[] = {0, 0, 0, 1};
-  fuse_contiguous_dims(dims_sets, a, b);
+  ASSERT_EQ(fuse_contiguous_dims(dims_sets, a, b), 2);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
   ASSERT_EQ(a.dim(0).extent(), 24);
@@ -1129,7 +1129,7 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   ASSERT_NE(a.dim(0).stride(), 0);
   ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
   const int dims_sets[] = {0, 1, 0, 1};
-  fuse_contiguous_dims(dims_sets, a, b);
+  ASSERT_EQ(fuse_contiguous_dims(dims_sets, a, b), 0);
   ASSERT_EQ(a.rank, 4);
   ASSERT_EQ(b.rank, 4);
 }
