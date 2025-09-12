@@ -775,21 +775,24 @@ void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... 
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline void attempt_fuse(
+SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
     std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
     fuse<fuse_type::remove>(inner, outer, buf, bufs...);
+    return true;
+  } else {
+    return false;
   }
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline void attempt_fuse(
+SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
     std::ptrdiff_t inner, std::ptrdiff_t outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
     // These two dims are not part of the same set. Don't fuse them.
-    return;
+    return false;
   }
-  attempt_fuse(inner, outer, buf, bufs...);
+  return attempt_fuse(inner, outer, buf, bufs...);
 }
 
 inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap(buf.dim(i), buf.dim(j)); }
@@ -838,34 +841,40 @@ bool sort_dims(raw_buffer& buf, Bufs&... bufs) {
 // likely to be more efficient. `dim_sets` is an optional span of integers that indicates sets of dimensions that are
 // eligible for fusion. By default, all dimensions are considered to be part of the same set.
 template <typename... Bufs>
-void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+int fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+  int fused = 0;
   for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
-    internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
+    fused += internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
   }
+  return fused;
 }
 template <typename... Bufs>
-void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
+int fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
+  int fused = 0;
   for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
-    internal::attempt_fuse(d - 1, d, buf, bufs...);
+    fused += internal::attempt_fuse(d - 1, d, buf, bufs...);
   }
+  return fused;
 }
 
 // Call both `sort_dims` and `fuse_contiguous_dims` on the buffers.
 template <typename... Bufs>
-void optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+int optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   // The order of operations here is for performance: It's a lot faster to fuse dimensions than sort them. So we fuse
   // what we can before sorting, then if the sorting changed the order of the dimensions, attempt to fuse again.
-  fuse_contiguous_dims(dim_sets, buf, bufs...);
+  int fused = fuse_contiguous_dims(dim_sets, buf, bufs...);
   if (sort_dims(dim_sets, buf, bufs...)) {
-    fuse_contiguous_dims(dim_sets, buf, bufs...);
+    fused += fuse_contiguous_dims(dim_sets, buf, bufs...);
   }
+  return fused;
 }
 template <typename... Bufs>
-void optimize_dims(raw_buffer& buf, Bufs&... bufs) {
-  fuse_contiguous_dims(buf, bufs...);
+int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
+  int fused = fuse_contiguous_dims(buf, bufs...);
   if (sort_dims(buf, bufs...)) {
-    fuse_contiguous_dims(buf, bufs...);
+    fused += fuse_contiguous_dims(buf, bufs...);
   }
+  return fused;
 }
 
 namespace internal {
