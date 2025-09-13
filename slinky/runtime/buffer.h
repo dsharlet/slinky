@@ -63,7 +63,7 @@ class dim {
 
 public:
   static constexpr index_t auto_stride = std::numeric_limits<index_t>::max();
-  static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
+  static constexpr index_t unfolded = -1;
 
   dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
   dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
@@ -139,7 +139,7 @@ public:
 
   // Check if the dimension crosses a fold between min and max.
   bool is_folded(index_t min, index_t max) const {
-    if (stride() == 0 || fold_factor() == 0 || fold_factor() == unfolded) return false;
+    if (stride() == 0 || fold_factor() <= 0) return false;
     return euclidean_div_positive_divisor(min, fold_factor()) != euclidean_div_positive_divisor(max, fold_factor());
   }
   bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }

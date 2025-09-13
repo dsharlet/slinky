@@ -23,7 +23,7 @@ const dim& dim::broadcast() { return broadcast_dim; }
 namespace {
 
 index_t alloc_extent(const dim& dim) {
-  if (dim.fold_factor() != dim::unfolded) {
+  if (dim.fold_factor() > 0) {
     // TODO: We can do better than this if the dim doesn't cross a fold boundary.
     return dim.fold_factor();
   } else {
@@ -275,7 +275,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
 
     if (dst_dim0.empty()) {
       // Empty destination, nothing to do.
-    } else if (dst_dim0.fold_factor() != dim::unfolded || src_dim0.fold_factor() != dim::unfolded ||
+    } else if (dst_dim0.fold_factor() > 0 || src_dim0.fold_factor() > 0 ||
                dst_dim0.stride() != elem_size || (src_dim0.stride() != 0 && src_dim0.stride() != elem_size)) {
       // There is some complication to the innermost dimension's copy.
       for_each_contiguous_slice(
@@ -464,7 +464,7 @@ SLINKY_INLINE bool can_fuse(span<const raw_buffer*, BufsSize> bufs, std::size_t 
     return false;
   }
 
-  if (base_outer.stride() != 0 && (base_inner.fold_factor() != 0 && base_inner.fold_factor() != dim::unfolded)) {
+  if (base_outer.stride() != 0 && base_inner.fold_factor() > 0) {
     // One of the dimensions is folded.
     return false;
   }
@@ -493,7 +493,7 @@ SLINKY_INLINE bool can_fuse(span<const raw_buffer*, BufsSize> bufs, std::size_t 
       return false;
     }
 
-    if (outer_stride != 0 && (inner.fold_factor() != 0 && inner.fold_factor() != dim::unfolded)) {
+    if (outer_stride != 0 && inner.fold_factor() > 0) {
       // One of the dimensions is folded.
       return false;
     }
@@ -684,7 +684,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
 
   index_t min = dim_0.min();
   index_t max = dim_0.max();
-  if (fold_factor == 0 || fold_factor == dim::unfolded) {
+  if (fold_factor <= 0) {
     // Not folded, we can treat the whole range as one chunk.
     run_one_fold(min, max);
   } else {
@@ -703,8 +703,8 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
 }
 
 index_t gcd_fold_factor(index_t a, index_t b) {
-  if (a == 0 || a == dim::unfolded) return b;
-  if (b == 0 || b == dim::unfolded) return a;
+  if (a <= 0) return b;
+  if (b <= 0) return a;
   return gcd(a, b);
 }
 
@@ -763,7 +763,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE void for_each_impl(span<const raw_buffer
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
-    if (buf_dim.fold_factor() != 0 && buf_dim.fold_factor() != dim::unfolded) {
+    if (buf_dim.fold_factor() > 0) {
       // This function is expected to adjust all bases to point to the min of `buf_dim`. For non-folded dimensions,
       // that is true by construction, but not for folded dimensions. We can also allow broadcasts to go through here,
       // and avoid the extra cost of trying to explicitly handle them.

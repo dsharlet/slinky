@@ -358,8 +358,8 @@ function pipeline(in1, in2, out) {
   check((buffer_elem_size(in1) == 2));
   check((buffer_elem_size(in2) == 2));
   check((buffer_elem_size(out) == 2));
-  check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-  check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+  check(or_else((buffer_fold_factor(out, 0) == -1), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+  check(or_else((buffer_fold_factor(out, 1) == -1), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   check((buffer_min(in1, 0) < buffer_min(out, 0)));
   check((buffer_max(out, 0) < buffer_max(in1, 0)));
   check((buffer_min(in1, 1) < buffer_min(out, 1)));
