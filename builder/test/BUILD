@@ -46,6 +46,7 @@ cc_test(
     srcs = ["copy.cc"],
     deps = [
         ":util",
+        "//base",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",

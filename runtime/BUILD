@@ -37,6 +37,9 @@ cc_library(
     name = "visualize",
     srcs = ["visualize.cc"],
     hdrs = ["visualize.h"],
-    deps = [":runtime"],
+    deps = [
+        ":runtime",
+        "//base",
+    ],
     visibility = ["//visibility:public"],
 )

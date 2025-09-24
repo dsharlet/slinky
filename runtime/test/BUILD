@@ -30,8 +30,9 @@ cc_test(
     name = "evaluate",
     srcs = ["evaluate.cc"],
     deps = [
-        "//runtime",
+        "//base",
         "//base:thread_pool_impl",
+        "//runtime",
         "@googletest//:gtest_main",
     ],
     size = "small",
