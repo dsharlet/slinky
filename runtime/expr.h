@@ -1,20 +1,21 @@
 #ifndef SLINKY_RUNTIME_EXPR_H
 #define SLINKY_RUNTIME_EXPR_H
 
-#include "base/arithmetic.h"
-#include "base/modulus_remainder.h"
-#include "base/ref_count.h"
-#include "base/span.h"
-#include "runtime/buffer.h"
-
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "base/arithmetic.h"
+#include "base/modulus_remainder.h"
+#include "base/ref_count.h"
+#include "base/span.h"
+#include "runtime/buffer.h"
 
 namespace slinky {
 

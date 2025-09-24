@@ -1,13 +1,13 @@
 #ifndef SLINKY_RUNTIME_STMT_H
 #define SLINKY_RUNTIME_STMT_H
 
-#include "runtime/expr.h"
-
 #include <cstdlib>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
+
+#include "runtime/expr.h"
 
 namespace slinky {
 

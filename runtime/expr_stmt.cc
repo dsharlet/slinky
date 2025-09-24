@@ -1,7 +1,3 @@
-#include "runtime/expr.h"
-#include "runtime/print.h"
-#include "runtime/stmt.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -12,6 +8,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "runtime/expr.h"
+#include "runtime/print.h"
+#include "runtime/stmt.h"
+
 
 namespace slinky {
 
