@@ -995,7 +995,7 @@ class tile : public testing::TestWithParam<int> {};
 
 INSTANTIATE_TEST_SUITE_P(split_factor, tile, testing::Values(0, 1));
 
-TEST_P(tile, copy) {
+TEST_P(tile, constant) {
   const int split = GetParam();
 
   // Make the pipeline
@@ -1043,6 +1043,62 @@ TEST_P(tile, copy) {
 
   ASSERT_EQ(eval_ctx.copy_calls, split ? W / split : 1);
   ASSERT_EQ(eval_ctx.copy_elements, W * H * N * N);
+}
+
+TEST_P(tile, param) {
+  const int split = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 4, sizeof(int));
+
+  var xi(ctx, "xi");
+  var yi(ctx, "yi");
+  var xo(ctx, "xo");
+  var yo(ctx, "yo");
+  var param(ctx, "N");
+  test_context eval_ctx;
+
+  expr N = max(1, call::make(intrinsic::none, [](span<const index_t> args) { return args[0] + 1; }, {param}));
+
+  func copy = func::make_copy({in, {point(xo * N + xi), point(yo * N + yi)}}, {out, {xi, yi, xo, yo}}, eval_ctx.copy);
+
+  if (split > 0) {
+    copy.loops({{xo, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {param}, {in}, {out});
+
+  const int W = 3;
+  const int H = 2;
+
+  for (int n : {2, 3, 4}) {
+    // Run the pipeline.
+    buffer<int, 4> in_buf({W * n, H * n});
+    init_random(in_buf);
+
+    // The output should be the same size as the input, but with permuted dimensions.
+    buffer<int, 4> out_buf({n, n, W, H});
+    out_buf.allocate();
+
+    index_t params[] = {n - 1};
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_ctx.copy_calls = 0;
+    eval_ctx.copy_elements = 0;
+    p.evaluate(params, inputs, outputs, eval_ctx);
+
+    for (int y = 0; y < H * n; ++y) {
+      for (int x = 0; x < W * n; ++x) {
+        ASSERT_EQ(out_buf(x % n, y % n, x / n, y / n), in_buf(x, y));
+      }
+    }
+
+    ASSERT_EQ(eval_ctx.copy_calls, split ? W / split : 1);
+    ASSERT_EQ(eval_ctx.copy_elements, W * H * n * n);
+  }
 }
 
 }  // namespace slinky

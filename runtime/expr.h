@@ -85,6 +85,8 @@ enum class expr_node_type {
 };
 
 enum class intrinsic {
+  none,
+
   // Some mathematical constants are expressed as calls to functions with no arguments.
   negative_infinity,
   positive_infinity,
@@ -503,12 +505,16 @@ public:
 
 class call : public expr_node<call> {
 public:
+  using callable = std::function<index_t(span<const index_t>)>;
   slinky::intrinsic intrinsic;
+  callable target;
   std::vector<expr> args;
 
   void accept(expr_visitor* v) const override;
 
+  static expr make(slinky::intrinsic i, callable target, std::vector<expr> args);
   static expr make(slinky::intrinsic i, std::vector<expr> args);
+  static expr make(callable target, std::vector<expr> args);
 
   static constexpr expr_node_type static_type = expr_node_type::call;
 };

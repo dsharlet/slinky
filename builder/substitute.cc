@@ -245,6 +245,12 @@ public:
 
     if (!try_match(c->intrinsic, op->intrinsic)) return;
     if (!try_match(c->args, op->args)) return;
+    if (c->target && op->target) {
+      // If std::function-s are defined we can't compare the functions, compare the pointers instead.
+      if (!try_match(c, op)) return;
+    } else {
+      if (!try_match(!c->target, !op->target)) return;
+    }
   }
 
   void visit(const let_stmt* op) override { visit_let(static_cast<const let_stmt*>(op)); }
@@ -690,7 +696,7 @@ void substitutor::visit(const call* op) {
     }
   }
   if (changed) {
-    set_result(call::make(op->intrinsic, std::move(args)));
+    set_result(call::make(op->intrinsic, op->target, std::move(args)));
   } else {
     set_result(op);
   }

@@ -305,8 +305,18 @@ public:
     return op->args.size();
   }
 
+  index_t eval_call(const call* op) {
+    index_t* args = SLINKY_ALLOCA(index_t, op->args.size());
+    for (size_t i = 0; i < op->args.size(); ++i) {
+      args[i] = eval(op->args[i]);
+    }
+    return op->target({args, op->args.size()});
+  }
+
   SLINKY_NO_INLINE index_t eval(const call* op) {
     switch (op->intrinsic) {
+    case intrinsic::none: return eval_call(op);
+
     case intrinsic::positive_infinity: SLINKY_UNREACHABLE << "cannot evaluate positive_infinity";
     case intrinsic::negative_infinity: SLINKY_UNREACHABLE << "cannot evaluate negative_infinity";
     case intrinsic::indeterminate: SLINKY_UNREACHABLE << "cannot evaluate indeterminate";
@@ -523,9 +533,7 @@ public:
 
   SLINKY_NO_INLINE index_t eval(const async* op) {
     index_t task_result = 0;
-    auto task_body = [&]() {
-      task_result = eval_with_new_context(op->task);
-    };
+    auto task_body = [&]() { task_result = eval_with_new_context(op->task); };
     ref_count<thread_pool::task> task;
     thread_pool* pool = context.config->thread_pool;
     if (pool) {

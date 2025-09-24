@@ -190,7 +190,7 @@ void node_mutator::visit(const call* op) {
   if (!changed) {
     set_result(op);
   } else {
-    set_result(call::make(op->intrinsic, std::move(args)));
+    set_result(call::make(op->intrinsic, op->target, std::move(args)));
   }
 }
 

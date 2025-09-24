@@ -322,7 +322,7 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   }
 }
 
-expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
+expr simplify(const call* op, intrinsic fn, const call::callable& target, std::vector<expr> args) {
   bool constant = true;
   bool changed = op == nullptr;
   for (std::size_t i = 0; i < args.size(); ++i) {
@@ -373,7 +373,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     assert(op);
     e = expr(op);
   } else {
-    e = call::make(fn, std::move(args));
+    e = call::make(fn, target, std::move(args));
   }
 
   if (constant && can_evaluate(fn)) {
