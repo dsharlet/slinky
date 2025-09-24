@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <cassert>
+#include <vector>
+#include <utility>
 
 #include "builder/rewrite.h"
 #include "builder/simplify_rules.h"
 #include "runtime/evaluate.h"
+#include "runtime/expr.h"
 
 namespace slinky {
 

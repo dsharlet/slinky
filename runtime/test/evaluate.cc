@@ -2,10 +2,12 @@
 
 #include <cassert>
 
+#include "base/span.h"
 #include "base/thread_pool_impl.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/print.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 

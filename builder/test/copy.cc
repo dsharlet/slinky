@@ -3,6 +3,7 @@
 #include <cassert>
 #include <vector>
 
+#include "base/span.h"
 #include "builder/pipeline.h"
 #include "builder/test/context.h"
 #include "builder/test/util.h"

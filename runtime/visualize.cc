@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "base/modulus_remainder.h"
 #include "runtime/buffer.h"
 #include "runtime/expr.h"
 #include "runtime/print.h"
