@@ -1,11 +1,12 @@
 #ifndef SLINKY_RUNTIME_PRINT_H
 #define SLINKY_RUNTIME_PRINT_H
 
-#include "runtime/expr.h"
-#include "runtime/stmt.h"
-
 #include <iostream>
 #include <tuple>
+
+#include "runtime/expr.h"
+#include "runtime/stmt.h"
+#include "base/modulus_remainder.h"
 
 namespace slinky {
 
