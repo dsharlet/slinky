@@ -506,8 +506,14 @@ public:
 class call : public expr_node<call> {
 public:
   using callable = std::function<index_t(span<const index_t>)>;
+
+  // If the call is an intrinsic operation, which intrinsic it is.
   slinky::intrinsic intrinsic;
+
+  // Implementation of the call as a user defined function. This function must be a pure function of the inputs.
   callable target;
+
+  // Arguments to the function.
   std::vector<expr> args;
 
   void accept(expr_visitor* v) const override;
