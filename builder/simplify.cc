@@ -1110,7 +1110,7 @@ public:
       }
     }
 
-    expr e = simplify(op, op->intrinsic, std::move(args));
+    expr e = simplify(op, op->intrinsic, op->target, std::move(args));
     if (e.same_as(op)) {
       set_result(std::move(e), {bounds_of(op, std::move(args_bounds)), alignment_type()});
     } else {
@@ -2642,7 +2642,7 @@ public:
       } else if (a.same_as(op->args[0]) && b.same_as(op->args[1])) {
         set_result(expr(op));
       } else {
-        set_result(call::make(op->intrinsic, {std::move(a), std::move(b)}));
+        set_result(call::make(op->intrinsic, op->target, {std::move(a), std::move(b)}));
       }
       return;
     }

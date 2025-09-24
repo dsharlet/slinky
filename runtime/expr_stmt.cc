@@ -1,7 +1,3 @@
-#include "runtime/expr.h"
-#include "runtime/print.h"
-#include "runtime/stmt.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -12,6 +8,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "runtime/expr.h"
+#include "runtime/print.h"
+#include "runtime/stmt.h"
+
 
 namespace slinky {
 
@@ -422,11 +423,20 @@ expr select::make(expr condition, expr true_value, expr false_value) {
   return expr(n);
 }
 
-expr call::make(slinky::intrinsic i, std::vector<expr> args) {
+expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
   auto n = new call();
   n->intrinsic = i;
+  n->target = std::move(target);
   n->args = std::move(args);
   return expr(n);
+}
+
+expr call::make(slinky::intrinsic i, std::vector<expr> args) {
+  return call::make(i, nullptr, std::move(args));
+}
+
+expr call::make(callable target, std::vector<expr> args) {
+  return call::make(intrinsic::none, std::move(target), std::move(args));
 }
 
 stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, attributes attrs) {

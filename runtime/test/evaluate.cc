@@ -74,6 +74,15 @@ TEST(evaluate, buffer_fields) {
   ASSERT_EQ(evaluate(buffer_fold_factor(x, 0), context), dim::unfolded);
 }
 
+TEST(evaluate, user_defined_call) {
+  auto fn = [](span<const index_t> args) { return args[0] * args[1]; };
+
+  eval_context context;
+  context[x] = 3;
+  context[y] = 4;
+  ASSERT_EQ(evaluate(call::make(intrinsic::none, fn, {x, y}), context), 12);
+}
+
 TEST(evaluate, call) {
   std::vector<index_t> calls;
   stmt c = call_stmt::make(
@@ -214,7 +223,9 @@ TEST(evaluate, slice_buffer) {
 
   auto buf_before = buf;
 
-  evaluate(slice_buffer::make(x, x, {{}, 4, {}, 2}, make_check(x, {10, 30}, buf.address_at(slinky::slice, 4, slinky::slice, 2))), ctx);
+  evaluate(slice_buffer::make(
+               x, x, {{}, 4, {}, 2}, make_check(x, {10, 30}, buf.address_at(slinky::slice, 4, slinky::slice, 2))),
+      ctx);
   evaluate(slice_buffer::make(y, x, {{}, 4, {}, 2},
                block::make({
                    make_check(x, {10, 20, 30, 40}, buf.base()),

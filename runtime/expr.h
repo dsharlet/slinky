@@ -1,20 +1,21 @@
 #ifndef SLINKY_RUNTIME_EXPR_H
 #define SLINKY_RUNTIME_EXPR_H
 
-#include "base/arithmetic.h"
-#include "base/modulus_remainder.h"
-#include "base/ref_count.h"
-#include "base/span.h"
-#include "runtime/buffer.h"
-
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "base/arithmetic.h"
+#include "base/modulus_remainder.h"
+#include "base/ref_count.h"
+#include "base/span.h"
+#include "runtime/buffer.h"
 
 namespace slinky {
 
@@ -85,6 +86,8 @@ enum class expr_node_type {
 };
 
 enum class intrinsic {
+  none,
+
   // Some mathematical constants are expressed as calls to functions with no arguments.
   negative_infinity,
   positive_infinity,
@@ -503,12 +506,22 @@ public:
 
 class call : public expr_node<call> {
 public:
+  using callable = std::function<index_t(span<const index_t>)>;
+
+  // If the call is an intrinsic operation, which intrinsic it is.
   slinky::intrinsic intrinsic;
+
+  // Implementation of the call as a user defined function. This function must be a pure function of the inputs.
+  callable target;
+
+  // Arguments to the function.
   std::vector<expr> args;
 
   void accept(expr_visitor* v) const override;
 
+  static expr make(slinky::intrinsic i, callable target, std::vector<expr> args);
   static expr make(slinky::intrinsic i, std::vector<expr> args);
+  static expr make(callable target, std::vector<expr> args);
 
   static constexpr expr_node_type static_type = expr_node_type::call;
 };

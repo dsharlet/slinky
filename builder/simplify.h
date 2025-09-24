@@ -58,7 +58,10 @@ expr simplify(const logical_and* op, expr a, expr b);
 expr simplify(const logical_or* op, expr a, expr b);
 expr simplify(const logical_not* op, expr a);
 expr simplify(const class select* op, expr c, expr t, expr f);
-expr simplify(const call* op, intrinsic fn, std::vector<expr> args);
+expr simplify(const call* op, intrinsic fn, const call::callable& target, std::vector<expr> args);
+inline expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
+  return simplify(op, fn, nullptr, std::move(args));
+}
 
 interval_expr simplify_intersection(interval_expr a, interval_expr b);
 
