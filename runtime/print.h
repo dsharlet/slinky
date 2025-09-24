@@ -4,9 +4,9 @@
 #include <iostream>
 #include <tuple>
 
+#include "base/modulus_remainder.h"
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
-#include "base/modulus_remainder.h"
 
 namespace slinky {
 
