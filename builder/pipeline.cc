@@ -312,6 +312,7 @@ bounds_map get_output_bounds(const std::vector<func::output>& outputs, const std
   bounds_map output_bounds;
   for (const func::output& o : outputs) {
     for (index_t d = 0; d < static_cast<index_t>(o.dims.size()); ++d) {
+      // We need to skip the dimensions that we slice when indexing the buffer's dimensions.
       index_t od = d;
       for (index_t slice_d = 0; slice_d <= od && slice_d < static_cast<index_t>(slices.size()); ++slice_d) {
         if (slices[slice_d].defined()) {
