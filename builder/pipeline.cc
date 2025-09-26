@@ -224,7 +224,6 @@ func func::make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t 
   std::vector<func::input> inputs;
   for (std::size_t i = 0; i < src.size(); ++i) {
     // Prepare the input.
-    assert(src[i]->rank() + 1 == rank);
     func::input input;
     input.buffer = src[i];
     input.bounds.resize(rank);
@@ -236,6 +235,10 @@ func func::make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t 
     input.bounds.erase(input.bounds.begin() + dim);
     input.output_slice.resize(dim + 1);
     input.output_slice[dim] = static_cast<index_t>(i);
+
+    if (input.bounds.size() > src[i]->rank()) {
+      input.bounds.resize(src[i]->rank());
+    }
 
     inputs.push_back(std::move(input));
   }
@@ -305,15 +308,21 @@ public:
   }
 };
 
-bounds_map get_output_bounds(const std::vector<func::output>& outputs) {
+bounds_map get_output_bounds(const std::vector<func::output>& outputs, const std::vector<expr>& slices) {
   bounds_map output_bounds;
   for (const func::output& o : outputs) {
     for (index_t d = 0; d < static_cast<index_t>(o.dims.size()); ++d) {
+      index_t od = d;
+      for (index_t slice_d = 0; slice_d <= od && slice_d < static_cast<index_t>(slices.size()); ++slice_d) {
+        if (slices[slice_d].defined()) {
+          ++od;
+        }
+      }
       std::optional<interval_expr>& output_bounds_d = output_bounds[o.dims[d]];
       if (!output_bounds_d) {
-        output_bounds_d = buffer_bounds(o.sym(), d);
+        output_bounds_d = buffer_bounds(o.sym(), od);
       } else {
-        *output_bounds_d |= buffer_bounds(o.sym(), d);
+        *output_bounds_d |= buffer_bounds(o.sym(), od);
       }
     }
   }
@@ -743,9 +752,8 @@ class pipeline_builder {
 
   void compute_allocation_bounds() {
     for (const func* f : order_) {
-      bounds_map output_bounds = get_output_bounds(f->outputs());
-
       for (const auto& i : f->inputs()) {
+        bounds_map output_bounds = get_output_bounds(f->outputs(), i.output_slice);
         box_expr crop = compute_input_bounds(f, i, output_bounds, sanitizer_);
         auto& bound = allocation_bounds_[i.sym()];
         if (bound) {
