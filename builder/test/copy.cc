@@ -782,20 +782,36 @@ TEST(split, copy) {
   ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2));
 }
 
-TEST(stack, copy) {
+class stack : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, stack, testing::Values(0, 1, 2, 3, 6));
+
+TEST_P(stack, copy) {
+  const int dim = GetParam();
+
   // Make the pipeline
   node_context ctx;
 
+  const int output_rank = std::max(3, dim + 1);
+
   auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
   auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(int));
-  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", output_rank, sizeof(int));
 
-  var x(ctx, "x");
-  var y(ctx, "y");
-  var z(ctx, "z");
+  std::vector<var> dims = {
+      var(ctx, "x"),
+      var(ctx, "y"),
+      var(ctx, "z"),
+      var(ctx, "w"),
+      var(ctx, "a"),
+      var(ctx, "b"),
+      var(ctx, "c"),
+  };
+  dims.resize(output_rank);
+
   test_context eval_ctx;
 
-  func concat = func::make_stack({in1, in2}, {out, {x, y, z}}, -1, eval_ctx.copy);
+  func concat = func::make_stack({in1, in2}, {out, dims}, dim, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
@@ -808,7 +824,12 @@ TEST(stack, copy) {
   init_random(in1_buf);
   init_random(in2_buf);
 
-  buffer<int, 3> out_buf({W, H, 2});
+  std::vector<index_t> extents(output_rank - 1, 1);
+  extents[0] = W;
+  extents[1] = H;
+  extents.insert(extents.begin() + dim, 2);
+
+  buffer<int, 7> out_buf(extents);
   out_buf.allocate();
 
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
@@ -817,8 +838,13 @@ TEST(stack, copy) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y, 0), in1_buf(x, y));
-      ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y));
+      std::vector<index_t> output_idx(output_rank - 1);
+      output_idx[0] = x;
+      output_idx[1] = y;
+      output_idx.insert(output_idx.begin() + dim, 0);
+      ASSERT_EQ(out_buf(output_idx), in1_buf(x, y));
+      output_idx[dim] = 1;
+      ASSERT_EQ(out_buf(output_idx), in2_buf(x, y));
     }
   }
 
