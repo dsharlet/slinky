@@ -896,7 +896,7 @@ public:
   in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
     for (const buffer_expr_ptr& i : outputs) {
       buffers[i->sym()] = {i->sym()};
-      use_count[i->sym()] = 0;
+      use_count[i->sym()] = 1;
     }
   }
 

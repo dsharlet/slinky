@@ -542,6 +542,65 @@ TEST_P(multiple_uses, cannot_alias_output) {
   }
 }
 
+TEST_P(multiple_uses, cannot_alias_input_output) {
+  const int in_place = std::get<0>(GetParam());
+  const bool split = std::get<1>(GetParam());
+  if (split) GTEST_SKIP();
+
+  // Make the pipeline
+  node_context ctx;
+
+  // In the pipeline:
+  //
+  //   in -> a -> b -> c
+  //
+  // where a and c are both outputs, we can't compute b in place with a, because it corrupts the value of a, which is an output.
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+
+  auto a = buffer_expr::make(ctx, "a", 2, sizeof(short));
+  auto b = buffer_expr::make(ctx, "b", 2, sizeof(short));
+  auto c = buffer_expr::make(ctx, "b", 2, sizeof(short));
+
+  b->dim(0).fold_factor = dim::unfolded;
+  b->dim(1).fold_factor = dim::unfolded;
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func in_a = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{a, {x, y}}});
+  func a_b = func::make(add_1<short>, {{a, {point(x), point(y)}}}, {{b, {x, y}}},
+      call_stmt::attributes{.allow_in_place = in_place == 0 ? 0x1 : 0, .name = "a_b"});
+  func b_c = func::make(add_1<short>, {{b, {point(x), point(y)}}}, {{c, {x, y}}},
+      call_stmt::attributes{.name = "b_c"});
+
+  pipeline p = build_pipeline(ctx, {in}, {a, c});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  buffer<short, 2> a_buf({W, H});
+  buffer<short, 2> c_buf({W, H});
+  a_buf.allocate();
+  c_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&a_buf, &c_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(a_buf(x, y), in_buf(x, y) + 1);
+      ASSERT_EQ(c_buf(x, y), in_buf(x, y) + 3);
+    }
+  }
+}
+
 TEST(reused_in_loop, cannot_alias) {
   // Make the pipeline
   node_context ctx;
