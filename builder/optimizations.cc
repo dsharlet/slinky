@@ -895,8 +895,9 @@ class in_place_aliaser : public stmt_mutator {
 public:
   in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
     for (const buffer_expr_ptr& i : outputs) {
+      // Treat outputs as being used to preserve their results.
       buffers[i->sym()] = {i->sym()};
-      use_count[i->sym()] = 0;
+      use_count[i->sym()] = 1;
     }
   }
 
