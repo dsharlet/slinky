@@ -1134,4 +1134,18 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   ASSERT_EQ(b.rank, 4);
 }
 
+TEST(fuse_contiguous_dims, cant_fuse_mismatched_bounds) {
+  buffer<int, 2> a({2, 3}), b({2, 3});
+  buffer<int> c, d;
+  a.crop(0, 1, 1);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 0);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  // In this case, we have buffers with smaller rank in between the buffers with
+  // mismatched dimensions.
+  ASSERT_EQ(fuse_contiguous_dims(a, c, b, d), 0);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+}
+  
 }  // namespace slinky
