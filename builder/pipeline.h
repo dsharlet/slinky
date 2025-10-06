@@ -193,6 +193,7 @@ private:
 
   std::vector<input> inputs_;
   std::vector<output> outputs_;
+  std::vector<expr> scalars_;
   // If this is true, `inputs_` must have 2 elements, where the second input is the padding.
   bool is_padded_copy_ = false;
 
@@ -204,7 +205,7 @@ private:
 
 public:
   func() = default;
-  func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs,
+  func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, std::vector<expr> scalars,
       call_stmt::attributes attrs = {});
   func(copy_stmt::callable impl, std::vector<input> inputs, output out);
   func(copy_stmt::callable impl, input src, output dst, input pad);
@@ -275,7 +276,7 @@ private:
       return call_impl<T...>(impl, ctx, op, std::make_index_sequence<sizeof...(T)>());
     };
 
-    return func(std::move(wrapper), std::move(inputs), std::move(outputs), std::move(attrs));
+    return func(std::move(wrapper), std::move(inputs), std::move(outputs), {}, std::move(attrs));
   }
 
 public:
@@ -300,7 +301,7 @@ public:
           lambda, ctx, op, std::make_index_sequence<std::tuple_size<typename sig::arg_types>::value>());
     };
 
-    return func(std::move(wrapper), std::move(inputs), std::move(outputs), std::move(attrs));
+    return func(std::move(wrapper), std::move(inputs), std::move(outputs), {}, std::move(attrs));
   }
 
   // Version for plain old function ptrs

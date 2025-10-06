@@ -206,6 +206,20 @@ void node_mutator::visit(const loop* op) {
     set_result(loop::make(op->sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
   }
 }
+void node_mutator::visit(const call_stmt* op) {
+  std::vector<expr> scalars;
+  scalars.reserve(op->scalars.size());
+  bool changed = false;
+  for (const expr& i : op->scalars) {
+    scalars.push_back(mutate(i));
+    changed = changed || !scalars.back().same_as(i);
+  }
+  if (!changed) {
+    set_result(op);
+  } else {
+    set_result(call_stmt::make(op->target, op->inputs, op->outputs, std::move(scalars), op->attrs));
+  }
+}
 void node_mutator::visit(const copy_stmt* op) {
   std::vector<expr> src_x;
   src_x.reserve(op->src_x.size());

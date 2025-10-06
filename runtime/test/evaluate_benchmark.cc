@@ -35,7 +35,7 @@ stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size = nanoseco
         while (clock::now() < end) {}
         return 0;
       },
-      {}, {}, {});
+      {}, {}, {}, {});
 }
 
 stmt make_loop(stmt body) { return loop::make(x, loop::serial, range(0, iterations), 1, body); }
