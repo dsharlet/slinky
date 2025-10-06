@@ -2669,10 +2669,10 @@ public:
 
 bool can_evaluate(intrinsic fn) {
   switch (fn) {
-  case intrinsic::abs:
-  case intrinsic::and_then:
-  case intrinsic::or_else: return true;
-  default: return false;
+  case intrinsic::negative_infinity:
+  case intrinsic::positive_infinity:
+  case intrinsic::indeterminate: return false;
+  default: return true;
   }
 }
 
