@@ -699,7 +699,7 @@ public:
             std::fill_n(&sems(0, sems.dim(1).min()), stage_count, 1);
             return 0;
           },
-          {}, {l.semaphores}, std::move(init_sems_attrs));
+          {}, {l.semaphores}, {}, std::move(init_sems_attrs));
       // We can fold the semaphores array by the number of threads we'll use.
       // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
       expr sem_fold_factor = stage_count;

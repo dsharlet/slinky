@@ -439,11 +439,12 @@ expr call::make(callable target, std::vector<expr> args) {
   return call::make(intrinsic::none, std::move(target), std::move(args));
 }
 
-stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, attributes attrs) {
+stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs) {
   auto n = new call_stmt();
   n->target = std::move(target);
   n->inputs = std::move(inputs);
   n->outputs = std::move(outputs);
+  n->scalars = std::move(scalars);
   n->attrs = std::move(attrs);
   return stmt(n);
 }

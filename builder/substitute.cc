@@ -277,6 +277,7 @@ public:
 
     if (!try_match(cs->inputs, op->inputs)) return;
     if (!try_match(cs->outputs, op->outputs)) return;
+    if (!try_match(cs->scalars, op->scalars)) return;
     if (cs->target && op->target) {
       // If std::function-s are defined we can't compare the functions, compare the pointers instead.
       if (!try_match(cs, op)) return;
@@ -727,8 +728,13 @@ void substitutor::visit(const call_stmt* op) {
     outputs[i] = visit_symbol(op->outputs[i]);
     changed = changed || outputs[i] != op->outputs[i];
   }
+  std::vector<expr> scalars(op->scalars.size());
+  for (std::size_t i = 0; i < op->scalars.size(); ++i) {
+    scalars[i] = mutate(op->scalars[i]);
+    changed = changed || !scalars[i].same_as(op->scalars[i]);
+  }
   if (changed) {
-    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
+    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), op->attrs));
   } else {
     set_result(op);
   }

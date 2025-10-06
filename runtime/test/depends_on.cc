@@ -20,7 +20,7 @@ var xc(symbols, "xc");
 var yc(symbols, "yc");
 
 stmt dummy_call(std::vector<var> inputs, std::vector<var> outputs, call_stmt::attributes attrs = {}) {
-  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), std::move(attrs));
+  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), {}, std::move(attrs));
 }
 
 }  // namespace

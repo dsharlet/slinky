@@ -50,7 +50,7 @@ auto _ = []() {
 MATCHER_P(matches, x, "") { return match(arg, x); }
 
 stmt dummy_call(std::vector<var> inputs, std::vector<var> outputs, call_stmt::attributes attrs = {}) {
-  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), std::move(attrs));
+  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), {}, std::move(attrs));
 }
 
 }  // namespace
@@ -538,7 +538,7 @@ TEST(simplify, buffer_bounds) {
     return allocate::make(buf, memory_type::heap, 1, dims, body);
   };
   auto use_buffer = [](var b) { return dummy_call({}, {b}); };
-  auto use_buffers = [](std::vector<var> bs) { return call_stmt::make(nullptr, {}, std::move(bs), {}); };
+  auto use_buffers = [](std::vector<var> bs) { return call_stmt::make(nullptr, {}, std::move(bs), {}, {}); };
   ASSERT_THAT(simplify(decl_bounds(b0, {buffer_bounds(b1, 0)},
                   crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), use_buffer(b2)))),
       matches(decl_bounds(b0, {{buffer_bounds(b1, 0)}}, crop_dim::make(b2, b0, 0, bounds(x, y), use_buffer(b2)))));

@@ -162,6 +162,9 @@ public:
         deps->buffer_dims = true;
       }
     }
+    for (const expr& i : op->scalars) {
+      if (i.defined()) i.accept(this);
+    }
   }
 
   void visit(const copy_stmt* op) override {

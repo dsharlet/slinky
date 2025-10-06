@@ -105,6 +105,7 @@ public:
 
   void visit(const let_stmt*) override;
   void visit(const loop*) override;
+  void visit(const call_stmt*) override;
   void visit(const copy_stmt*) override;
   void visit(const allocate*) override;
   void visit(const make_buffer*) override;

@@ -86,8 +86,8 @@ box_expr buffer_expr::bounds() const {
 }
 
 func::func(
-    call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs)
-    : impl_(std::move(impl)), attrs_(std::move(attrs)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+    call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, std::vector<expr> scalars, call_stmt::attributes attrs)
+    : impl_(std::move(impl)), attrs_(std::move(attrs)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), scalars_(std::move(scalars)) {
   add_this_to_buffers();
 }
 
@@ -109,6 +109,7 @@ func& func::operator=(func&& m) noexcept {
   copy_impl_ = std::move(m.copy_impl_);
   inputs_ = std::move(m.inputs_);
   outputs_ = std::move(m.outputs_);
+  scalars_ = std::move(m.scalars_);
   loops_ = std::move(m.loops_);
   compute_at_ = std::move(m.compute_at_);
   is_padded_copy_ = m.is_padded_copy_;
@@ -168,7 +169,7 @@ stmt func::make_call() const {
     for (const func::output& i : outputs_) {
       outputs.push_back(i.sym());
     }
-    return call_stmt::make(impl_, std::move(inputs), std::move(outputs), attrs_);
+    return call_stmt::make(impl_, std::move(inputs), std::move(outputs), scalars_, attrs_);
   } else if (is_padded_copy_) {
     assert(inputs_.size() == 2);
     assert(outputs_.size() == 1);
@@ -544,7 +545,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
       }
 
       if (changed) {
-        set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->attrs));
+        set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->scalars, op->attrs));
       } else {
         set_result(op);
       }

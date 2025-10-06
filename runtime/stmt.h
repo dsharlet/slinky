@@ -154,11 +154,12 @@ public:
   // accessed (and how) by the callable.
   symbol_list inputs;
   symbol_list outputs;
+  std::vector<expr> scalars;
   attributes attrs;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(callable target, symbol_list inputs, symbol_list outputs, attributes attrs);
+  static stmt make(callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs);
 
   static constexpr stmt_node_type static_type = stmt_node_type::call_stmt;
 };

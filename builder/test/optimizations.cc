@@ -54,13 +54,13 @@ int count_unique_nodes(const expr& s) {
 MATCHER_P(unique_node_count_is, n, "") { return count_unique_nodes(arg) == n; }
 
 stmt dummy_call(std::vector<var> inputs, std::vector<var> outputs, call_stmt::attributes attrs = {}) {
-  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), std::move(attrs));
+  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), {}, std::move(attrs));
 }
 
 }  // namespace
 
 TEST(optimizations, fuse_siblings) {
-  auto use_buffer = [](var x) { return call_stmt::make(nullptr, {}, {x}, {}); };
+  auto use_buffer = [](var x) { return call_stmt::make(nullptr, {}, {x}, {}, {}); };
 
   ASSERT_THAT(fuse_siblings(block::make({
                   allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),

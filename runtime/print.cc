@@ -331,7 +331,7 @@ public:
     } else {
       *this << "<null target>";
     }
-    *this << ", {" << n->inputs << "}, {" << n->outputs << "})";
+    *this << ", {" << n->inputs << "}, {" << n->outputs << "}, {" << n->scalars << "})";
   }
 
   void visit(const copy_stmt* n) override {

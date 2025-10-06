@@ -1479,8 +1479,17 @@ public:
     };
     visit_symbol_list(inputs);
     visit_symbol_list(outputs);
+
+    std::vector<expr> scalars = op->scalars;
+    for (expr& i : scalars) {
+      expr new_i = mutate(i);
+      if (!new_i.same_as(i)) {
+        i = std::move(new_i);
+        changed = true;
+      }
+    }
     if (changed) {
-      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
+      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), op->attrs));
     } else {
       set_result(op);
     }

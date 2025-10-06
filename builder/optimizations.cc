@@ -148,7 +148,8 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
       src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
       at = buffer_min(src, src_d) + offset * (scale - 1);
     } else {
-      // This formulation is simpler and would be nice to use all the time, however, it assumes there is no padding on the copy.
+      // This formulation is simpler and would be nice to use all the time, however, it assumes there is no padding on
+      // the copy.
       src_dim.bounds = buffer_bounds(dst, dst_d);
       at = buffer_min(dst, dst_d) * scale + offset;
     }
@@ -1184,7 +1185,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         impl(*src_buf, *dst_buf, *pad_buf);
         return 0;
       },
-      {}, {op->src, dst, op->pad}, std::move(copy_attrs));
+      {}, {op->src, dst, op->pad}, {}, std::move(copy_attrs));
 
   std::vector<expr> src_x = op->src_x;
   std::vector<var> dst_x = op->dst_x;

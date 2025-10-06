@@ -92,7 +92,7 @@ TEST(evaluate, call) {
         calls.push_back(ctx[x]);
         return 0;
       },
-      {}, {}, {});
+      {}, {}, {}, {});
 
   eval_context context;
   context[x] = 2;
@@ -117,7 +117,7 @@ TEST(evaluate, loop) {
           sum_x += ctx[x];
           return 0;
         },
-        {}, {}, {});
+        {}, {}, {}, {});
 
     stmt l = loop::make(x, max_workers, range(2, 12), 3, c);
 
@@ -142,7 +142,7 @@ stmt make_check(var buffer, std::vector<int> extents, void* base = nullptr) {
         assert(buf.base == base);
         return 0;
       },
-      {}, {buffer}, {});
+      {}, {buffer}, {}, {});
 }
 
 TEST(evaluate, crop_dim) {
@@ -337,14 +337,14 @@ TEST(evaluate, async) {
         ++state;
         return 0;
       },
-      {}, {}, {});
+      {}, {}, {}, {});
   auto make_check_state = [&](index_t value) {
     return call_stmt::make(
         [value, &state](const call_stmt* op, eval_context& ctx) -> index_t {
           assert(state == value);
           return 0;
         },
-        {}, {}, {});
+        {}, {}, {}, {});
   };
 
   stmt test = async::make(x,
