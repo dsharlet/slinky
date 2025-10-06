@@ -53,6 +53,10 @@ int count_unique_nodes(const expr& s) {
 
 MATCHER_P(unique_node_count_is, n, "") { return count_unique_nodes(arg) == n; }
 
+stmt dummy_call(std::vector<var> inputs, std::vector<var> outputs, call_stmt::attributes attrs = {}) {
+  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), std::move(attrs));
+}
+
 }  // namespace
 
 TEST(optimizations, fuse_siblings) {
@@ -112,7 +116,7 @@ TEST(optimizations, fuse_siblings) {
 TEST(optimizations, remove_pure_dims) {
   {
     // Test support for crop_dim.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt crop = crop_dim::make(y, z, 1, {0, 0}, call);
 
     stmt result = remove_pure_dims(crop);
@@ -122,7 +126,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test support for crop_buffer.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt crop = crop_buffer::make(y, z, {{}, {0, 0}}, call);
 
     stmt result = remove_pure_dims(crop);
@@ -132,7 +136,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test support for allocate.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt alloc = allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, call);
 
     stmt result = remove_pure_dims(alloc);
@@ -142,7 +146,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test slicing inputs as well as outputs.
-    stmt call = call_stmt::make(nullptr, {x}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({x}, {y}, {.min_rank = 0});
     stmt crop = crop_dim::make(y, z, 1, {0, 0}, call);
 
     stmt result = remove_pure_dims(crop);
@@ -153,7 +157,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test propagation of sliceable dims through clone_buffer.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt alloc = allocate::make(
         z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, clone_buffer::make(y, z, call));
 
@@ -164,7 +168,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test propagation of sliceable dims through transpose.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt alloc = allocate::make(
         z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, transpose::make(y, z, {1, 0}, call));
 
@@ -175,7 +179,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test slicing more than one dimension.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt crop1 = crop_dim::make(z, w, 1, {0, 0}, crop_dim::make(y, z, 2, {0, 0}, call));
 
     stmt result = remove_pure_dims(crop1);
@@ -186,7 +190,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test slicing the correct dimension under shadowing.
-    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt call = dummy_call({y}, {y}, {.min_rank = 0});
     stmt crop1 = crop_dim::make(y, z, 1, {0, 0}, crop_dim::make(y, z, 2, {0, 0}, call));
 
     stmt result = remove_pure_dims(crop1);
@@ -197,7 +201,7 @@ TEST(optimizations, remove_pure_dims) {
 
   {
     // Test slicing two dimensions under shadowing and overlaping input/output.
-    stmt call = call_stmt::make(nullptr, {x}, {x}, {.min_rank = 0});
+    stmt call = dummy_call({x}, {x}, {.min_rank = 0});
     stmt crop1 = crop_dim::make(x, x, 1, {0, 0}, crop_dim::make(x, x, 2, {0, 0}, call));
     stmt result = remove_pure_dims(crop1);
     ASSERT_THAT(result, matches(crop_dim::make(x, x, 1, {0, 0},
@@ -240,7 +244,7 @@ TEST(optimizations, optimize_symbols) {
 
 TEST(optimizations, deshadow_speed) {
   node_context ctx = symbols;
-  stmt s = call_stmt::make(nullptr, {x}, {y}, {});
+  stmt s = dummy_call({x}, {y});
   for (int i = 0; i < 1000; ++i) {
     s = crop_dim::make(y, y, 0, {0, 0}, s);
   }
@@ -254,157 +258,157 @@ TEST(optimizations, canonicalize_nodes) {
                   copy_stmt::make(nullptr, x, {z, w}, y, {z, w}, {})})),
       unique_node_count_is(4));
   ASSERT_THAT(
-      canonicalize_nodes(block::make({call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {y}, {})})),
+      canonicalize_nodes(block::make({dummy_call({x}, {y}), dummy_call({x}, {y})})),
       unique_node_count_is(3));
 }
 
 TEST(optimizations, parallelize_tasks) {
   // Two independent consumers.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {x}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({x}, {z}),
               })),
-      matches(async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {z}, {}))));
+      matches(async::make(var(), dummy_call({x}, {y}), dummy_call({x}, {z}))));
 
   // One producer, one consumer.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
               })),
       matches(block::make({
-          call_stmt::make(nullptr, {x}, {y}, {}),
-          call_stmt::make(nullptr, {y}, {z}, {}),
+          dummy_call({x}, {y}),
+          dummy_call({y}, {z}),
       })));
 
   // And with an unrelated check.
   ASSERT_THAT(parallelize_tasks(block::make({
                   check::make(w),
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {x}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({x}, {z}),
               })),
-      matches(async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}),
+      matches(async::make(var(), dummy_call({x}, {y}),
           block::make({
               check::make(w),
-              call_stmt::make(nullptr, {x}, {z}, {}),
+              dummy_call({x}, {z}),
           }))));
   ASSERT_THAT(parallelize_tasks(block::make({
                   check::make(w),
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
               })),
       matches(block::make({
           check::make(w),
-          call_stmt::make(nullptr, {x}, {y}, {}),
-          call_stmt::make(nullptr, {y}, {z}, {}),
+          dummy_call({x}, {y}),
+          dummy_call({y}, {z}),
       })));
 
   // One producer, one consumer computed in-place.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {y}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {y}),
               })),
       matches(block::make({
-          call_stmt::make(nullptr, {x}, {y}, {}),
-          call_stmt::make(nullptr, {y}, {y}, {}),
+          dummy_call({x}, {y}),
+          dummy_call({y}, {y}),
       })));
 
   // One producer, two independent consumers.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
-                  call_stmt::make(nullptr, {y}, {w}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
+                  dummy_call({y}, {w}),
               })),
       matches(block::make({
-          call_stmt::make(nullptr, {x}, {y}, {}),
-          async::make(var(), call_stmt::make(nullptr, {y}, {z}, {}), call_stmt::make(nullptr, {y}, {w}, {})),
+          dummy_call({x}, {y}),
+          async::make(var(), dummy_call({y}, {z}), dummy_call({y}, {w})),
       })));
   // One producer, three independent consumers.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
-                  call_stmt::make(nullptr, {y}, {w}, {}),
-                  call_stmt::make(nullptr, {y}, {u}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
+                  dummy_call({y}, {w}),
+                  dummy_call({y}, {u}),
               })),
       matches(block::make({
-          call_stmt::make(nullptr, {x}, {y}, {}),
-          async::make(var(), call_stmt::make(nullptr, {y}, {z}, {}),
-              async::make(var(), call_stmt::make(nullptr, {y}, {w}, {}), call_stmt::make(nullptr, {y}, {u}, {}))),
+          dummy_call({x}, {y}),
+          async::make(var(), dummy_call({y}, {z}),
+              async::make(var(), dummy_call({y}, {w}), dummy_call({y}, {u}))),
       })));
 
   // A check that both independent consumers depends on.
   ASSERT_THAT(parallelize_tasks(block::make({
                   check::make(buffer_min(x, 0) < buffer_max(x, 0)),
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {x}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({x}, {z}),
               })),
       matches(block::make({
           check::make(buffer_min(x, 0) < buffer_max(x, 0)),
-          async::make(var(), call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {z}, {})),
+          async::make(var(), dummy_call({x}, {y}), dummy_call({x}, {z})),
       })));
 
   // A producer-consumer, with an unrelated stage.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
-                  call_stmt::make(nullptr, {x}, {w}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
+                  dummy_call({x}, {w}),
               })),
       matches(block::make({
           async::make(var(),
               block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
               }),
-              call_stmt::make(nullptr, {x}, {w}, {})),
+              dummy_call({x}, {w})),
       })));
 
   // Two unrelated producer-consumers.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
-                  call_stmt::make(nullptr, {x}, {w}, {}),
-                  call_stmt::make(nullptr, {w}, {u}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
+                  dummy_call({x}, {w}),
+                  dummy_call({w}, {u}),
               })),
       matches(async::make(var(),
           block::make({
-              call_stmt::make(nullptr, {x}, {y}, {}),
-              call_stmt::make(nullptr, {y}, {z}, {}),
+              dummy_call({x}, {y}),
+              dummy_call({y}, {z}),
           }),
           block::make({
-              call_stmt::make(nullptr, {x}, {w}, {}),
-              call_stmt::make(nullptr, {w}, {u}, {}),
+              dummy_call({x}, {w}),
+              dummy_call({w}, {u}),
           }))));
 
   // Two unrelated producer-consumers, where both consumers are consumed by the same stage.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
-                  call_stmt::make(nullptr, {x}, {w}, {}),
-                  call_stmt::make(nullptr, {w}, {u}, {}),
-                  call_stmt::make(nullptr, {z, u}, {v}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
+                  dummy_call({x}, {w}),
+                  dummy_call({w}, {u}),
+                  dummy_call({z, u}, {v}),
               })),
       matches(block::make({
           async::make(var(),
               block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
               }),
               block::make({
-                  call_stmt::make(nullptr, {x}, {w}, {}),
-                  call_stmt::make(nullptr, {w}, {u}, {}),
+                  dummy_call({x}, {w}),
+                  dummy_call({w}, {u}),
               })),
-          call_stmt::make(nullptr, {z, u}, {v}, {}),
+          dummy_call({z, u}, {v}),
       })));
 
   // One producer, two independent consumers, one of which is computed in-place.
   ASSERT_THAT(parallelize_tasks(block::make({
-                  call_stmt::make(nullptr, {x}, {y}, {}),
-                  call_stmt::make(nullptr, {y}, {z}, {}),
-                  call_stmt::make(nullptr, {y}, {y}, {}),
+                  dummy_call({x}, {y}),
+                  dummy_call({y}, {z}),
+                  dummy_call({y}, {y}),
               })),
       matches(block::make({
-          call_stmt::make(nullptr, {x}, {y}, {}),
-          call_stmt::make(nullptr, {y}, {z}, {}),
-          call_stmt::make(nullptr, {y}, {y}, {}),
+          dummy_call({x}, {y}),
+          dummy_call({y}, {z}),
+          dummy_call({y}, {y}),
       })));
 }
 
