@@ -1088,7 +1088,8 @@ TEST_P(tile, param) {
   var param(ctx, "N");
   test_context eval_ctx;
 
-  expr N = max(1, call::make(intrinsic::none, [](span<const index_t> args) { return args[0] + 1; }, {param}));
+  expr N = max(1, call::make(intrinsic::none,
+                      [](const call* op, eval_context& ctx) { return evaluate(op->args[0], ctx) + 1; }, {param}));
 
   func copy = func::make_copy({in, {point(xo * N + xi), point(yo * N + yi)}}, {out, {xi, yi, xo, yo}}, eval_ctx.copy);
 

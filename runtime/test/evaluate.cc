@@ -77,7 +77,11 @@ TEST(evaluate, buffer_fields) {
 }
 
 TEST(evaluate, user_defined_call) {
-  auto fn = [](span<const index_t> args) { return args[0] * args[1]; };
+  auto fn = [](const call* op, eval_context& ctx) {
+    index_t x = evaluate(op->args[0], ctx);
+    index_t y = evaluate(op->args[1], ctx);
+    return x * y; 
+  };
 
   eval_context context;
   context[x] = 3;

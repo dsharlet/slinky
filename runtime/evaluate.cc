@@ -306,11 +306,8 @@ public:
   }
 
   index_t eval_call(const call* op) {
-    index_t* args = SLINKY_ALLOCA(index_t, op->args.size());
-    for (size_t i = 0; i < op->args.size(); ++i) {
-      args[i] = eval(op->args[i]);
-    }
-    return op->target({args, op->args.size()});
+    assert(op->target);
+    return op->target(op, context);
   }
 
   SLINKY_NO_INLINE index_t eval(const call* op) {
