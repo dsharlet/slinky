@@ -503,9 +503,11 @@ public:
   static constexpr expr_node_type static_type = expr_node_type::select;
 };
 
+class eval_context;
+
 class call : public expr_node<call> {
 public:
-  using callable = std::function<index_t(span<const index_t>)>;
+  using callable = std::function<index_t(const call*, eval_context&)>;
 
   // If the call is an intrinsic operation, which intrinsic it is.
   slinky::intrinsic intrinsic;
