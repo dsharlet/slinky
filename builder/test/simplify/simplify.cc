@@ -216,12 +216,9 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(select((y <= 0), select((x <= 0), z, x), z)), matches(select(0 < x && y <= 0, x, z)));
 
-  ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, dummy_call({}, {y}))),
-      matches(dummy_call({}, {x})));
-  ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, dummy_call({}, {y}))),
-      matches(dummy_call({}, {x})));
-  ASSERT_THAT(simplify(slice_buffer::make(y, x, {}, dummy_call({}, {y}))),
-      matches(dummy_call({}, {x})));
+  ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
+  ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
+  ASSERT_THAT(simplify(slice_buffer::make(y, x, {}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
 
   ASSERT_THAT(simplify(max(select(z <= 0, -1, select(1 <= y, min(x, z + -1), 0)) + 1, select((1 <= y), z, 0))),
       matches(select((1 <= y), max(z, 0), (0 < z))));
@@ -632,13 +629,11 @@ TEST(simplify, clone) {
   ASSERT_THAT(simplify(clone_buffer::make(b1, b0, clone_buffer::make(b2, b1, check::make(b0 && b2)))),
       matches(check::make(b0)));
 
-  ASSERT_THAT(
-      simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, dummy_call({}, {b0, b2})))),
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, dummy_call({}, {b0, b2})))),
       matches(transpose::make(b2, b0, {1, 0}, dummy_call({}, {b0, b2}))));
 
   // Clone should be substituted.
-  ASSERT_THAT(
-      simplify(clone_buffer::make(y, x, crop_dim::make(z, y, 0, {0, 0}, dummy_call({w}, {z})))),
+  ASSERT_THAT(simplify(clone_buffer::make(y, x, crop_dim::make(z, y, 0, {0, 0}, dummy_call({w}, {z})))),
       matches(crop_dim::make(z, x, 0, {0, 0}, dummy_call({w}, {z}))));
 
   ASSERT_THAT(simplify(crop_dim::make(x, u, 1, point(10),
@@ -670,24 +665,21 @@ TEST(simplify, allocate) {
 TEST(simplify, constant_buffer) {
   auto zero_float = raw_buffer::make_scalar<float>(0.0f);
   auto zero_int = raw_buffer::make_scalar<std::int32_t>(0);
-  ASSERT_THAT(simplify(constant_buffer::make(
-                  x, zero_int, constant_buffer::make(y, zero_float, dummy_call({x, y}, {z})))),
+  ASSERT_THAT(
+      simplify(constant_buffer::make(x, zero_int, constant_buffer::make(y, zero_float, dummy_call({x, y}, {z})))),
       matches(constant_buffer::make(x, zero_int, dummy_call({x, x}, {z}))));
 
   auto one = raw_buffer::make_scalar<float>(1.0f);
-  ASSERT_THAT(simplify(constant_buffer::make(
-                  x, zero_int, constant_buffer::make(y, one, dummy_call({x, y}, {z})))),
-      matches(constant_buffer::make(
-          x, zero_int, constant_buffer::make(y, one, dummy_call({x, y}, {z})))));
+  ASSERT_THAT(simplify(constant_buffer::make(x, zero_int, constant_buffer::make(y, one, dummy_call({x, y}, {z})))),
+      matches(constant_buffer::make(x, zero_int, constant_buffer::make(y, one, dummy_call({x, y}, {z})))));
 
   // This has the same size and memory contents as the above buffers, but a different shape.
   slinky::dim dims[] = {{0, 1, 2, dim::unfolded}};
   auto zero_int16x2 = raw_buffer::make(1, 2, dims);
   std::memset(zero_int16x2->base, 0, 4);
-  ASSERT_THAT(simplify(constant_buffer::make(
-                  x, zero_int, constant_buffer::make(y, zero_int16x2, dummy_call({x, y}, {z})))),
-      matches(constant_buffer::make(
-                  x, zero_int, constant_buffer::make(y, zero_int16x2, dummy_call({x, y}, {z})))));
+  ASSERT_THAT(
+      simplify(constant_buffer::make(x, zero_int, constant_buffer::make(y, zero_int16x2, dummy_call({x, y}, {z})))),
+      matches(constant_buffer::make(x, zero_int, constant_buffer::make(y, zero_int16x2, dummy_call({x, y}, {z})))));
 }
 
 TEST(simplify, slice_of_crop) {
@@ -837,8 +829,8 @@ TEST(simplify, slice_of_const_buffer) {
                     crop_dim::make(b2, b1, 0, {0, 0},
                         // slice_dim of a constant buffer gets replaced by a new constant buffer.
                         slice_dim::make(b4, b1, 1, 0, dummy_call({b4, b2}, {}))))),
-        matches(constant_buffer::make(
-            b1, constant_buf, constant_buffer::make(b4, sliced_buf, dummy_call({b4, b1}, {})))));
+        matches(
+            constant_buffer::make(b1, constant_buf, constant_buffer::make(b4, sliced_buf, dummy_call({b4, b1}, {})))));
   }
 }
 
@@ -870,13 +862,11 @@ TEST(simplify, crop) {
       matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
 
   // Nested crops of the same buffer.
-  ASSERT_THAT(simplify(crop_dim::make(
-                  b1, b0, 0, {x, y}, crop_dim::make(b2, b0, 0, {x, y}, dummy_call({}, {b1, b2})))),
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b0, 0, {x, y}, dummy_call({}, {b1, b2})))),
       matches(crop_dim::make(b1, b0, 0, {x, y}, dummy_call({}, {b1, b1}))));
   ASSERT_THAT(simplify(clone_buffer::make(b1, b0,
                   crop_buffer::make(b2, b1, {buffer_bounds(b0, 0)},
-                      crop_dim::make(b3, b1, 0, {x, y},
-                          crop_dim::make(b4, b2, 0, {x, y}, dummy_call({}, {b3, b4})))))),
+                      crop_dim::make(b3, b1, 0, {x, y}, crop_dim::make(b4, b2, 0, {x, y}, dummy_call({}, {b3, b4})))))),
       matches(crop_dim::make(b3, b0, 0, {x, y}, dummy_call({}, {b3, b3}))));
 
   ASSERT_THAT(simplify(block::make({
@@ -965,53 +955,44 @@ TEST(simplify, make_buffer) {
   ASSERT_THAT(
       simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
           make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
-              {{{0, 10}, buffer_stride(b0, 0), {}}, {{0, 20}, buffer_stride(b0, 1), {}}},
-              dummy_call({}, {b0, b1})))),
+              {{{0, 10}, buffer_stride(b0, 0), {}}, {{0, 20}, buffer_stride(b0, 1), {}}}, dummy_call({}, {b0, b1})))),
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
           transpose::make(b1, b0, {0, 1}, dummy_call({}, {b0, b1})))));
 
   ASSERT_THAT(simplify(transpose::make(b1, b2, {1, 0},
-                  make_buffer::make(b0, buffer_at(b1), buffer_elem_size(b1), {{{0, 10}, 2}},
-                      dummy_call({}, {b0})))),
-      matches(make_buffer::make(
-          b0, buffer_at(b2), buffer_elem_size(b2), {{{0, 10}, 2}}, dummy_call({}, {b0}))));
+                  make_buffer::make(b0, buffer_at(b1), buffer_elem_size(b1), {{{0, 10}, 2}}, dummy_call({}, {b0})))),
+      matches(make_buffer::make(b0, buffer_at(b2), buffer_elem_size(b2), {{{0, 10}, 2}}, dummy_call({}, {b0}))));
 
   // The same buffer
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
                   make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
                       dummy_call({}, {b1})))),
-      matches(allocate::make(
-          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
                   make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
                       dummy_call({}, {b1})))),
-      matches(allocate::make(
-          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
                   make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), {{0, 0}, 0, {}}},
                       dummy_call({}, {b1})))),
-      matches(allocate::make(
-          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
   ASSERT_THAT(
       simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
           make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
               {buffer_dim(b0, 0), {{0, 0}, 0, {}}, {{0, 0}, 0, {}}}, dummy_call({}, {b1})))),
-      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
-          dummy_call({}, {b0}))));
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
 }
 
 TEST(simplify, transpose) {
-  ASSERT_THAT(simplify(transpose::make(
-                  b1, b0, {2, 1, 0}, transpose::make(b2, b1, {2, 1, 0}, dummy_call({}, {b2})))),
+  ASSERT_THAT(simplify(transpose::make(b1, b0, {2, 1, 0}, transpose::make(b2, b1, {2, 1, 0}, dummy_call({}, {b2})))),
       matches(transpose::make(b2, b0, {0, 1, 2}, dummy_call({}, {b2}))));
-  ASSERT_THAT(simplify(transpose::make(
-                  b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, dummy_call({}, {b2})))),
+  ASSERT_THAT(simplify(transpose::make(b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, dummy_call({}, {b2})))),
       matches(transpose::make(b2, b0, {2, 3}, dummy_call({}, {b2}))));
 
-  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
-                  transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))),
-      matches(crop_buffer::make(
-          b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))));
+  ASSERT_THAT(
+      simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))),
+      matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))));
 
   ASSERT_THAT(simplify(crop_buffer::make(
                   b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 0) <= w)))),

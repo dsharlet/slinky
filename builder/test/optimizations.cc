@@ -257,9 +257,7 @@ TEST(optimizations, canonicalize_nodes) {
   ASSERT_THAT(canonicalize_nodes(block::make({copy_stmt::make(nullptr, x, {z, w}, y, {z, w}, {}),
                   copy_stmt::make(nullptr, x, {z, w}, y, {z, w}, {})})),
       unique_node_count_is(4));
-  ASSERT_THAT(
-      canonicalize_nodes(block::make({dummy_call({x}, {y}), dummy_call({x}, {y})})),
-      unique_node_count_is(3));
+  ASSERT_THAT(canonicalize_nodes(block::make({dummy_call({x}, {y}), dummy_call({x}, {y})})), unique_node_count_is(3));
 }
 
 TEST(optimizations, parallelize_tasks) {
@@ -331,8 +329,7 @@ TEST(optimizations, parallelize_tasks) {
               })),
       matches(block::make({
           dummy_call({x}, {y}),
-          async::make(var(), dummy_call({y}, {z}),
-              async::make(var(), dummy_call({y}, {w}), dummy_call({y}, {u}))),
+          async::make(var(), dummy_call({y}, {z}), async::make(var(), dummy_call({y}, {w}), dummy_call({y}, {u}))),
       })));
 
   // A check that both independent consumers depends on.

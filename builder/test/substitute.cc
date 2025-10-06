@@ -40,11 +40,8 @@ TEST(substitute, basic) {
       matches(crop_dim::make(x, z, 0, interval_expr{0, 0}, dummy_call({}, {x}))));
   ASSERT_THAT(substitute(crop_dim::make(y, z, 0, {0, 0}, dummy_call({x}, {y})), x, w),
       matches(crop_dim::make(y, z, 0, {0, 0}, dummy_call({w}, {y}))));
-  ASSERT_THAT(substitute(crop_dim::make(
-                             y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, dummy_call({x}, {y}))),
-                  x, w),
-      matches(
-          crop_dim::make(y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, dummy_call({w}, {y})))));
+  ASSERT_THAT(substitute(crop_dim::make(y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, dummy_call({x}, {y}))), x, w),
+      matches(crop_dim::make(y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, dummy_call({w}, {y})))));
   ASSERT_THAT(substitute_buffer(buffer_stride(x, 0), x, expr(), {}), matches(expr()));
   ASSERT_THAT(substitute_buffer(buffer_stride(x, 0), x, expr(), {}, y), matches(buffer_stride(y, 0)));
   ASSERT_THAT(substitute_buffer(buffer_stride(x, 0), x, expr(), {dim_expr()}), matches(expr()));
