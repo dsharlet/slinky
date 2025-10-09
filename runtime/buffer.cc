@@ -712,7 +712,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     bases[n] = bufs[n]->base;
   }
 
-  for_each_loop_impl<BufsSize> inner_impl;
+  for_each_loop_impl<BufsSize> inner_impl = nullptr;
   for_each_loop<BufsSize>* outer_loop = loop;
 
   index_t slice_extent = 1;
@@ -810,6 +810,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
 
     // We need to replace the implementation of the last loop.
     for_each_loop<BufsSize>* inner_loop = offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs.size()));
+    assert(inner_impl);
     (void)inner_impl;
     inner_loop->impl = inner_impl;
 
