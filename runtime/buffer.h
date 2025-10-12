@@ -770,7 +770,7 @@ template <fuse_type type>
 void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer) {}
 template <fuse_type type, typename... Bufs>
 void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
-  fuse<type>(inner, outer, buf);
+  slinky::fuse<type>(inner, outer, buf);
   fuse<type>(inner, outer, bufs...);
 }
 
