@@ -40,7 +40,7 @@ jobs:
         run: bazel test --config=asan --copt=-Os --test_output=errors ...
         
       - name: Build and test thread pool with absl
-        run: bazel test --define slinky_use_absl_synchronization=true base/test:thread_pool
+        run: bazel test --define slinky_use_absl_synchronization=true slinky/base/test:thread_pool
 
       - name: Shut down bazel
         run: bazel shutdown
