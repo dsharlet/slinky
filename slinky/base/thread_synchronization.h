@@ -3,7 +3,7 @@
 
 #ifdef SLINKY_USE_ABSL_SYNCHRONIZATION
 
-#include "slinky/absl/synchronization/mutex.h"
+#include "absl/synchronization/mutex.h"
 
 #else
 
