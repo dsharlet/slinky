@@ -10,13 +10,27 @@ namespace slinky {
 #define SLINKY_UNIQUE static inline
 
 #define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(__builtin_alloca((N) * sizeof(T)))
-#define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
-#define SLINKY_NO_INLINE __attribute__((noinline))
 
 #if !defined(__has_attribute)
 #define SLINKY_HAS_ATTRIBUTE(x) 0
 #else
 #define SLINKY_HAS_ATTRIBUTE(x) __has_attribute(x)
+#endif
+
+#if SLINKY_HAS_ATTRIBUTE(always_inline)
+#define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define SLINKY_ALWAYS_INLINE __forceinline
+#else
+#define SLINKY_ALWAYS_INLINE
+#endif
+
+#if SLINKY_HAS_ATTRIBUTE(noinline)
+#define SLINKY_NO_INLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define SLINKY_NO_INLINE __declspec(noinline)
+#else
+#define SLINKY_NO_INLINE
 #endif
 
 #if SLINKY_HAS_ATTRIBUTE(trivial_abi)
