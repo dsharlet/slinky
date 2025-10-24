@@ -85,12 +85,12 @@ T align_down(T x, T n) {
 }
 
 #ifdef _MSC_VER
-inline bool __builtin_add_overflow(int32_t a, int32_t b, int32_t* result) { return _add_overflow_i32(0, a, b, result); }
-inline bool __builtin_add_overflow(int64_t a, int64_t b, int64_t* result) { return _add_overflow_i64(0, a, b, result); }
-inline bool __builtin_sub_overflow(int32_t a, int32_t b, int32_t* result) { return _sub_overflow_i32(0, a, b, result); }
-inline bool __builtin_sub_overflow(int64_t a, int64_t b, int64_t* result) { return _sub_overflow_i64(0, a, b, result); }
-inline bool __builtin_mul_overflow(int32_t a, int32_t b, int32_t* result) { return _mul_overflow_i32(a, b, result); }
-inline bool __builtin_mul_overflow(int64_t a, int64_t b, int64_t* result) { return _mul_overflow_i64(a, b, result); }
+inline bool __builtin_add_overflow(int32_t a, int32_t b, int32_t* r) { return _add_overflow_i32(0, a, b, r) != 0; }
+inline bool __builtin_add_overflow(int64_t a, int64_t b, int64_t* r) { return _add_overflow_i64(0, a, b, r) != 0; }
+inline bool __builtin_sub_overflow(int32_t a, int32_t b, int32_t* r) { return _sub_overflow_i32(0, a, b, r) != 0; }
+inline bool __builtin_sub_overflow(int64_t a, int64_t b, int64_t* r) { return _sub_overflow_i64(0, a, b, r) != 0; }
+inline bool __builtin_mul_overflow(int32_t a, int32_t b, int32_t* r) { return _mul_overflow_i32(a, b, r) != 0; }
+inline bool __builtin_mul_overflow(int64_t a, int64_t b, int64_t* r) { return _mul_overflow_i64(a, b, r) != 0; }
 #endif  // _MSC_VER
 
 template <typename T>

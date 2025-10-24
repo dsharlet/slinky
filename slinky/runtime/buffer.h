@@ -174,7 +174,7 @@ static constexpr struct {
 class raw_buffer {
 protected:
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice)) { return 0; }
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim*, decltype(slinky::slice)) { return 0; }
 
   template <typename... Indices>
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {

@@ -25,7 +25,7 @@ class var {
 public:
   using type = std::size_t;
 
-  static constexpr type invalid = -1;
+  static constexpr type invalid = static_cast<size_t>(-1);
 
   type id;
 
