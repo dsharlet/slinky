@@ -919,10 +919,10 @@ static constexpr std::size_t max_bufs_size = 4;
 // If the other buffers are out of bounds for a slice, the corresponding argument to the callback will be `nullptr`.
 template <typename Buf, typename F, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F& f, const Bufs&... bufs) {
-  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
+  static constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
 
   internal::for_each_contiguous_slice_impl<ConstBufsSize>(
       buf_ptrs, [&f](index_t slice_extent, void** bases, index_t extent, const index_t* strides) {
@@ -940,10 +940,10 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
 // `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
-  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
+  static constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
 
   internal::for_each_element_impl<ConstBufsSize>(buf_ptrs, [&f](void** bases, index_t extent, const index_t* strides) {
     for (;;) {
