@@ -176,12 +176,12 @@ public:
     expr overlap;
 
     // Unique ID of the loop this fold is for.
-    std::size_t loop_id;
+    int loop_id;
   };
   symbol_map<std::vector<dim_fold_info>> fold_factors;
 
   // Counter for the number of loops we've seen.
-  std::size_t loop_counter = 0;
+  int loop_counter = 0;
 
   struct loop_info {
     var sym;
@@ -209,7 +209,7 @@ public:
     std::optional<int> stage;
 
     // Unique loop ID.
-    std::size_t loop_id = -1;
+    int loop_id = -1;
 
     bool add_synchronization() {
       if (prove_true(sync_stages + 1 >= max_workers)) {
@@ -227,7 +227,7 @@ public:
 
     loop_info() = default;
 
-    loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step,
+    loop_info(node_context& ctx, var sym, int loop_id, expr orig_min, interval_expr bounds, expr step,
         expr max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"),
@@ -304,7 +304,7 @@ public:
     // TODO: Is this actually a good design...?
     const std::vector<dim_fold_info>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
-    for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
+    for (int d = 0; d < static_cast<int>(op->dims.size()); ++d) {
       replacements.emplace_back(buffer_fold_factor(op->sym, d), fold_info[d].factor);
     }
     std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
@@ -571,7 +571,7 @@ public:
   void visit(const slice_buffer* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     if (bounds) {
-      for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
+      for (int d = static_cast<int>(std::min(op->at.size(), bounds->size())) - 1; d >= 0; --d) {
         if (!op->at[d].defined()) continue;
         bounds->erase(bounds->begin() + d);
       }
