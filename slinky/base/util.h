@@ -9,7 +9,11 @@ namespace slinky {
 // will inline functions it knows are used only once, but it can't know this unless the functions have internal linkage.
 #define SLINKY_UNIQUE static inline
 
+#ifdef _MSC_VER
+#define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(_alloca((N) * sizeof(T)))
+#else
 #define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(__builtin_alloca((N) * sizeof(T)))
+#endif
 
 #if !defined(__has_attribute)
 #define SLINKY_HAS_ATTRIBUTE(x) 0
