@@ -198,7 +198,7 @@ public:
   template <typename T>
   SLINKY_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
-      return reinterpret_cast<const T*>(&*n_);
+      return static_cast<const T*>(&*n_);
     } else {
       return nullptr;
     }
