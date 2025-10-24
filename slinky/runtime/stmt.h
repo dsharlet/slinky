@@ -50,25 +50,25 @@ class stmt_ref {
   const base_stmt_node* n_;
 
 public:
-  SLINKY_ALWAYS_INLINE stmt_ref(const stmt_ref&) = default;
-  SLINKY_ALWAYS_INLINE stmt_ref(stmt_ref&&) = default;
-  SLINKY_ALWAYS_INLINE stmt_ref& operator=(const stmt_ref&) = default;
-  SLINKY_ALWAYS_INLINE stmt_ref& operator=(stmt_ref&&) = default;
+  SLINKY_INLINE stmt_ref(const stmt_ref&) = default;
+  SLINKY_INLINE stmt_ref(stmt_ref&&) = default;
+  SLINKY_INLINE stmt_ref& operator=(const stmt_ref&) = default;
+  SLINKY_INLINE stmt_ref& operator=(stmt_ref&&) = default;
 
-  SLINKY_ALWAYS_INLINE stmt_ref(const stmt& e);
-  SLINKY_ALWAYS_INLINE stmt_ref(const base_stmt_node* n) : n_(n) {}
+  SLINKY_INLINE stmt_ref(const stmt& e);
+  SLINKY_INLINE stmt_ref(const base_stmt_node* n) : n_(n) {}
 
-  SLINKY_ALWAYS_INLINE void accept(stmt_visitor* v) const {
+  SLINKY_INLINE void accept(stmt_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
 
-  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
-  SLINKY_ALWAYS_INLINE stmt_node_type type() const { return n_ ? n_->type : stmt_node_type::none; }
-  SLINKY_ALWAYS_INLINE const base_stmt_node* get() const { return n_; }
+  SLINKY_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_INLINE stmt_node_type type() const { return n_ ? n_->type : stmt_node_type::none; }
+  SLINKY_INLINE const base_stmt_node* get() const { return n_; }
 
   template <typename T>
-  SLINKY_ALWAYS_INLINE const T* as() const {
+  SLINKY_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
@@ -82,28 +82,28 @@ class stmt {
   ref_count<const base_stmt_node> n_;
 
 public:
-  SLINKY_ALWAYS_INLINE stmt() = default;
-  SLINKY_ALWAYS_INLINE stmt(const stmt&) = default;
-  SLINKY_ALWAYS_INLINE stmt(stmt&&) = default;
-  SLINKY_ALWAYS_INLINE stmt(stmt_ref s) : n_(s.get()) {}
-  SLINKY_ALWAYS_INLINE explicit stmt(const base_stmt_node* n) : n_(n) {}
+  SLINKY_INLINE stmt() = default;
+  SLINKY_INLINE stmt(const stmt&) = default;
+  SLINKY_INLINE stmt(stmt&&) = default;
+  SLINKY_INLINE stmt(stmt_ref s) : n_(s.get()) {}
+  SLINKY_INLINE explicit stmt(const base_stmt_node* n) : n_(n) {}
 
-  SLINKY_ALWAYS_INLINE stmt& operator=(const stmt&) = default;
-  SLINKY_ALWAYS_INLINE stmt& operator=(stmt&&) noexcept = default;
+  SLINKY_INLINE stmt& operator=(const stmt&) = default;
+  SLINKY_INLINE stmt& operator=(stmt&&) noexcept = default;
 
-  SLINKY_ALWAYS_INLINE void accept(stmt_visitor* v) const {
+  SLINKY_INLINE void accept(stmt_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
 
-  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
-  SLINKY_ALWAYS_INLINE bool same_as(const stmt& other) const { return n_ == other.n_; }
-  SLINKY_ALWAYS_INLINE bool same_as(const base_stmt_node* other) const { return n_ == other; }
-  SLINKY_ALWAYS_INLINE stmt_node_type type() const { return n_ ? n_->type : stmt_node_type::none; }
-  SLINKY_ALWAYS_INLINE const base_stmt_node* get() const { return n_; }
+  SLINKY_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_INLINE bool same_as(const stmt& other) const { return n_ == other.n_; }
+  SLINKY_INLINE bool same_as(const base_stmt_node* other) const { return n_ == other; }
+  SLINKY_INLINE stmt_node_type type() const { return n_ ? n_->type : stmt_node_type::none; }
+  SLINKY_INLINE const base_stmt_node* get() const { return n_; }
 
   template <typename T>
-  SLINKY_ALWAYS_INLINE const T* as() const {
+  SLINKY_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
@@ -112,7 +112,7 @@ public:
   }
 };
 
-SLINKY_ALWAYS_INLINE inline stmt_ref::stmt_ref(const stmt& s) : n_(s.get()) {}
+SLINKY_INLINE stmt_ref::stmt_ref(const stmt& s) : n_(s.get()) {}
 
 template <typename T>
 class stmt_node : public base_stmt_node {
@@ -425,7 +425,7 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::check;
 };
 
-SLINKY_ALWAYS_INLINE inline const let_stmt* is_closure(const stmt& s) {
+SLINKY_INLINE const let_stmt* is_closure(const stmt& s) {
   const let_stmt* let = s.as<let_stmt>();
   return let && let->is_closure ? let : nullptr;
 }

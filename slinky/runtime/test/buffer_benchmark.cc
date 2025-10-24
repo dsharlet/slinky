@@ -34,7 +34,7 @@ void allocate_buffer(buffer<T, N>& buf, const std::vector<index_t>& extents, ind
 }
 
 template <typename Fn>
-__attribute__((noinline)) void no_inline(Fn&& fn) {
+SLINKY_NO_INLINE void no_inline(Fn&& fn) {
   fn();
 }
 

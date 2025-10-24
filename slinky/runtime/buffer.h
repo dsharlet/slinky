@@ -775,7 +775,7 @@ void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... 
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
+SLINKY_INLINE bool attempt_fuse(
     std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
     fuse<fuse_type::remove>(inner, outer, buf, bufs...);
@@ -786,7 +786,7 @@ SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
+SLINKY_INLINE bool attempt_fuse(
     std::ptrdiff_t inner, std::ptrdiff_t outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
     // These two dims are not part of the same set. Don't fuse them.
@@ -880,7 +880,7 @@ int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
 namespace internal {
 
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline void increment_bases(std::size_t n, void** bases, const index_t* strides) {
+SLINKY_INLINE void increment_bases(std::size_t n, void** bases, const index_t* strides) {
   n = BufsSize != dynamic_extent ? BufsSize : n;
   bases[0] = offset_bytes(bases[0], strides[0]);
   if (1 < n) bases[1] = offset_bytes(bases[1], strides[1]);

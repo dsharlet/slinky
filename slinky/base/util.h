@@ -18,11 +18,11 @@ namespace slinky {
 #endif
 
 #if SLINKY_HAS_ATTRIBUTE(always_inline)
-#define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
+#define SLINKY_INLINE inline __attribute__((always_inline))
 #elif defined(_MSC_VER)
-#define SLINKY_ALWAYS_INLINE __forceinline
+#define SLINKY_INLINE __forceinline
 #else
-#define SLINKY_ALWAYS_INLINE
+#define SLINKY_INLINE inline
 #endif
 
 #if SLINKY_HAS_ATTRIBUTE(noinline)

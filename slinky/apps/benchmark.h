@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "slinky/base/util.h"
+
 inline bool is_bazel_test() {
   const char* timeout = getenv("TEST_TIMEOUT");
   return timeout != nullptr;
@@ -39,11 +41,11 @@ double benchmark(F op) {
 
 // Tricks the compiler into not stripping away dead objects.
 template <class T>
-__attribute__((noinline)) void assert_used(const T&) {}
+SLINKY_NO_INLINE void assert_used(const T&) {}
 
 // Tricks the compiler into not constant folding the result of x.
 template <class T>
-__attribute__((noinline)) T not_constant(T x) {
+SLINKY_NO_INLINE T not_constant(T x) {
   return x;
 }
 
