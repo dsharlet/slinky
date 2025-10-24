@@ -598,7 +598,8 @@ public:
       std::size_t size = buffer.init_strides(context.config->stride_alignment);
       if (op->storage == memory_type::stack || size <= context.config->auto_stack_threshold) {
         std::size_t alignment = context.config->base_alignment;
-        buffer.base = align_up(__builtin_alloca(size + alignment - 1), alignment);
+        buffer.base = SLINKY_ALLOCA(char, size + alignment - 1);
+        buffer.base = align_up(buffer.base, alignment);
         buffer.allocation = nullptr;
       } else {
         buffer.allocation = context.config->allocate(op->sym, &buffer);
