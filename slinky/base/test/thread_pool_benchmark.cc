@@ -18,7 +18,7 @@ void BM_parallel_for_overhead(benchmark::State& state) {
 
   std::vector<unshared> values(workers);
   while (state.KeepRunningBatch(workers)) {
-    t.parallel_for(workers, [&](int i) { values[i].value++; });
+    t.parallel_for(workers, [&](std::size_t i) { values[i].value++; });
   }
 }
 
@@ -28,11 +28,11 @@ void BM_parallel_for(benchmark::State& state) {
   const int workers = state.range(0);
   thread_pool_impl t(workers - 1);
 
-  const int n = 1000000;
+  const std::size_t n = 1000000;
 
   std::vector<unshared> values(workers);
   while (state.KeepRunningBatch(values.size())) {
-    t.parallel_for(n, [&](int i) { values[i % workers].value++; });
+    t.parallel_for(n, [&](std::size_t i) { values[i % workers].value++; });
   }
 }
 
@@ -42,12 +42,13 @@ void BM_parallel_for_nested(benchmark::State& state) {
   const int workers = state.range(0);
   thread_pool_impl t(workers - 1);
 
-  const int n = 1000;
+  const std::size_t n = 1000;
 
   std::vector<unshared> values(workers * workers);
   while (state.KeepRunningBatch(values.size())) {
-    t.parallel_for(
-        n, [&](int i) { t.parallel_for(n, [&](int j) { values[(i % workers) * workers + j % workers].value++; }); });
+    t.parallel_for(n, [&](std::size_t i) {
+      t.parallel_for(n, [&](std::size_t j) { values[(i % workers) * workers + j % workers].value++; });
+    });
   }
 }
 

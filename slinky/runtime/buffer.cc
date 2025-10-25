@@ -107,7 +107,7 @@ struct init_stride_dim {
   bool operator<(const init_stride_dim& r) const { return dim_stride < r.dim_stride; }
 };
 
-SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims) {
+SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims) {
   const index_t dim_stride = stride * extent;
   for (const init_stride_dim& d : dims) {
     if (d.stride >= dim_stride) {
@@ -427,7 +427,7 @@ namespace internal {
 namespace {
 
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
+SLINKY_INLINE bool is_contiguous_slice(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   const raw_buffer& buf = *bufs[0];
   if (buf.dim(d).stride() != static_cast<index_t>(buf.elem_size)) {
     // This dimension is not contiguous.
@@ -450,7 +450,7 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(span<const raw_buffer*, Buf
 }
 
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline bool can_fuse(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
+SLINKY_INLINE bool can_fuse(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   assert(d > 0);
   const raw_buffer& buf = *bufs[0];
   const dim& base_inner = buf.dim(d - 1);
@@ -503,7 +503,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(span<const raw_buffer*, BufsSize> bufs
 // - A dimension is folded
 // - A dimension is partially out of bounds
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline bool use_nonlinear_loop(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
+SLINKY_INLINE bool use_nonlinear_loop(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   const raw_buffer& buf = *bufs[0];
   const dim& buf_dim = buf.dim(d);
   if (buf_dim.is_folded()) {
@@ -565,18 +565,18 @@ std::ptrdiff_t sizeof_for_each_loop(std::size_t bufs_size) {
 //
 // We can't make a simple struct for this, because N and R are not necessarily compile-time constants.
 template <typename F>
-SLINKY_ALWAYS_INLINE inline std::size_t size_of_plan(std::size_t bufs_size, std::size_t rank) {
+SLINKY_INLINE std::size_t size_of_plan(std::size_t bufs_size, std::size_t rank) {
   // We only need max(rank, 1) for each loops, but it only wastes a little stack and it's cheaper to compute the add.
   return sizeof_for_each_loop(bufs_size) * (rank + 1) + sizeof(F);
 }
 
 // Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback.
-SLINKY_ALWAYS_INLINE inline void call_f(
+SLINKY_INLINE void call_f(
     for_each_element_callback f, void** bases, index_t extent, const index_t* strides, index_t slice_extent) {
   assert(slice_extent == 1);
   f(bases, extent, strides);
 }
-SLINKY_ALWAYS_INLINE inline void call_f(
+SLINKY_INLINE void call_f(
     for_each_contiguous_slice_callback f, void** bases, index_t extent, const index_t* strides, index_t slice_extent) {
   f(slice_extent, bases, extent, strides);
 }
@@ -701,7 +701,7 @@ index_t gcd_fold_factor(index_t a, index_t b) {
 }
 
 template <bool SkipContiguous, std::size_t BufsSize, typename F>
-SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*, BufsSize> bufs, F f) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE void for_each_impl(span<const raw_buffer*, BufsSize> bufs, F f) {
   const raw_buffer& buf = *bufs[0];
 
   auto* loop = reinterpret_cast<for_each_loop<BufsSize>*>(SLINKY_ALLOCA(char, size_of_plan<F>(bufs.size(), buf.rank)));

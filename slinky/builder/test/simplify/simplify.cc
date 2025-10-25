@@ -160,7 +160,7 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(or_else(expr(false), x)), matches(boolean(x)));
   ASSERT_THAT(simplify(or_else(x, expr(false))), matches(boolean(x)));
 
-  ASSERT_THAT(simplify((x != y) < 1), matches(y == x));
+  ASSERT_THAT(simplify((expr(x) != y) < 1), matches(expr(x) == y));
   ASSERT_THAT(simplify((x && y) < 2), matches(true));
   ASSERT_THAT(simplify((x && y) < 0), matches(false));
   ASSERT_THAT(simplify(-1 < (x || y)), matches(true));
@@ -1314,8 +1314,8 @@ TEST(simplify, fuzz) {
     interval_expr bounds = bounds_of(test, gen.var_bounds());
     expr lower_bound = constant_lower_bound(test);
     expr upper_bound = constant_upper_bound(test);
-    std::optional<int> evaluated_lower_bound = evaluate_constant_lower_bound(test);
-    std::optional<int> evaluated_upper_bound = evaluate_constant_upper_bound(test);
+    std::optional<index_t> evaluated_lower_bound = evaluate_constant_lower_bound(test);
+    std::optional<index_t> evaluated_upper_bound = evaluate_constant_upper_bound(test);
 
     if (evaluate_constant(lower_bound)) {
       // constant_lower_bound and evaluate_constant_lower_bound should never leave constants to be folded.

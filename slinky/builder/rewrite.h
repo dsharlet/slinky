@@ -585,6 +585,8 @@ class replacement_predicate {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_canonical = true;
+  static constexpr bool is_boolean = true;
+  static constexpr int matched = 0;
   T a;
   Fn fn;
 };
@@ -610,6 +612,7 @@ public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = pattern_info<T>::is_boolean;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
   T a;
 };
 
@@ -629,6 +632,7 @@ public:
   static constexpr expr_node_type type = expr_node_type::none;
   static constexpr bool is_boolean = true;
   static constexpr bool is_canonical = pattern_info<T>::is_canonical;
+  static constexpr int matched = 0;
   T a;
 };
 
@@ -845,12 +849,12 @@ class base_rewriter {
   Target x;
 
   template <typename Pattern>
-  SLINKY_ALWAYS_INLINE static bool find_replacement(const match_context& ctx) {
+  SLINKY_INLINE static bool find_replacement(const match_context& ctx) {
     return false;
   }
 
   template <typename Pattern, typename Replacement>
-  SLINKY_ALWAYS_INLINE bool find_replacement(const match_context& ctx, Replacement r) {
+  SLINKY_INLINE bool find_replacement(const match_context& ctx, Replacement r) {
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
     bool overflowed = false;
     result = substitute(r, ctx, overflowed);
@@ -858,7 +862,7 @@ class base_rewriter {
   }
 
   template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
-  SLINKY_ALWAYS_INLINE bool find_replacement(
+  SLINKY_INLINE bool find_replacement(
       const match_context& ctx, Replacement r, Predicate pr, ReplacementPredicates... r_pr) {
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
@@ -881,7 +885,7 @@ public:
   // If the predicate is false, consider the next replacement and predicate.
   // The last predicate is optional and defaults to true.
   template <typename Pattern, typename... ReplacementPredicate>
-  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, ReplacementPredicate... r_pr) {
+  SLINKY_INLINE bool operator()(Pattern p, ReplacementPredicate... r_pr) {
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 

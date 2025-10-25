@@ -11,6 +11,9 @@ cc_test(
         "benchmark.h",
         "memcpy.cc", 
     ],
+    deps = [
+        "//slinky/base",
+    ],
     size="small",
 )
 
@@ -21,6 +24,7 @@ cc_test(
         "performance.cc",
     ],
     deps = [
+        "//slinky/base",
         "//slinky/builder", 
         "//slinky/runtime",
     ],

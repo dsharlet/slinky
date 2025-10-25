@@ -173,29 +173,29 @@ static constexpr struct {
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer {
 protected:
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice)) { return 0; }
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim*, decltype(slinky::slice)) { return 0; }
 
   template <typename... Indices>
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, index_t i0, Indices... indices) {
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
   }
   template <typename... Indices>
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice), Indices... indices) {
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, decltype(slinky::slice), Indices... indices) {
     return flat_offset_bytes_impl(dims + 1, indices...);
   }
 
-  static bool contains_impl(const dim* dims, index_t i0) { return dims->contains(i0); }
+  static bool contains_impl(const slinky::dim* dims, index_t i0) { return dims->contains(i0); }
 
   template <typename... Indices>
-  static bool contains_impl(const dim* dims, index_t i0, Indices... indices) {
+  static bool contains_impl(const slinky::dim* dims, index_t i0, Indices... indices) {
     return dims->contains(i0) && contains_impl(dims + 1, indices...);
   }
 
-  static void translate_impl(dim* dims, index_t o0) { dims->translate(o0); }
+  static void translate_impl(slinky::dim* dims, index_t o0) { dims->translate(o0); }
 
   template <typename... Offsets>
-  static void translate_impl(dim* dims, index_t o0, Offsets... offsets) {
+  static void translate_impl(slinky::dim* dims, index_t o0, Offsets... offsets) {
     dims->translate(o0);
     translate_impl(dims + 1, offsets...);
   }
@@ -386,7 +386,7 @@ public:
 
   // Make a pointer to a buffer with an allocation for the dims and (optionally) elements in the same allocation.
   static raw_buffer_ptr make(
-      std::size_t rank, std::size_t elem_size = 0, const class dim* dims = nullptr, index_t alignment = 1);
+      std::size_t rank, std::size_t elem_size = 0, const class slinky::dim* dims = nullptr, index_t alignment = 1);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src, index_t alignment = 1);
@@ -775,7 +775,7 @@ void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... 
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
+SLINKY_INLINE bool attempt_fuse(
     std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
     fuse<fuse_type::remove>(inner, outer, buf, bufs...);
@@ -786,7 +786,7 @@ SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline bool attempt_fuse(
+SLINKY_INLINE bool attempt_fuse(
     std::ptrdiff_t inner, std::ptrdiff_t outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
     // These two dims are not part of the same set. Don't fuse them.
@@ -880,7 +880,7 @@ int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
 namespace internal {
 
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline void increment_bases(std::size_t n, void** bases, const index_t* strides) {
+SLINKY_INLINE void increment_bases(std::size_t n, void** bases, const index_t* strides) {
   n = BufsSize != dynamic_extent ? BufsSize : n;
   bases[0] = offset_bytes(bases[0], strides[0]);
   if (1 < n) bases[1] = offset_bytes(bases[1], strides[1]);
@@ -919,10 +919,10 @@ static constexpr std::size_t max_bufs_size = 4;
 // If the other buffers are out of bounds for a slice, the corresponding argument to the callback will be `nullptr`.
 template <typename Buf, typename F, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F& f, const Bufs&... bufs) {
-  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
+  static constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
 
   internal::for_each_contiguous_slice_impl<ConstBufsSize>(
       buf_ptrs, [&f](index_t slice_extent, void** bases, index_t extent, const index_t* strides) {
@@ -940,10 +940,10 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
 // `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
-  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
+  static constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
 
   internal::for_each_element_impl<ConstBufsSize>(buf_ptrs, [&f](void** bases, index_t extent, const index_t* strides) {
     for (;;) {

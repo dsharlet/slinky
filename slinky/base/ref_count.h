@@ -64,22 +64,22 @@ public:
     return ref_count<U>(value);
   }
 
-  SLINKY_ALWAYS_INLINE T& operator*() { return *value; }
-  SLINKY_ALWAYS_INLINE const T& operator*() const { return *value; }
-  SLINKY_ALWAYS_INLINE T* operator->() { return value; }
-  SLINKY_ALWAYS_INLINE const T* operator->() const { return value; }
+  SLINKY_INLINE T& operator*() { return *value; }
+  SLINKY_INLINE const T& operator*() const { return *value; }
+  SLINKY_INLINE T* operator->() { return value; }
+  SLINKY_INLINE const T* operator->() const { return value; }
 
-  SLINKY_ALWAYS_INLINE operator T*() { return value; }
-  SLINKY_ALWAYS_INLINE operator const T*() const { return value; }
+  SLINKY_INLINE operator T*() { return value; }
+  SLINKY_INLINE operator const T*() const { return value; }
 
   // Take ownership of the value, does not change reference count.
-  SLINKY_ALWAYS_INLINE T* take() {
+  SLINKY_INLINE T* take() {
     T* result = value;
     value = nullptr;
     return result;
   }
   // Assume ownership of the value, does not change the reference count.
-  SLINKY_ALWAYS_INLINE static ref_count assume(T* value) {
+  SLINKY_INLINE static ref_count assume(T* value) {
     ref_count result;
     result.value = value;
     return result;

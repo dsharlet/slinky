@@ -115,21 +115,21 @@ namespace internal {
 
 template <typename T>
 struct buffer_converter {
-  static SLINKY_ALWAYS_INLINE const auto& convert(const raw_buffer* buffer) {
+  static SLINKY_INLINE const auto& convert(const raw_buffer* buffer) {
     return buffer->cast<typename std::remove_cv<typename std::remove_reference<T>::type>::type::element>();
   }
 };
 template <>
 struct buffer_converter<raw_buffer> {
-  static SLINKY_ALWAYS_INLINE const raw_buffer& convert(const raw_buffer* buffer) { return *buffer; }
+  static SLINKY_INLINE const raw_buffer& convert(const raw_buffer* buffer) { return *buffer; }
 };
 template <>
 struct buffer_converter<const raw_buffer&> {
-  static SLINKY_ALWAYS_INLINE const raw_buffer& convert(const raw_buffer* buffer) { return *buffer; }
+  static SLINKY_INLINE const raw_buffer& convert(const raw_buffer* buffer) { return *buffer; }
 };
 template <>
 struct buffer_converter<const raw_buffer*> {
-  static SLINKY_ALWAYS_INLINE const raw_buffer* convert(const raw_buffer* buffer) { return buffer; }
+  static SLINKY_INLINE const raw_buffer* convert(const raw_buffer* buffer) { return buffer; }
 };
 
 }  // namespace internal
@@ -241,7 +241,7 @@ public:
 
 private:
   template <typename... T, std::size_t... Indices>
-  static SLINKY_ALWAYS_INLINE index_t call_impl(
+  static SLINKY_INLINE index_t call_impl(
       const func::callable<T...>& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
     return impl(
         ctx.lookup_buffer(Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()])
@@ -249,7 +249,7 @@ private:
   }
 
   template <typename ArgTypes, typename Fn, std::size_t... Indices>
-  static SLINKY_ALWAYS_INLINE index_t call_impl_tuple(
+  static SLINKY_INLINE index_t call_impl_tuple(
       const Fn& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
     return impl(
         internal::buffer_converter<typename std::tuple_element<Indices, ArgTypes>::type>::convert(ctx.lookup_buffer(

@@ -70,7 +70,7 @@ public:
   evaluator(eval_context& context) : context(context) {}
 
   // Assume `e` is defined, evaluate it and return the result.
-  SLINKY_ALWAYS_INLINE index_t eval(const expr& e) {
+  SLINKY_INLINE index_t eval(const expr& e) {
     // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (e.type()) {
@@ -113,7 +113,7 @@ public:
   }
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
-  SLINKY_ALWAYS_INLINE index_t eval(const expr& e, index_t def) {
+  SLINKY_INLINE index_t eval(const expr& e, index_t def) {
     if (e.defined()) {
       return eval(e);
     } else {
@@ -121,7 +121,7 @@ public:
     }
   }
 
-  SLINKY_ALWAYS_INLINE interval eval(const interval_expr& x) {
+  SLINKY_INLINE interval eval(const interval_expr& x) {
     index_t min = eval(x.min);
     if (x.is_point()) {
       return {min, min};
@@ -129,7 +129,7 @@ public:
       return {min, eval(x.max)};
     }
   }
-  SLINKY_ALWAYS_INLINE interval eval(const interval_expr& x, interval def) {
+  SLINKY_INLINE interval eval(const interval_expr& x, interval def) {
     if (x.is_point()) {
       index_t result = eval(x.min);
       return {result, result};
@@ -340,7 +340,7 @@ public:
     }
   }
 
-  SLINKY_ALWAYS_INLINE index_t eval(const stmt& op) {
+  SLINKY_INLINE index_t eval(const stmt& op) {
     // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (op.type()) {
@@ -350,7 +350,7 @@ public:
     }
   }
 
-  SLINKY_ALWAYS_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value) {
+  SLINKY_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value) {
     context.reserve(sym.id + 1);
     index_t old_value = context.set(sym, value);
     index_t result = eval(op);
@@ -563,7 +563,7 @@ public:
     }
   }
 
-  SLINKY_ALWAYS_INLINE index_t eval(const call_stmt* op) {
+  SLINKY_INLINE index_t eval(const call_stmt* op) {
     index_t result = op->target(op, context);
     if (result) {
       call_failed(result, op);
@@ -598,7 +598,8 @@ public:
       std::size_t size = buffer.init_strides(context.config->stride_alignment);
       if (op->storage == memory_type::stack || size <= context.config->auto_stack_threshold) {
         std::size_t alignment = context.config->base_alignment;
-        buffer.base = align_up(__builtin_alloca(size + alignment - 1), alignment);
+        buffer.base = SLINKY_ALLOCA(char, size + alignment - 1);
+        buffer.base = align_up(buffer.base, alignment);
         buffer.allocation = nullptr;
       } else {
         buffer.allocation = context.config->allocate(op->sym, &buffer);
