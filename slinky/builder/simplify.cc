@@ -913,8 +913,8 @@ public:
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
       // clang-format off
-      if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), eval(a_mod % c1 == 0)) ||
-          r((c0 - x) / c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, eval(a_mod % c1 == 0)) ||
+      if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), a_mod % c1 == 0) ||
+          r((c0 - x) / c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, a_mod % c1 == 0) ||
           false) {
         mutate_and_set_result(r.result);
         return;

@@ -585,6 +585,8 @@ class replacement_predicate {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_canonical = true;
+  static constexpr bool is_boolean = true;
+  static constexpr int matched = 0;
   T a;
   Fn fn;
 };
@@ -610,6 +612,7 @@ public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = pattern_info<T>::is_boolean;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
   T a;
 };
 
@@ -629,6 +632,7 @@ public:
   static constexpr expr_node_type type = expr_node_type::none;
   static constexpr bool is_boolean = true;
   static constexpr bool is_canonical = pattern_info<T>::is_canonical;
+  static constexpr int matched = 0;
   T a;
 };
 
