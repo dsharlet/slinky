@@ -2,11 +2,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <thread>
 #include <vector>
-
-#include "slinky/base/thread_synchronization.h"
 
 namespace slinky {
 
@@ -156,12 +156,12 @@ ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
   return nullptr;
 }
 
-void thread_pool_impl::wait_for(predicate_ref condition, condition_variable& cv) {
+void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable& cv) {
   // We want to spin a few times before letting the OS take over.
   const int spin_count = 1000;
   int spins = 0;
 
-  unique_lock l(mutex_);
+  std::unique_lock l(mutex_);
   while (!condition()) {
     int worker;
     if (auto task = dequeue(worker)) {
@@ -190,7 +190,7 @@ void thread_pool_impl::wait_for(predicate_ref condition, condition_variable& cv)
 }
 
 void thread_pool_impl::work_until_idle() {
-  unique_lock l(mutex_);
+  std::unique_lock l(mutex_);
   int worker;
   while (auto task = dequeue(worker)) {
     l.unlock();
@@ -208,7 +208,7 @@ void thread_pool_impl::work_until_idle() {
 }
 
 void thread_pool_impl::atomic_call(function_ref<void()> t) {
-  unique_lock l(mutex_);
+  std::unique_lock l(mutex_);
   t();
   cv_worker_.notify_all();
   cv_helper_.notify_all();
@@ -226,7 +226,7 @@ ref_count<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body 
   max_workers = std::min<std::size_t>(n, max_workers);
   const std::size_t shard_count = ordered ? 1 : std::min(max_shards, max_workers);
   auto loop = task_impl::make(shard_count, n, std::move(t), max_workers);
-  unique_lock l(mutex_);
+  std::unique_lock l(mutex_);
   task_queue_.push_back(loop);
   if (max_workers == 1) {
     cv_worker_.notify_one();
