@@ -775,7 +775,6 @@ public:
       switch (op->field) {
       case buffer_field::rank:
       case buffer_field::elem_size: set_result(std::move(result), {{0, std::move(bounds)}, alignment_type()}); return;
-      case buffer_field::fold_factor: set_result(std::move(result), {{1, std::move(bounds)}, alignment_type()}); return;
       default: set_result(std::move(result), {point(std::move(bounds)), alignment_type()}); return;
       }
     } else {

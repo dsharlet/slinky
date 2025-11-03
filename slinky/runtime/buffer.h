@@ -63,7 +63,7 @@ class dim {
 
 public:
   static constexpr index_t auto_stride = std::numeric_limits<index_t>::max();
-  static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
+  static constexpr index_t unfolded = -1;
 
   dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
   dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
@@ -120,7 +120,7 @@ public:
   }
 
   // Returns true if the interval [a, b] is in bounds of this dimension.
-  bool contains(index_t a, index_t b) const { return min() <= a && b <= max(); }
+  bool contains(index_t a, index_t b) const { return fold_factor_ == 0 || (min() <= a && b <= max()); }
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
@@ -130,7 +130,7 @@ public:
     // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
     if (stride() == 0) return 0;
 #endif
-    if (fold_factor() == unfolded) {
+    if (stride() == 0 || fold_factor() == unfolded) {
       return (i - min()) * stride();
     } else {
       return euclidean_mod_positive_modulus(i, fold_factor()) * stride();
@@ -139,7 +139,7 @@ public:
 
   // Check if the dimension crosses a fold between min and max.
   bool is_folded(index_t min, index_t max) const {
-    if (stride() == 0 || fold_factor() == unfolded) return false;
+    if (stride() == 0 || fold_factor() <= 0) return false;
     return euclidean_div_positive_divisor(min, fold_factor()) != euclidean_div_positive_divisor(max, fold_factor());
   }
   bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }
@@ -661,7 +661,7 @@ void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.min() == outer.max()) return true;
+  if (outer.min() == outer.max() && outer.fold_factor() != 0) return true;
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
   // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.

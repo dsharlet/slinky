@@ -71,7 +71,6 @@ bool is_filled_buffer(const buffer<T, N>& buf, Value value) {
 struct randomize_options {
   int padding_min = 0;
   int padding_max = 3;
-  bool allow_broadcast = false;
   bool allow_fold = false;
   bool randomize_rank = false;
 };
@@ -94,15 +93,14 @@ void randomize_strides_and_padding(Rng& rng, buffer<T, N>& buf, const randomize_
     if (dim.extent() <= 0) {
       dim.set_extent(1);
     }
-    if (options.allow_broadcast && random(rng, 0, 9) == 0) {
+    if (random(rng, 0, 9) == 0) {
       dim = slinky::dim::broadcast();
+    } else if (options.allow_fold && random(rng, 0, 9) == 0) {
+      dim.set_fold_factor(random(rng, 1, 7));
     } else {
       dim.set_stride(stride);
       // Add some extra random padding.
       stride *= dim.extent() + random(rng, 0, 3) * buf.elem_size;
-    }
-    if (options.allow_fold && random(rng, 0, 9) == 0) {
-      dim.set_fold_factor(random(rng, 1, 7));
     }
   }
 
@@ -163,6 +161,46 @@ TEST(buffer, buffer) {
   for (int i = 0; i < 10 * 20; ++i) {
     ASSERT_EQ(i, buf.base()[i]);
   }
+}
+
+TEST(buffer, broadcast) {
+  buffer<int, 2> rank1({10});
+  buffer<int, 2> rank2({10, 1});
+  buffer<int, 2> rank2_broadcast({10, 1});
+  rank2_broadcast.dim(1) = dim::broadcast();
+  rank1.allocate();
+  rank2.allocate();
+  rank2_broadcast.allocate();
+  auto count_fill = [](const buffer<int, 2>& buf) {
+    int count = 0;
+    for_each_element(
+        [&count](int* i) {
+          ++count;
+          *i = 7;
+        },
+        buf);
+    return count;
+  };
+
+  // rank1 and rank2 should all act like 10x1 buffers.
+  ASSERT_EQ(count_fill(rank1), 10);
+  ASSERT_EQ(count_fill(rank2), 10);
+  ASSERT_EQ(count_fill(rank2_broadcast), 10);
+
+  buffer<int, 2> dst({10, 20});
+  dst.allocate();
+
+  // When we copy the buffer with a missing dimension, it should broadcast.
+  copy(rank1, dst, scalar<int>(3));
+  ASSERT_TRUE(is_filled_buffer(dst, 7));
+
+  // When we copy the buffer with an extent 1 dimension, it should *not* broadcast.
+  copy(rank2, dst, scalar<int>(3));
+  ASSERT_FALSE(is_filled_buffer(dst, 7));
+
+  // When we copy the buffer with a broadcast dimension, it should broadcast.
+  copy(rank2_broadcast, dst, scalar<int>(3));
+  ASSERT_TRUE(is_filled_buffer(dst, 7));
 }
 
 TEST(buffer, address_at_slice) {
@@ -579,7 +617,7 @@ void test_for_each_contiguous_slice_fill(Rng& rng) {
   for (std::size_t d = 0; d < dst.rank; ++d) {
     dst.dim(d).set_min_extent(0, 5);
   }
-  randomize_strides_and_padding(rng, dst, {-1, 1, false, true});
+  randomize_strides_and_padding(rng, dst, {-1, 1, true});
   dst.allocate();
 
   for_each_contiguous_slice(dst, [&](index_t slice_extent, T* dst) { std::fill_n(dst, slice_extent, 7); });
@@ -603,8 +641,8 @@ void test_for_each_contiguous_slice_copy(Rng& rng) {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(rng, src, {-1, 1, true, true, true});
-  randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+  randomize_strides_and_padding(rng, src, {-1, 1, true, true});
+  randomize_strides_and_padding(rng, dst, {-1, 1, false});
   init_random(rng, src);
   dst.allocate();
 
@@ -646,8 +684,8 @@ void test_for_each_element_copy(Rng& rng) {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(rng, src, {-1, 1, true, true, true});
-  randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+  randomize_strides_and_padding(rng, src, {-1, 1, true, true});
+  randomize_strides_and_padding(rng, dst, {-1, 1, false});
   init_random(rng, src);
   dst.allocate();
 
@@ -686,12 +724,12 @@ void test_for_each_contiguous_slice_add(Rng& rng) {
     dst.dim(d) = a.dim(d);
   }
 
-  randomize_strides_and_padding(rng, a, {0, 1, true, true, true});
-  randomize_strides_and_padding(rng, b, {0, 1, true, true, true});
+  randomize_strides_and_padding(rng, a, {0, 1, true, true});
+  randomize_strides_and_padding(rng, b, {0, 1, true, true});
   init_random(rng, a);
   init_random(rng, b);
 
-  randomize_strides_and_padding(rng, dst, {-1, 0, false, false});
+  randomize_strides_and_padding(rng, dst, {-1, 0, false});
   dst.allocate();
 
   for_each_contiguous_slice(
@@ -855,18 +893,18 @@ TEST(buffer, copy) {
       dst.dim(d).set_min_extent(0, 5);
     }
     buffer<void, max_rank> src = dst;
-    randomize_strides_and_padding(rng, src, {-1, 1, true, true});
+    randomize_strides_and_padding(rng, src, {-1, 1, true});
     init_random(rng, src);
 
     // The padding can't be out of bounds, add one extra padding.
     buffer<void, max_rank> padding1 = dst;
     buffer<void, max_rank> padding2 = dst;
-    randomize_strides_and_padding(rng, padding1, {1, 3, true, true});
-    randomize_strides_and_padding(rng, padding2, {1, 3, true, true});
+    randomize_strides_and_padding(rng, padding1, {1, 3, true});
+    randomize_strides_and_padding(rng, padding2, {1, 3, true});
     init_random(rng, padding1);
     init_random(rng, padding2);
 
-    randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+    randomize_strides_and_padding(rng, dst, {-1, 1, false});
     dst.allocate();
 
     slinky::copy(src, dst, padding1);

@@ -505,6 +505,9 @@ std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
 }
 
 std::ostream& operator<<(std::ostream& os, const dim& d) {
+  if (d == dim::broadcast()) {
+    return os << "{}";
+  }
   os << "{min=" << d.min() << ", max=" << d.max() << ", extent=" << d.extent() << ", stride=" << d.stride();
   if (d.fold_factor() != dim::unfolded) {
     os << ", fold_factor=" << d.fold_factor();

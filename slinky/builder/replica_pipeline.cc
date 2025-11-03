@@ -184,8 +184,12 @@ public:
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
       if (!is_variable(bep->dim(d).fold_factor, bep->sym(), buffer_field::fold_factor, d)) {
-        std::string e = print_expr_inlined(bep->dim(d).fold_factor);
-        os_ << "  " << name << "->dim(" << d << ").fold_factor = (index_t) " << e << ";\n";
+        if (is_constant(bep->dim(d).fold_factor, dim::unfolded)) {
+          os_ << "  " << name << "->dim(" << d << ").fold_factor = dim::unfolded;\n";
+        } else {
+          std::string e = print_expr_inlined(bep->dim(d).fold_factor);
+          os_ << "  " << name << "->dim(" << d << ").fold_factor = (index_t) " << e << ";\n";
+        }
       }
     }
 
