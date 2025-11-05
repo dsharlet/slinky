@@ -1453,10 +1453,10 @@ void check_buffer_constraints(const buffer_expr_ptr& b, bool output, std::vector
     expr fold_factor = buffer_fold_factor(b->sym(), d);
     checks.push_back(check::make(b->dim(d).min() == buffer_min(b->sym(), d)));
     checks.push_back(check::make(b->dim(d).max() == buffer_max(b->sym(), d)));
-    checks.push_back(check::make(b->dim(d).stride == buffer_stride(b->sym(), d)));
-    checks.push_back(check::make(b->dim(d).fold_factor == fold_factor));
+    checks.push_back(check::make(or_else(b->dim(d).extent() == 1, b->dim(d).stride == buffer_stride(b->sym(), d))));
+    checks.push_back(check::make(or_else(b->dim(d).extent() == 1, b->dim(d).fold_factor == fold_factor)));
     if (output) {
-      checks.push_back(check::make(or_else(fold_factor == dim::unfolded, b->dim(d).extent() <= fold_factor)));
+      checks.push_back(check::make(or_else(fold_factor <= 0, b->dim(d).extent() <= fold_factor)));
     }
   }
 }
