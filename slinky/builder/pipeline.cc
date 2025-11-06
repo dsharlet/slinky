@@ -851,8 +851,8 @@ class pipeline_builder {
 
     std::vector<stmt> checks;
     for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-      checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-      checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+      checks.push_back(check::make(dims[d].is_broadcast() || dims[d].min() <= bounds[d].min));
+      checks.push_back(check::make(dims[d].is_broadcast() || dims[d].max() >= bounds[d].max));
     }
 
     s.body = block::make(std::move(checks), s.body);
