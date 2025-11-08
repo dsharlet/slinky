@@ -229,6 +229,9 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(((x / 2) * 2 - (x % 2 + -1) / -2)), matches(x + -1));
 
   ASSERT_THAT(simplify(max(x, 0) / 32 == 0), matches(x < 32));
+
+  ASSERT_THAT(simplify(min(x, (min(z, (min(u, (w + -4)) + 8)) + -7)) + 4),
+      matches(min(x, (min(z, (min(u, (w + -4)) + 8)) + -7)) + 4));
 }
 
 TEST(simplify, staircase) {
