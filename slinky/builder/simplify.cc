@@ -103,7 +103,7 @@ stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
 class constant_adder : public node_mutator {
 public:
   index_t c;
-  bool cancelled = false;
+  int cancelled = 0;
 
   constant_adder(index_t c) : c(c) {}
 
@@ -129,7 +129,7 @@ public:
   void visit_add_sub(const T* op, int sign_b) {
     if (is_constant(op->b, c * -sign_b)) {
       set_result(op->a);
-      cancelled = true;
+      cancelled++;
       return;
     }
     expr a = mutate(op->a);
@@ -154,17 +154,17 @@ public:
   void visit_min_max(const T* op) {
     // Here, we want to rewrite something like max(x + 2, y) - 2 to max(x, y - 2), but we don't want to rewrite
     // something like max(x, 2) - 2 to max(x - 2, 0). To do this, we need to know if we cancelled something.
-    bool old_cancelled = cancelled;
-    cancelled = false;
+    int old_cancelled = cancelled;
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    cancelled = old_cancelled || cancelled;
     if (a.defined() && b.defined()) {
       set_result(T::make(std::move(a), std::move(b)));
-    } else if (a.defined() && cancelled) {
+    } else if (a.defined() && cancelled > old_cancelled) {
       set_result(T::make(std::move(a), add::make(op->b, c)));
-    } else if (b.defined() && cancelled) {
+      cancelled--;
+    } else if (b.defined() && cancelled > old_cancelled) {
       set_result(T::make(add::make(op->a, c), std::move(b)));
+      cancelled--;
     } else {
       set_result(expr());
     }
