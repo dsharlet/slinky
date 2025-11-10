@@ -1541,15 +1541,11 @@ public:
   }
 
   dim_expr mutate(const dim_expr& d) {
-    dim_expr result = {mutate(d.bounds), mutate(d.stride),
-                       mutate(d.fold_factor)};
-    if (is_constant(result.fold_factor, dim::unfolded))
-      result.fold_factor = expr();
-    if (result.fold_factor.defined() && !is_constant(result.fold_factor, 0) &&
-        !is_constant(result.stride, 0) &&
+    dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
+    if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
+    if (result.fold_factor.defined() && !is_constant(result.fold_factor, 0) && !is_constant(result.stride, 0) &&
         !(is_constant(result.min(), 0) && is_constant(result.max(), 0)) &&
-        prove_true(result.min() / result.fold_factor ==
-                   result.max() / result.fold_factor))
+        prove_true(result.min() / result.fold_factor == result.max() / result.fold_factor))
       result.fold_factor = expr();
     if (is_constant(result.stride, dim::auto_stride)) result.stride = expr();
     return result;
