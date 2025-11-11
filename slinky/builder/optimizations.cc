@@ -514,6 +514,10 @@ public:
               assert(alias_d < static_cast<int>(target_info->dims.size()));
               if (target_info->dims[alias_d].stride.defined()) {
                 assert(prove_true(target_info->dims[alias_d].stride == info.dims[d].stride));
+              } else if (is_constant(info.dims[d].stride, 0)) {
+                // TODO(dsharlet|vksnk): stride 0 has a special meaning (i.e. that dim is broadcasted), so
+                // it might be incorrect to propagate it to the target buffer in some cases (this is an
+                // actual bug we're hitting). This is a workaround and it's possible there is a better solution.
               } else {
                 target_info->dims[alias_d].stride = info.dims[d].stride;
               }
