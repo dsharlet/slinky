@@ -699,7 +699,7 @@ public:
       }
 
       expr offset = simplify(op->src_x[src_d] - op->dst_x[dst_d]);
-      if (depends_on(offset, op->dst_x[dst_d]).any()) {
+      if (depends_on(offset, op->dst_x).any()) {
         // This is not a simple copy, we can't handle it here.
         return;
       }
