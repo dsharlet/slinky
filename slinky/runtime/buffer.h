@@ -675,6 +675,28 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   return next_stride == 0 || inner.fold_factor() == dim::unfolded;
 }
 
+// Fuse two dimensions of a buffer.
+inline slinky::dim fuse(slinky::dim inner, const slinky::dim& outer) {
+  assert(can_fuse(inner, outer));
+  if (inner.unbounded()) {
+    // Already fused
+  } else if (outer == dim::broadcast()) {
+    inner = outer;
+  } else {
+    const index_t inner_extent = inner.extent();
+    if (outer.min() != outer.max() && outer.fold_factor() != dim::unfolded) {
+      assert(!inner.is_folded());
+      inner.set_fold_factor(outer.fold_factor() * inner_extent);
+    }
+    if (outer.unbounded()) {
+      inner.set_unbounded();
+    } else {
+      inner.set_range(outer.begin() * inner_extent, outer.end() * inner_extent);
+    }
+  }
+  return inner;
+}
+
 enum class fuse_type {
   // Leave the outer dimension in its place in an undefined state.
   undef,
@@ -704,28 +726,7 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
   } else {
     dim& id = buf.dim(inner);
     dim& od = buf.dim(outer);
-    assert(can_fuse(id, od));
-    if (id.min() == id.max()) {
-      if (type == fuse_type::remove) {
-        buf.slice(inner);
-        return;
-      } else {
-        id = od;
-      }
-    } else if (id.unbounded()) {
-      // Already fused
-    } else {
-      const index_t id_extent = id.extent();
-      if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
-        assert(id.fold_factor() == dim::unfolded);
-        id.set_fold_factor(od.fold_factor() * id_extent);
-      }
-      if (od.unbounded()) {
-        id.set_unbounded();
-      } else {
-        id.set_range(od.begin() * id_extent, od.end() * id_extent);
-      }
-    }
+    id = fuse(id, od);
     if (type == fuse_type::keep) {
       od.set_point(0);
     } else if (type == fuse_type::remove) {

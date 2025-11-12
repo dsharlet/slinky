@@ -1061,6 +1061,22 @@ TEST(fuse_contiguous_dims, fuse_broadcasted) {
   ASSERT_EQ(b.dim(1).stride(), 0);
 }
 
+TEST(fuse_contiguous_dims, fuse_bounded_and_unbounded_broadcasts) {
+  buffer<int, 2> a, b;
+  // Bounded broadcasts
+  a.dim(0) = dim(0, 5, 0);
+  b.dim(0) = dim(0, 5, 0);
+  // Unbounded broadcasts
+  a.dim(1) = dim::broadcast();
+  b.dim(1) = dim::broadcast();
+
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0), dim::broadcast());
+  ASSERT_EQ(b.dim(0), dim::broadcast());
+}
+
 TEST(fuse_contiguous_dims, fuse_implicit_broadcasted) {
   buffer<int, 3> a({6, 1, 1}), b({6});
   a.dim(1) = dim::broadcast();
