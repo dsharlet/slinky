@@ -90,15 +90,15 @@ void tighten_correlated_bounds_min_max(interval_expr& bounds, const expr& a, con
   if (!min_a || !max_b) return;
 
   // min(aa, ab) - max(ba, bb) is bounded in a way that our interval arithmetic below will miss.
-  expr aa_ba = simplify(min_a->a - max_b->a);
-  expr aa_bb = simplify(min_a->a - max_b->b);
-  expr ab_ba = simplify(min_a->b - max_b->a);
-  expr ab_bb = simplify(min_a->b - max_b->b);
+  expr aa_ba = min_a->a - max_b->a;
+  expr ab_bb = min_a->b - max_b->b;
+  expr aa_bb = min_a->a - max_b->b;
+  expr ab_ba = min_a->b - max_b->a;
+
+  expr bounds_max = simplify(min(min(aa_ba, ab_bb), min(aa_bb, ab_ba)));
 
   // TODO: This might be blowing expressions up ridiculously... we might only want to do this in `constant_upper_bound`.
-  for (const expr& i : {aa_ba, aa_bb, ab_ba, ab_bb}) {
-    bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, i);
-  }
+  bounds.max = simplify(static_cast<const class min*>(nullptr), bounds_max, bounds.max);
 }
 
 // Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
