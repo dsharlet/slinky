@@ -427,16 +427,16 @@ public:
 namespace internal {
 
 template <typename T>
-struct default_elem_size {
-  static constexpr std::size_t value = sizeof(T);
+struct type_info {
+  static constexpr std::size_t size = sizeof(T);
 };
 template <>
-struct default_elem_size<void> {
-  static constexpr std::size_t value = 0;
+struct type_info<void> {
+  static constexpr std::size_t size = 0;
 };
 template <>
-struct default_elem_size<const void> {
-  static constexpr std::size_t value = 0;
+struct type_info<const void> {
+  static constexpr std::size_t size = 0;
 };
 
 template <typename T>
@@ -532,10 +532,10 @@ public:
     raw_buffer::base = nullptr;
     to_free = nullptr;
     assign_dims(DimsSize);
-    elem_size = internal::default_elem_size<T>::value;
+    elem_size = internal::type_info<T>::size;
   }
 
-  explicit buffer(std::size_t rank, std::size_t elem_size = internal::default_elem_size<T>::value) {
+  explicit buffer(std::size_t rank, std::size_t elem_size = internal::type_info<T>::size) {
     raw_buffer::base = nullptr;
     to_free = nullptr;
     assign_dims(rank);
@@ -545,7 +545,7 @@ public:
   // Construct a buffer with extents, and strides computed such that the stride of dimension
   // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
   // dimension is "innermost".
-  buffer(span<const index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
+  buffer(span<const index_t> extents, std::size_t elem_size = internal::type_info<T>::size)
       : buffer(extents.size(), elem_size) {
     slinky::dim* d = dims;
     for (index_t extent : extents) {
@@ -554,10 +554,10 @@ public:
     }
     init_strides();
   }
-  buffer(std::initializer_list<index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
+  buffer(std::initializer_list<index_t> extents, std::size_t elem_size = internal::type_info<T>::size)
       : buffer({extents.begin(), extents.end()}, elem_size) {}
   // TODO: A more general version of this constructor would probably be useful.
-  buffer(T* base, index_t size, std::size_t elem_size = internal::default_elem_size<T>::value) : buffer({size}) {
+  buffer(T* base, index_t size, std::size_t elem_size = internal::type_info<T>::size) : buffer({size}) {
     raw_buffer::base = base;
   }
   ~buffer() { free(); }
@@ -646,6 +646,7 @@ public:
 
 template <typename NewT>
 const buffer<NewT>& raw_buffer::cast() const {
+  assert(elem_size == internal::type_info<NewT>::size || internal::type_info<NewT>::size == 0);
   return *reinterpret_cast<const buffer<NewT>*>(this);
 }
 
