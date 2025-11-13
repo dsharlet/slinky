@@ -252,7 +252,13 @@ stmt remove_copy(const stmt& s, var a, var b) {
   return copy_remover(a, b).mutate(s);
 }
 
-bool dim_has_stride(const dim_expr& d) { return d.stride.defined(); }
+bool dim_has_stride(const dim_expr& d) { 
+  if (d.bounds.is_point()) {
+    // If the dim has extent 1, the stride doesn't matter.
+    return false;
+  }
+  return d.stride.defined();
+}
 bool any_stride_defined(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
 
 class copy_aliaser : public stmt_mutator {
