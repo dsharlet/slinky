@@ -2,6 +2,7 @@
 #define SLINKY_RUNTIME_EVALUATE_H
 
 #include "slinky/base/allocator.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 
@@ -61,7 +62,8 @@ public:
   }
   index_t operator[](var id) const { return values_[id.id]; }
 
-  index_t set(var id, index_t value) {
+  // This is always inlined to avoid msan false positives if the value hasn't been set already yet.
+  SLINKY_INLINE index_t set(var id, index_t value) {
     index_t& value_ref = values_[id.id];
     index_t old_value = value_ref;
     value_ref = value;
