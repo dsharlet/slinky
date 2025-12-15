@@ -85,9 +85,10 @@ box_expr buffer_expr::bounds() const {
   return result;
 }
 
-func::func(
-    call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, std::vector<expr> scalars, call_stmt::attributes attrs)
-    : impl_(std::move(impl)), attrs_(std::move(attrs)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), scalars_(std::move(scalars)) {
+func::func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, std::vector<expr> scalars,
+    call_stmt::attributes attrs)
+    : impl_(std::move(impl)), attrs_(std::move(attrs)), inputs_(std::move(inputs)), outputs_(std::move(outputs)),
+      scalars_(std::move(scalars)) {
   add_this_to_buffers();
 }
 
@@ -184,7 +185,8 @@ stmt func::make_call() const {
   }
 }
 
-func func::make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds, copy_stmt::callable impl) {
+func func::make_concat(
+    std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds, copy_stmt::callable impl) {
   assert(src.size() + 1 == bounds.size());
   std::size_t rank = dst.buffer->rank();
 
@@ -1579,15 +1581,16 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   // `implement_copies` adds shadowed declarations, remove them before simplifying.
   result = deshadow(result, builder.external_symbols(), ctx);
-  
+
   result = cleanup_semaphores(result);
-  
+
   result = simplify(result);
 
   result = fuse_siblings(result);
 
   if (options.no_checks) {
-    result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
+    result = recursive_mutate<check>(
+        result, [](const check* op) { return has_side_effects(op->condition) ? stmt(op) : stmt(); });
     // Simplify again, in case there are lets that the checks used that are now dead.
     result = simplify(result);
   }

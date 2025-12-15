@@ -50,6 +50,9 @@ bool can_substitute_buffer(const depends_on_result& r);
 // Check if the node depends on anything that may change value.
 bool is_pure(expr_ref x);
 
+// Check if the node any calls with side-effects.
+bool has_side_effects(expr_ref x);
+
 // Find all the variables used by a node.
 std::vector<var> find_dependencies(expr_ref e);
 std::vector<var> find_dependencies(stmt_ref s);

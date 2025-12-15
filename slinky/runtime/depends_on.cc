@@ -416,4 +416,31 @@ var find_buffer_data_dependency(expr_ref e) {
   return result;
 }
 
+namespace {
+class side_effect_checker : public recursive_node_visitor {
+
+public:
+  bool has_side_effects = false;
+
+  void visit(const call* op) override {
+    if (op->intrinsic == intrinsic::semaphore_init || op->intrinsic == intrinsic::semaphore_signal ||
+        op->intrinsic == intrinsic::semaphore_wait || op->intrinsic == intrinsic::wait_for ||
+        op->intrinsic == intrinsic::trace_begin || op->intrinsic == intrinsic::trace_end ||
+        op->intrinsic == intrinsic::free) {
+      has_side_effects = true;
+      return;
+    }
+
+    recursive_node_visitor::visit(op);
+  }
+};
+
+}  // namespace
+
+bool has_side_effects(expr_ref x) {
+  side_effect_checker checker;
+  x.accept(&checker);
+  return checker.has_side_effects;
+}
+
 }  // namespace slinky
