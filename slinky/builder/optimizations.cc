@@ -2145,4 +2145,28 @@ stmt cleanup_semaphores(const stmt& s) {
   return semaphore_cleaner().mutate(s);
 }
 
+namespace {
+class checks_remover : public node_mutator {
+
+  public:
+  using node_mutator::visit;
+
+  void visit(const check* op) override {
+    const call* c = op->condition.as<const call>();
+    // Don't remove checks around semaphore-related calls.
+    if (c && (c->intrinsic == intrinsic::semaphore_signal || c->intrinsic == intrinsic::semaphore_wait)) {
+      set_result(op);
+      return ;
+    }
+
+    set_result(stmt());
+  }
+};
+}  // namespace
+
+stmt remove_checks(const stmt& s) {
+  scoped_trace trace("cleanup_semaphores");
+  return checks_remover().mutate(s);
+}
+
 }  // namespace slinky

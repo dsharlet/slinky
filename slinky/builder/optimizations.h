@@ -51,6 +51,8 @@ stmt parallelize_tasks(const stmt& s);
 // Clean-up semaphores remaining after simplifications.
 stmt cleanup_semaphores(const stmt& s);
 
+// Remove checks from the statement.
+stmt remove_checks(const stmt& s);
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H
