@@ -424,7 +424,6 @@ public:
 
   void visit(const call* op) override {
     switch (op->intrinsic) {
-    // Non-intrinsic could have a side-effect.
     case intrinsic::none:
     case intrinsic::semaphore_init:
     case intrinsic::semaphore_signal:
@@ -432,10 +431,7 @@ public:
     case intrinsic::wait_for:
     case intrinsic::trace_begin:
     case intrinsic::trace_end:
-    case intrinsic::free: {
-      has_side_effects = true;
-      break;
-    }
+    case intrinsic::free: has_side_effects = true; return;
     case intrinsic::abs:
     case intrinsic::negative_infinity:
     case intrinsic::positive_infinity:
