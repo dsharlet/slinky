@@ -423,13 +423,27 @@ public:
   bool has_side_effects = false;
 
   void visit(const call* op) override {
-    if (op->intrinsic == intrinsic::semaphore_init || op->intrinsic == intrinsic::semaphore_signal ||
-        op->intrinsic == intrinsic::semaphore_wait || op->intrinsic == intrinsic::wait_for ||
-        op->intrinsic == intrinsic::trace_begin || op->intrinsic == intrinsic::trace_end ||
-        op->intrinsic == intrinsic::free) {
+    switch (op->intrinsic) {
+    // Non-intrinsic could have a side-effect.
+    case intrinsic::none:
+    case intrinsic::semaphore_init:
+    case intrinsic::semaphore_signal:
+    case intrinsic::semaphore_wait:
+    case intrinsic::wait_for:
+    case intrinsic::trace_begin:
+    case intrinsic::trace_end:
+    case intrinsic::free: {
       has_side_effects = true;
-      return;
+      break;
     }
+    case intrinsic::abs:
+    case intrinsic::negative_infinity:
+    case intrinsic::positive_infinity:
+    case intrinsic::indeterminate:
+    case intrinsic::and_then:
+    case intrinsic::or_else:
+    case intrinsic::buffer_at: break;
+    };
 
     recursive_node_visitor::visit(op);
   }
