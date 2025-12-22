@@ -955,6 +955,10 @@ TEST(buffer, copy_empty_src) {
   }
 }
 
+TEST(can_fuse, empty) {
+  ASSERT_FALSE(can_fuse(dim{0, -1, 0}, dim::broadcast()));
+}
+
 TEST(fuse_contiguous_dims, same_rank) {
   buffer<int, 1> r1;
   buffer<int, 2> r2;
@@ -1201,5 +1205,5 @@ TEST(fuse_contiguous_dims, cant_fuse_mismatched_bounds) {
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
 }
-  
+
 }  // namespace slinky
