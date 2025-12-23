@@ -25,6 +25,7 @@
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
 #include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
