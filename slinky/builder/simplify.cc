@@ -267,9 +267,8 @@ public:
     // The dimension metadata for this buffer.
     std::vector<dim_expr> dims;
 
-    // If true, we know that all the dimensions in the buffer are in the `dims` vector above. If not, there may be more
-    // dimensions we don't know about.
-    bool all_dims_known = false;
+    // If non-negative, we know how many dimensions are in this buffer.
+    int rank = -1;
 
     // The op that defined this buffer.
     stmt decl;
@@ -292,7 +291,7 @@ public:
       for (std::size_t d = 0; d < value->rank; ++d) {
         dims[d] = dim_expr(value->dim(d));
       }
-      all_dims_known = true;
+      rank = value->rank;
     }
 
     buffer_info(var sym, int rank) : dims(rank) {
@@ -530,7 +529,7 @@ public:
             } else {
               info->init_dims(buf, *rank);
             }
-            info->all_dims_known = true;
+            info->rank = *rank;
           }
         }
       }
@@ -1561,7 +1560,7 @@ public:
       info.dims.push_back(mutate(op->dims[d]));
       changed = changed || !info.dims.back().same_as(op->dims[d]);
     }
-    info.all_dims_known = true;
+    info.rank = info.dims.size();
     info.decl = stmt(op);
     return changed;
   }
@@ -1692,8 +1691,8 @@ public:
         canonicalize_buffer(info, *src_info, *src_buf);
       }
 
-      auto make_truncate = [&](var src, std::size_t rank, stmt body) {
-        if (src_info && src_info->all_dims_known && src_info->dims.size() == rank) {
+      auto make_truncate = [&](var src, int rank, stmt body) {
+        if (src_info && src_info->rank == rank) {
           // We know all the dims, and the rank is already what we want to truncate to.
           return body;
         }
@@ -1706,8 +1705,8 @@ public:
         // the dimensions to be identity.
         auto is_slice = [&]() {
           int dim = 0;
-          std::size_t slice_rank = 0;
-          std::size_t at_rank =
+          int slice_rank = 0;
+          int at_rank =
               std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
           for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
             if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
@@ -2275,7 +2274,7 @@ public:
 
     buffer_info sym_info{expr()};
     if (src_info && *src_info) {
-      if (transpose::is_truncate(dims) && (*src_info)->all_dims_known && (*src_info)->dims.size() <= dims.size()) {
+      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 && (*src_info)->rank <= dims.size()) {
         // transpose can't add dimensions.
         assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
@@ -2288,7 +2287,7 @@ public:
       // This is like `permute`, but we can't guarantee that we know all the dimensions of src_info (it could be a
       // buffer external to the pipeline).
       sym_info.dims.resize(op->dims.size());
-      sym_info.all_dims_known = true;
+      sym_info.rank = sym_info.dims.size();
       for (size_t i = 0; i < op->dims.size(); ++i) {
         if (op->dims[i] < static_cast<int>((*src_info)->dims.size())) {
           sym_info.dims[i] = (*src_info)->dims[op->dims[i]];
