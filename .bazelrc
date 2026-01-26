@@ -6,6 +6,9 @@ common --copt=-std=c++17
 common --per_file_copt=.*test.*@-std=c++20
 common --copt=-fstrict-aliasing
 #common --copt=-Wall
+# Some of our dependencies have headers that cause this warning in our code. Also see
+https://staticthinking.wordpress.com/2023/07/25/wsign-compare-is-garbage/.
+common --copt=-Wno-sign-compare
 # Reduces code size and build time a little, and prevents accidentally relying on these features.
 common --copt=-fno-rtti
 common --copt=-fno-exceptions
