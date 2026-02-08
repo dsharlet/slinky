@@ -127,7 +127,8 @@ SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>&, const match_contex
 
 template <int N>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_wildcard<N>&) {
-  static constexpr char names[] = "xyzwuv";
+  static constexpr char names[] = "xyzwuvt";
+  static_assert(N + 1 < sizeof(names));
   return os << names[N];
 }
 
