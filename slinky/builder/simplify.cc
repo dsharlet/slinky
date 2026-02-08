@@ -2667,15 +2667,6 @@ public:
 
 }  // namespace
 
-bool can_evaluate(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::negative_infinity:
-  case intrinsic::positive_infinity:
-  case intrinsic::indeterminate: return false;
-  default: return true;
-  }
-}
-
 expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
 expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
 std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
