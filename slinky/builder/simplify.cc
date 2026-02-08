@@ -626,7 +626,7 @@ public:
         learn_from_less_equal(lt->a, lt->b);
       } else if (const equal* eq = c.as<equal>()) {
         learn_from_equal(eq->a, eq->b);
-      } else if (!as_constant(c) && !as_variable(c)) {
+      } else if (!as_constant(c) && is_boolean(c)) {
         // We couldn't learn anything, just add the whole expression as a fact, if it isn't a constant or variable,
         // which could rewrite the value from any x not zero to 1.
         facts.push_back({c, expr(true)});
