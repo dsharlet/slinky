@@ -63,7 +63,7 @@ public:
     case 4: return rng_() % 8 != 0 ? ac() && bc() : and_then(ac(), bc());
     case 5: return rng_() % 8 != 0 ? ac() || bc() : or_else(ac(), bc());
     case 6: return !random_condition(depth - 1);
-    default: SLINKY_UNREACHABLE;
+    default: SLINKY_UNREACHABLE; return expr{};
     }
   }
 
@@ -88,7 +88,7 @@ public:
       case 8: return random_constant();
       case 9: return random_variable();
       case 10: return random_condition(depth);
-      default: SLINKY_UNREACHABLE;
+      default: SLINKY_UNREACHABLE; return expr{};
       }
     }
   }
