@@ -126,6 +126,9 @@ enum class intrinsic {
   validate_buffer,
 };
 
+// True if `fn` can be evaluated if its arguments are constants.
+bool can_evaluate(intrinsic fn);
+
 enum class buffer_field : unsigned {
   none = 0,
 

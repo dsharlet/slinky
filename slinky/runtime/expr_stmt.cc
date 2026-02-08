@@ -52,6 +52,15 @@ std::optional<var> node_context::lookup(const std::string& name) const {
   return i != name_to_sym.end() ? std::optional<var>(i->second) : std::nullopt;
 }
 
+bool can_evaluate(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::negative_infinity:
+  case intrinsic::positive_infinity:
+  case intrinsic::indeterminate: return false;
+  default: return true;
+  }
+}
+
 template <typename T>
 expr make_bin_op(expr a, expr b) {
   auto n = new T();
