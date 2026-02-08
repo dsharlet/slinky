@@ -574,12 +574,12 @@ public:
     }
 
     void learn_from_less(const expr& a, const expr& b) {
-      if (const class max* r = b.as<class max>()) {
-        // a < max(x, y) ==> a < x && a < y
+      if (const class min* r = b.as<class min>()) {
+        // a < min(x, y) ==> a < x && a < y
         learn_from_less(a, r->a);
         learn_from_less(a, r->b);
-      } else if (const class min* l = a.as<class min>()) {
-        // min(x, y) < b ==> x < b && y < b
+      } else if (const class max* l = a.as<class max>()) {
+        // max(x, y) < b ==> x < b && y < b
         learn_from_less(l->a, b);
         learn_from_less(l->b, b);
       } else {
@@ -594,12 +594,12 @@ public:
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
-      if (const class max* r = b.as<class max>()) {
-        // a <= max(x, y) ==> a <= x && a <= y
+      if (const class min* r = b.as<class min>()) {
+        // a <= min(x, y) ==> a <= x && a <= y
         learn_from_less_equal(a, r->a);
         learn_from_less_equal(a, r->b);
-      } else if (const class min* l = a.as<class min>()) {
-        // min(x, y) <= b ==> x <= b && y <= b
+      } else if (const class max* l = a.as<class max>()) {
+        // max(x, y) <= b ==> x <= b && y <= b
         learn_from_less_equal(l->a, b);
         learn_from_less_equal(l->b, b);
       } else {

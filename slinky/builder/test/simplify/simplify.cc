@@ -1045,22 +1045,22 @@ TEST(simplify, knowledge) {
       matches(check::make(x % 6 == 3)));
 
   ASSERT_THAT(
-      simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})), matches(check::make(3 <= max(x, y))));
-  ASSERT_THAT(simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})),
-      matches(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})));
+      simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})), matches(check::make(3 <= min(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})),
+      matches(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})));
   ASSERT_THAT(
-      simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})), matches(check::make(3 < max(x, y))));
-  ASSERT_THAT(simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})),
-      matches(block::make({check::make(3 < min(x, y)), check::make(3 < x)})));
+      simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})), matches(check::make(3 < min(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})),
+      matches(block::make({check::make(3 < max(x, y)), check::make(3 < x)})));
 
   ASSERT_THAT(
-      simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})), matches(check::make(min(x, y) <= 4)));
-  ASSERT_THAT(simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})),
-      matches(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})));
+      simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})), matches(check::make(max(x, y) <= 4)));
+  ASSERT_THAT(simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})),
+      matches(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})));
   ASSERT_THAT(
-      simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})), matches(check::make(min(x, y) < 4)));
-  ASSERT_THAT(simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})),
-      matches(block::make({check::make(max(x, y) < 4), check::make(x < 4)})));
+      simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})), matches(check::make(max(x, y) < 4)));
+  ASSERT_THAT(simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})),
+      matches(block::make({check::make(min(x, y) < 4), check::make(x < 4)})));
 
   ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
   ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
