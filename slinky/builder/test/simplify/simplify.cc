@@ -1183,14 +1183,14 @@ TEST(constant_lower_bound, basic) {
   ASSERT_THAT(constant_lower_bound(min(1, max(x, 1))), matches(1));
   ASSERT_THAT(constant_lower_bound(clamp(x, -2, 3)), matches(-2));
 
-  ASSERT_THAT(constant_lower_bound(x || false), matches(boolean(x)));
-  ASSERT_THAT(constant_lower_bound(false || x), matches(boolean(x)));
+  ASSERT_THAT(constant_lower_bound(x || false), matches(false));
+  ASSERT_THAT(constant_lower_bound(false || x), matches(false));
   ASSERT_THAT(constant_lower_bound(x || true), matches(true));
   ASSERT_THAT(constant_lower_bound(true || x), matches(true));
   ASSERT_THAT(constant_lower_bound(x && false), matches(false));
   ASSERT_THAT(constant_lower_bound(false && x), matches(false));
-  ASSERT_THAT(constant_lower_bound(x && true), matches(boolean(x)));
-  ASSERT_THAT(constant_lower_bound(true && x), matches(boolean(x)));
+  ASSERT_THAT(constant_lower_bound(x && true), matches(false));
+  ASSERT_THAT(constant_lower_bound(true && x), matches(false));
 }
 
 TEST(constant_upper_bound, basic) {
@@ -1215,14 +1215,14 @@ TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(max(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_upper_bound(max(x, 0) * 256 < 0), matches(0));
 
-  ASSERT_THAT(constant_upper_bound(x || false), matches(boolean(x)));
-  ASSERT_THAT(constant_upper_bound(false || x), matches(boolean(x)));
+  ASSERT_THAT(constant_upper_bound(x || false), matches(true));
+  ASSERT_THAT(constant_upper_bound(false || x), matches(true));
   ASSERT_THAT(constant_upper_bound(x || true), matches(true));
   ASSERT_THAT(constant_upper_bound(true || x), matches(true));
   ASSERT_THAT(constant_upper_bound(x && false), matches(false));
   ASSERT_THAT(constant_upper_bound(false && x), matches(false));
-  ASSERT_THAT(constant_upper_bound(x && true), matches(boolean(x)));
-  ASSERT_THAT(constant_upper_bound(true && x), matches(boolean(x)));
+  ASSERT_THAT(constant_upper_bound(x && true), matches(true));
+  ASSERT_THAT(constant_upper_bound(true && x), matches(true));
 }
 
 TEST(evaluate_constant_lower_bound, basic) {
@@ -1236,14 +1236,14 @@ TEST(evaluate_constant_lower_bound, basic) {
   ASSERT_EQ(evaluate_constant_lower_bound(min(1, max(x, 1))), 1);
   ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3)), -2);
 
-  ASSERT_EQ(evaluate_constant_lower_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(false || x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x || false), false);
+  ASSERT_EQ(evaluate_constant_lower_bound(false || x), false);
   ASSERT_EQ(evaluate_constant_lower_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_lower_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_lower_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_lower_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_lower_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x && true), false);
+  ASSERT_EQ(evaluate_constant_lower_bound(true && x), false);
 }
 
 TEST(evaluate_constant_upper_bound, basic) {
@@ -1268,14 +1268,14 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) < 0), 0);
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) * 256 < 0), 0);
 
-  ASSERT_EQ(evaluate_constant_upper_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(false || x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x || false), true);
+  ASSERT_EQ(evaluate_constant_upper_bound(false || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_upper_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_upper_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_upper_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x && true), true);
+  ASSERT_EQ(evaluate_constant_upper_bound(true && x), true);
 }
 
 TEST(evaluate_constant, basic) {

@@ -2438,8 +2438,6 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_or_eval_binary<T>(*ca, *cb));
-    } else if (!(a.defined() && b.defined())) {
-      set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
@@ -2492,7 +2490,7 @@ public:
     } else {
       expr equiv = max(0, max(-op->b, op->b) - 1);
       expr result = mutate(equiv);
-      if (!equiv.same_as(result)) {
+      if (!equiv.same_as(result) || as_constant(result)) {
         set_result(std::move(result));
       } else if (constant_required) {
         set_result(expr());

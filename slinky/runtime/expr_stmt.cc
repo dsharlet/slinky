@@ -9,10 +9,10 @@
 #include <utility>
 #include <vector>
 
+#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
 #include "slinky/runtime/stmt.h"
-
 
 namespace slinky {
 
@@ -63,6 +63,15 @@ bool can_evaluate(intrinsic fn) {
 
 template <typename T>
 expr make_bin_op(expr a, expr b) {
+  // Here we eagerly constant fold arithmetic.
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
+  const constant* ac = a.as<constant>();
+  const constant* bc = b.as<constant>();
+  if (ac && bc && !binary_overflows<T>(ac->value, bc->value)) {
+    return make_binary<T>(ac->value, bc->value);
+  }
+
   auto n = new T();
   if (T::commutative && should_commute(a, b)) {
     // Aggressively canonicalizing the order is a big speedup by avoiding unnecessary simplifier rewrites.
@@ -154,20 +163,55 @@ expr_ref constant::get(index_t value) { return get_constant(value); }
 expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
-expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
-expr sub::make(expr a, expr b) { return make_bin_op<sub>(std::move(a), std::move(b)); }
-expr mul::make(expr a, expr b) { return make_bin_op<mul>(std::move(a), std::move(b)); }
-expr div::make(expr a, expr b) { return make_bin_op<div>(std::move(a), std::move(b)); }
-expr mod::make(expr a, expr b) { return make_bin_op<mod>(std::move(a), std::move(b)); }
+expr add::make(expr a, expr b) {
+  if (is_zero(a)) return b;
+  if (is_zero(b)) return a;
+  return make_bin_op<add>(std::move(a), std::move(b));
+}
+expr sub::make(expr a, expr b) {
+  if (auto cb = as_constant(b)) {
+    if (*cb == 0) return a;
+    if (!sub_overflows<index_t>(0, *cb)) {
+      // Canonicalize to addition with constants.
+      return add::make(std::move(a), -*cb);
+    }
+  }
+  return make_bin_op<sub>(std::move(a), std::move(b));
+}
+expr mul::make(expr a, expr b) {
+  if (is_zero(a) || is_one(b)) return a;
+  if (is_zero(b) || is_one(a)) return b;
+  return make_bin_op<mul>(std::move(a), std::move(b));
+}
+expr div::make(expr a, expr b) {
+  if (is_one(b) || is_zero(a)) return a;
+  if (is_zero(b)) return b;
+  return make_bin_op<div>(std::move(a), std::move(b));
+}
+expr mod::make(expr a, expr b) {
+  if (is_zero(a) || is_zero(b) || is_one(b)) return 0;
+  return make_bin_op<mod>(std::move(a), std::move(b));
+}
 expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)); }
 expr max::make(expr a, expr b) { return make_bin_op<max>(std::move(a), std::move(b)); }
 expr equal::make(expr a, expr b) { return make_bin_op<equal>(std::move(a), std::move(b)); }
 expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a), std::move(b)); }
 expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
-expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)); }
-expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)); }
+expr logical_and::make(expr a, expr b) {
+  if (is_true(a) || is_false(b)) return boolean(b);
+  if (is_true(b) || is_false(a)) return boolean(a);
+  return make_bin_op<logical_and>(std::move(a), std::move(b));
+}
+expr logical_or::make(expr a, expr b) {
+  if (is_true(a) || is_false(b)) return boolean(a);
+  if (is_true(b) || is_false(a)) return boolean(b);
+  return make_bin_op<logical_or>(std::move(a), std::move(b));
+}
 expr logical_not::make(expr a) {
+  if (const constant* c = a.as<constant>()) {
+    return expr(make_constant(c->value == 0 ? 1 : 0));
+  }
   logical_not* n = new logical_not();
   n->a = std::move(a);
   return expr(n);
@@ -425,6 +469,12 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
+  if (is_true(condition)) {
+    return true_value;
+  } else if (is_false(condition)) {
+    return false_value;
+  }
+
   auto n = new select();
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
@@ -437,18 +487,24 @@ expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
   n->intrinsic = i;
   n->target = std::move(target);
   n->args = std::move(args);
-  return expr(n);
+  expr result(n);
+
+  if (n->target || can_evaluate(i)) {
+    if (std::all_of(n->args.begin(), n->args.end(), [](const expr& i) { return as_constant(i); })) {
+      return evaluate(result);
+    }
+  }
+  return result;
 }
 
-expr call::make(slinky::intrinsic i, std::vector<expr> args) {
-  return call::make(i, nullptr, std::move(args));
-}
+expr call::make(slinky::intrinsic i, std::vector<expr> args) { return call::make(i, nullptr, std::move(args)); }
 
 expr call::make(callable target, std::vector<expr> args) {
   return call::make(intrinsic::none, std::move(target), std::move(args));
 }
 
-stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs) {
+stmt call_stmt::make(
+    call_stmt::callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs) {
   auto n = new call_stmt();
   n->target = std::move(target);
   n->inputs = std::move(inputs);
@@ -458,7 +514,8 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   return stmt(n);
 }
 
-stmt copy_stmt::make(copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad) {
+stmt copy_stmt::make(
+    copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad) {
   auto n = new copy_stmt();
   n->src = src;
   n->src_x = std::move(src_x);
@@ -773,8 +830,10 @@ const expr& dim_expr::get_field(buffer_field field) const {
   case buffer_field::max: return bounds.max;
   case buffer_field::stride: return stride;
   case buffer_field::fold_factor: return fold_factor;
-  default: SLINKY_UNREACHABLE << "buffer_field " << to_string(field) << " is not a dim field";
+  default: break;
   }
+  SLINKY_UNREACHABLE << "buffer_field " << to_string(field) << " is not a dim field";
+  return fold_factor;
 }
 
 bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }

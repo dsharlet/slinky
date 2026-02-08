@@ -134,7 +134,7 @@ class rule_tester {
       m.constants[i] = expr_gen_.random_constant();
     }
     for (std::size_t i = 0; i < rewrite::symbol_count; ++i) {
-      exprs[i] = expr_gen_.random_expr(0);
+      exprs[i] = expr_gen_.random_expr(1);
       m.vars[i] = exprs[i].get();
     }
   }
@@ -142,14 +142,18 @@ class rule_tester {
 public:
   rule_tester() : expr_gen_(rng_, var_count) { init_match_context(); }
 
-  SLINKY_NO_INLINE void test_expr(expr pattern, expr replacement, const std::string& rule_str) {
+  SLINKY_NO_INLINE void test_expr(expr pattern, expr replacement, const std::string& rule_str, bool& applied) {
+    expr simplified = simplify(pattern);
+    if (pattern.same_as(simplified)) {
+      // We didn't apply the rule, maybe the pattern constant folded.
+      return;
+    }
+    applied = true;
+
     if (contains_infinity(pattern)) {
       // TODO: Maybe there's a way to test this...
       return;
     }
-
-    expr simplified = simplify(pattern);
-    ASSERT_FALSE(pattern.same_as(simplified)) << "Rule did not apply: " << rule_str << "\nTo: " << pattern << "\n";
 
     eval_context ctx;
     for (int test = 0; test < 100; ++test) {
@@ -177,20 +181,7 @@ public:
 
   template <typename Pattern, typename Replacement>
   bool operator()(const Pattern& p, const Replacement& r) {
-    // This function needs to be kept small and simple, because it is instantiated by hundreds of different rules.
-    std::stringstream rule_str;
-    rule_str << p << " -> " << r;
-
-    expr pattern = expr(substitute(p, m));
-    bool overflowed = false;
-    expr replacement = expr(substitute(r, m, overflowed));
-    assert(!overflowed);
-
-    // Make sure the expressions have the same value when evaluated.
-    test_expr(pattern, replacement, rule_str.str());
-
-    // Returning false means the rule applicator will continue to the next rule.
-    return false;
+    return operator()(p, r, 1);
   }
 
   template <typename Pattern, typename Replacement, typename Predicate>
@@ -201,6 +192,7 @@ public:
 
     // Some rules are very picky about a large number of constants, which makes it very unlikely to generate an
     // expression that the rule applies to.
+    bool rule_applied = false;
     for (int test = 0; test < 100000; ++test) {
       init_match_context();
       bool overflowed = false;
@@ -210,13 +202,13 @@ public:
         assert(!overflowed);
 
         // Make sure the expressions have the same value when evaluated.
-        test_expr(pattern, replacement, rule_str.str());
-
-        // Returning false means the rule applicator will continue to the next rule.
-        return false;
+        test_expr(pattern, replacement, rule_str.str(), rule_applied);
+        if (rule_applied) {
+          // Returning false means the rule applicator will continue to the next rule.
+          return false;
+        }
       }
     }
-    const bool rule_applied = false;
     // We failed to apply the rule to an expression.
     EXPECT_TRUE(rule_applied) << rule_str.str();
     // Returning true stops any more tests.
