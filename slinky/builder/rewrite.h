@@ -344,7 +344,7 @@ std::ostream& operator<<(std::ostream& os, const pattern_binary<T, A, B>& p) {
   case not_equal::static_type: return os << '(' << p.a << " != " << p.b << ')';
   case logical_and::static_type: return os << '(' << p.a << " && " << p.b << ')';
   case logical_or::static_type: return os << '(' << p.a << " || " << p.b << ')';
-  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(T::static_type);
+  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(T::static_type); return os;
   }
 }
 
