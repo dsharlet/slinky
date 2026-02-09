@@ -2573,19 +2573,22 @@ public:
   void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
-    expr a = strip_boolean(mutate(op->a, -sign));
-    if (auto ca = as_constant(a)) {
-      set_result(*ca != 0 ? 0 : 1);
-    } else if (sign != 0) {
-      set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!a.defined()) {
-      set_result(expr());
-    } else if (a.same_as(op->a)) {
-      set_result(expr(op));
-    } else {
-      set_result(logical_not::make(std::move(a)));
+    expr equiv = op->a == 0;
+    expr result = mutate(equiv);
+    if (const equal* eq = result.as<equal>()) {
+      if (is_constant(eq->b, 0)) {
+        expr a = eq->a;
+        if (op->a.same_as(a)) {
+          set_result(op);
+        } else {
+          set_result(logical_not::make(std::move(a)));
+        }
+        return;
+      }
     }
+    set_result(std::move(result));
   }
+
   void visit(const class select* op) override {
     expr c = strip_boolean(mutate(op->condition, 0));
     if (auto cc = as_constant(c)) {

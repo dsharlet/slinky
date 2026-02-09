@@ -1173,6 +1173,11 @@ TEST(simplify, bounds_of) {
 }
 
 TEST(constant_lower_bound, basic) {
+  ASSERT_THAT(constant_lower_bound(min(x, 0)), matches(min(x, 0)));
+  ASSERT_THAT(constant_lower_bound(max(x, 0)), matches(0));
+  ASSERT_THAT(constant_lower_bound(!min(x, 0)), matches(0));
+  ASSERT_THAT(constant_lower_bound(!min(x, -1)), matches(0));  // TODO: We might be able to prove this is 1
+  ASSERT_THAT(constant_lower_bound(!max(x, 0)), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
@@ -1196,6 +1201,10 @@ TEST(constant_lower_bound, basic) {
 TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
   ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
+  ASSERT_THAT(constant_upper_bound(!min(x, 0)), matches(1));
+  ASSERT_THAT(constant_upper_bound(!min(x, -1)), matches(1));  // TODO: We might be able to prove this is 0
+  ASSERT_THAT(constant_upper_bound(!max(x, 0)), matches(1));
+  ASSERT_THAT(constant_upper_bound(!max(x, 1)), matches(1));  // TODO: We might be able to prove this is 0
   ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
   ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x - 4));
   ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
