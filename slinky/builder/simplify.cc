@@ -574,12 +574,12 @@ public:
     }
 
     void learn_from_less(const expr& a, const expr& b) {
-      if (const class max* r = b.as<class max>()) {
-        // a < max(x, y) ==> a < x && a < y
+      if (const class min* r = b.as<class min>()) {
+        // a < min(x, y) ==> a < x && a < y
         learn_from_less(a, r->a);
         learn_from_less(a, r->b);
-      } else if (const class min* l = a.as<class min>()) {
-        // min(x, y) < b ==> x < b && y < b
+      } else if (const class max* l = a.as<class max>()) {
+        // max(x, y) < b ==> x < b && y < b
         learn_from_less(l->a, b);
         learn_from_less(l->b, b);
       } else {
@@ -594,12 +594,12 @@ public:
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
-      if (const class max* r = b.as<class max>()) {
-        // a <= max(x, y) ==> a <= x && a <= y
+      if (const class min* r = b.as<class min>()) {
+        // a <= min(x, y) ==> a <= x && a <= y
         learn_from_less_equal(a, r->a);
         learn_from_less_equal(a, r->b);
-      } else if (const class min* l = a.as<class min>()) {
-        // min(x, y) <= b ==> x <= b && y <= b
+      } else if (const class max* l = a.as<class max>()) {
+        // max(x, y) <= b ==> x <= b && y <= b
         learn_from_less_equal(l->a, b);
         learn_from_less_equal(l->b, b);
       } else {
@@ -626,7 +626,7 @@ public:
         learn_from_less_equal(lt->a, lt->b);
       } else if (const equal* eq = c.as<equal>()) {
         learn_from_equal(eq->a, eq->b);
-      } else if (!as_constant(c) && !as_variable(c)) {
+      } else if (!as_constant(c) && is_boolean(c)) {
         // We couldn't learn anything, just add the whole expression as a fact, if it isn't a constant or variable,
         // which could rewrite the value from any x not zero to 1.
         facts.push_back({c, expr(true)});
@@ -2438,8 +2438,6 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_or_eval_binary<T>(*ca, *cb));
-    } else if (!(a.defined() && b.defined())) {
-      set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
@@ -2492,7 +2490,7 @@ public:
     } else {
       expr equiv = max(0, max(-op->b, op->b) - 1);
       expr result = mutate(equiv);
-      if (!equiv.same_as(result)) {
+      if (!equiv.same_as(result) || as_constant(result)) {
         set_result(std::move(result));
       } else if (constant_required) {
         set_result(expr());
@@ -2575,19 +2573,22 @@ public:
   void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
-    expr a = strip_boolean(mutate(op->a, -sign));
-    if (auto ca = as_constant(a)) {
-      set_result(*ca != 0 ? 0 : 1);
-    } else if (sign != 0) {
-      set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!a.defined()) {
-      set_result(expr());
-    } else if (a.same_as(op->a)) {
-      set_result(expr(op));
-    } else {
-      set_result(logical_not::make(std::move(a)));
+    expr equiv = op->a == 0;
+    expr result = mutate(equiv);
+    if (const equal* eq = result.as<equal>()) {
+      if (is_constant(eq->b, 0)) {
+        expr a = eq->a;
+        if (op->a.same_as(a)) {
+          set_result(op);
+        } else {
+          set_result(logical_not::make(std::move(a)));
+        }
+        return;
+      }
     }
+    set_result(std::move(result));
   }
+
   void visit(const class select* op) override {
     expr c = strip_boolean(mutate(op->condition, 0));
     if (auto cc = as_constant(c)) {
@@ -2666,15 +2667,6 @@ public:
 };
 
 }  // namespace
-
-bool can_evaluate(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::negative_infinity:
-  case intrinsic::positive_infinity:
-  case intrinsic::indeterminate: return false;
-  default: return true;
-  }
-}
 
 expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
 expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
