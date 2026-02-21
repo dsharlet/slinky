@@ -9,7 +9,7 @@
 namespace slinky {
 
 struct unshared {
-  alignas(cache_line_size) int value;
+  alignas(cache_line_size) std::atomic<int> value;
 };
 
 void BM_parallel_for_overhead(benchmark::State& state) {
