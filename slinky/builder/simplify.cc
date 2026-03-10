@@ -2379,10 +2379,7 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, c
     simplifier s(expr_bounds, alignment);
     simplifier::expr_info info_of_min, info_of_max;
     s.mutate(x, &info_of_min, &info_of_max);
-    return {
-        simplify(static_cast<const class min*>(nullptr), info_of_min.bounds.min, info_of_max.bounds.min),
-        simplify(static_cast<const class max*>(nullptr), info_of_min.bounds.max, info_of_max.bounds.max),
-    };
+    return {info_of_min.bounds.min, info_of_max.bounds.max};
   }
 }
 
