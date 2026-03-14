@@ -15,16 +15,6 @@ namespace slinky {
 using namespace rewrite;
 
 expr simplify(const class min* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb) {
-    return std::min(*ca, *cb);
-  }
-
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
 
@@ -39,16 +29,6 @@ expr simplify(const class min* op, expr a, expr b) {
 }
 
 expr simplify(const class max* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb) {
-    return std::max(*ca, *cb);
-  }
-
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
 
@@ -63,16 +43,6 @@ expr simplify(const class max* op, expr a, expr b) {
 }
 
 expr simplify(const add* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb && !add_overflows(*ca, *cb)) {
-    return *ca + *cb;
-  }
-
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   int inf_a = is_infinity(a);
@@ -90,15 +60,6 @@ expr simplify(const add* op, expr a, expr b) {
 }
 
 expr simplify(const sub* op, expr a, expr b) {
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb && !sub_overflows(*ca, *cb)) {
-    return *ca - *cb;
-  } else if (cb && !sub_overflows<index_t>(0, *cb)) {
-    // Canonicalize to addition with constants.
-    return simplify(static_cast<add*>(nullptr), a, -*cb);
-  }
-
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   int inf_a = is_infinity(a);
@@ -116,16 +77,6 @@ expr simplify(const sub* op, expr a, expr b) {
 }
 
 expr simplify(const mul* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb && !mul_overflows(*ca, *cb)) {
-    return *ca * *cb;
-  }
-
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   int inf_a = is_infinity(a);
@@ -143,12 +94,6 @@ expr simplify(const mul* op, expr a, expr b) {
 }
 
 expr simplify(const div* op, expr a, expr b) {
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb) {
-    return euclidean_div(*ca, *cb);
-  }
-
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   if (is_infinity(a) && is_infinity(b)) return slinky::indeterminate();
@@ -164,12 +109,6 @@ expr simplify(const div* op, expr a, expr b) {
 }
 
 expr simplify(const mod* op, expr a, expr b) {
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb) {
-    return euclidean_mod(*ca, *cb);
-  }
-
   auto r = make_rewriter(pattern_expr{a} % pattern_expr{b});
   if (apply_mod_rules(r)) {
     return r.result;
@@ -181,12 +120,6 @@ expr simplify(const mod* op, expr a, expr b) {
 }
 
 expr simplify(const less* op, expr a, expr b) {
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb) {
-    return *ca < *cb;
-  }
-
   auto r = make_rewriter(pattern_expr{a} < pattern_expr{b});
   if (apply_less_rules(r)) {
     return r.result;
@@ -212,16 +145,6 @@ expr simplify(const less_equal* op, expr a, expr b) {
 }
 
 expr simplify(const equal* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-  if (ca && cb) {
-    return *ca == *cb;
-  }
-
   auto r = make_rewriter(pattern_expr{a} == pattern_expr{b});
   if (apply_equal_rules(r)) {
     return r.result;
@@ -247,18 +170,6 @@ expr simplify(const not_equal* op, expr a, expr b) {
 }
 
 expr simplify(const logical_and* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-
-  if (ca && cb) {
-    return *ca != 0 && *cb != 0;
-  } else if (cb) {
-    return *cb ? boolean(a) : false;
-  }
-
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
   if (apply_logical_and_rules(r)) {
     return r.result;
@@ -270,18 +181,6 @@ expr simplify(const logical_and* op, expr a, expr b) {
 }
 
 expr simplify(const logical_or* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
-  }
-  auto ca = as_constant(a);
-  auto cb = as_constant(b);
-
-  if (ca && cb) {
-    return *ca != 0 || *cb != 0;
-  } else if (cb) {
-    return *cb ? true : boolean(a);
-  }
-
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
   if (apply_logical_or_rules(r)) {
     return r.result;
@@ -293,11 +192,6 @@ expr simplify(const logical_or* op, expr a, expr b) {
 }
 
 expr simplify(const class logical_not* op, expr a) {
-  auto cv = as_constant(a);
-  if (cv) {
-    return *cv == 0;
-  }
-
   auto r = make_rewriter(!pattern_expr{a});
   if (apply_logical_not_rules(r)) {
     return r.result;
@@ -309,12 +203,6 @@ expr simplify(const class logical_not* op, expr a) {
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  if (is_true(c)) {
-    return t;
-  } else if (is_false(c)) {
-    return f;
-  }
-
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
   if (apply_select_rules(r)) {
     return r.result;
@@ -326,10 +214,8 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
 }
 
 expr simplify(const call* op, intrinsic fn, const call::callable& target, std::vector<expr> args) {
-  bool constant = true;
   bool changed = op == nullptr;
   for (std::size_t i = 0; i < args.size(); ++i) {
-    constant = constant && as_constant(args[i]);
     changed = changed || !args[i].same_as(op->args[i]);
   }
 
@@ -377,10 +263,6 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
     e = expr(op);
   } else {
     e = call::make(fn, target, std::move(args));
-  }
-
-  if (constant && can_evaluate(fn)) {
-    return evaluate(e);
   }
 
   rewriter r(e);

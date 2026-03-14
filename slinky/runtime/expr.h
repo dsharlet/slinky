@@ -122,6 +122,9 @@ enum class intrinsic {
   free,
 };
 
+// True if `fn` can be evaluated if its arguments are constants.
+bool can_evaluate(intrinsic fn);
+
 enum class buffer_field : unsigned {
   none = 0,
 
