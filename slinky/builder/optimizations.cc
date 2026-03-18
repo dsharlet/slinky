@@ -483,12 +483,17 @@ public:
           continue;
         }
 
-        // The alias might have used the bounds of this symbol, substitute them now.
+        // The alias might have used the bounds/stride/fold_factor of this symbol, substitute them now.
+        // We must substitute all dim fields — not just bounds — because make_contiguous_dims
+        // creates strides like buffer_elem_size(op->sym) that reference the buffer being defined.
+        // We pass op->elem_size so that buffer_elem_size(op->sym) is replaced with the concrete value.
         for (dim_expr& i : alias.dims) {
-          i.bounds = substitute_buffer(i.bounds, op->sym, op_dims_bounds);
+          i.bounds = substitute_buffer(i.bounds, op->sym, op->elem_size, op_dims_bounds);
+          i.stride = substitute_buffer(i.stride, op->sym, op->elem_size, op_dims_bounds);
+          i.fold_factor = substitute_buffer(i.fold_factor, op->sym, op->elem_size, op_dims_bounds);
         }
         for (expr& i : alias.at) {
-          i = substitute_buffer(i, op->sym, op_dims_bounds);
+          i = substitute_buffer(i, op->sym, op->elem_size, op_dims_bounds);
         }
 
         var alloc_var = target_var;

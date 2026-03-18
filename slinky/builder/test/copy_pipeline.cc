@@ -980,4 +980,44 @@ TEST_P(tile_untile, copy) {
   }
 }
 
+index_t fake_reduce(const buffer<const float>& in, const buffer<float>& out) { return 0; }
+
+TEST(copy_pipeline, make_buffer_no_forward_refs) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(float));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(float));
+
+  auto padded = buffer_expr::make(ctx, "padded", 2, sizeof(float));
+  auto stencil = buffer_expr::make(ctx, "stencil", 3, sizeof(float));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var k(ctx, "k");
+
+  func pad = func::make_copy({in, {point(x), point(y)}, in->bounds()}, {padded, {x, y}},
+      {buffer_expr::make_scalar<float>(ctx, "pad_val", 0.0f)});
+
+  func stencil_copy = func::make_copy({padded, {point(x), point(y + k - 1)}}, {stencil, {x, y, k}});
+
+  func reduce =
+      func::make(fake_reduce, {{stencil, {point(x), point(y), bounds(0, 2)}}}, {{out, {x}}}, call_stmt::attributes{});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  buffer<float, 2> in_buf({10, 10});
+  in_buf.allocate();
+  buffer<float, 1> out_buf({10});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+
+  eval_ctx[padded->sym()] = 0xf1f1f1f1f1f1f1f1;
+  eval_ctx[stencil->sym()] = 0xf1f1f1f1f1f1f1f1;
+
+  p.evaluate(inputs, outputs, eval_ctx);
+}
+
 }  // namespace slinky
