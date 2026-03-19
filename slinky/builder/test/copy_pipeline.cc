@@ -984,7 +984,7 @@ index_t sum_reduce_k(const buffer<const short>& in, const buffer<short>& out) {
   return sum<short>(in, out, {{2, 0, 2}});
 }
 
-TEST(copy_pipeline, make_buffer_no_forward_refs) {
+TEST(copy_pipeline, padded_stencil) {
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
