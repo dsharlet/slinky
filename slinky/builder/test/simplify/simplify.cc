@@ -1045,22 +1045,22 @@ TEST(simplify, knowledge) {
       matches(check::make(x % 6 == 3)));
 
   ASSERT_THAT(
-      simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})), matches(check::make(3 <= max(x, y))));
-  ASSERT_THAT(simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})),
-      matches(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})));
+      simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})), matches(check::make(3 <= min(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})),
+      matches(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})));
   ASSERT_THAT(
-      simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})), matches(check::make(3 < max(x, y))));
-  ASSERT_THAT(simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})),
-      matches(block::make({check::make(3 < min(x, y)), check::make(3 < x)})));
+      simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})), matches(check::make(3 < min(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})),
+      matches(block::make({check::make(3 < max(x, y)), check::make(3 < x)})));
 
   ASSERT_THAT(
-      simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})), matches(check::make(min(x, y) <= 4)));
-  ASSERT_THAT(simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})),
-      matches(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})));
+      simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})), matches(check::make(max(x, y) <= 4)));
+  ASSERT_THAT(simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})),
+      matches(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})));
   ASSERT_THAT(
-      simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})), matches(check::make(min(x, y) < 4)));
-  ASSERT_THAT(simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})),
-      matches(block::make({check::make(max(x, y) < 4), check::make(x < 4)})));
+      simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})), matches(check::make(max(x, y) < 4)));
+  ASSERT_THAT(simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})),
+      matches(block::make({check::make(min(x, y) < 4), check::make(x < 4)})));
 
   ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
   ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
@@ -1173,6 +1173,11 @@ TEST(simplify, bounds_of) {
 }
 
 TEST(constant_lower_bound, basic) {
+  ASSERT_THAT(constant_lower_bound(min(x, 0)), matches(min(x, 0)));
+  ASSERT_THAT(constant_lower_bound(max(x, 0)), matches(0));
+  ASSERT_THAT(constant_lower_bound(!min(x, 0)), matches(0));
+  ASSERT_THAT(constant_lower_bound(!min(x, -1)), matches(0));  // TODO: We might be able to prove this is 1
+  ASSERT_THAT(constant_lower_bound(!max(x, 0)), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
@@ -1183,19 +1188,23 @@ TEST(constant_lower_bound, basic) {
   ASSERT_THAT(constant_lower_bound(min(1, max(x, 1))), matches(1));
   ASSERT_THAT(constant_lower_bound(clamp(x, -2, 3)), matches(-2));
 
-  ASSERT_THAT(constant_lower_bound(x || false), matches(boolean(x)));
-  ASSERT_THAT(constant_lower_bound(false || x), matches(boolean(x)));
+  ASSERT_THAT(constant_lower_bound(x || false), matches(false));
+  ASSERT_THAT(constant_lower_bound(false || x), matches(false));
   ASSERT_THAT(constant_lower_bound(x || true), matches(true));
   ASSERT_THAT(constant_lower_bound(true || x), matches(true));
   ASSERT_THAT(constant_lower_bound(x && false), matches(false));
   ASSERT_THAT(constant_lower_bound(false && x), matches(false));
-  ASSERT_THAT(constant_lower_bound(x && true), matches(boolean(x)));
-  ASSERT_THAT(constant_lower_bound(true && x), matches(boolean(x)));
+  ASSERT_THAT(constant_lower_bound(x && true), matches(false));
+  ASSERT_THAT(constant_lower_bound(true && x), matches(false));
 }
 
 TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
   ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
+  ASSERT_THAT(constant_upper_bound(!min(x, 0)), matches(1));
+  ASSERT_THAT(constant_upper_bound(!min(x, -1)), matches(1));  // TODO: We might be able to prove this is 0
+  ASSERT_THAT(constant_upper_bound(!max(x, 0)), matches(1));
+  ASSERT_THAT(constant_upper_bound(!max(x, 1)), matches(1));  // TODO: We might be able to prove this is 0
   ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
   ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x - 4));
   ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
@@ -1215,14 +1224,14 @@ TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(max(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_upper_bound(max(x, 0) * 256 < 0), matches(0));
 
-  ASSERT_THAT(constant_upper_bound(x || false), matches(boolean(x)));
-  ASSERT_THAT(constant_upper_bound(false || x), matches(boolean(x)));
+  ASSERT_THAT(constant_upper_bound(x || false), matches(true));
+  ASSERT_THAT(constant_upper_bound(false || x), matches(true));
   ASSERT_THAT(constant_upper_bound(x || true), matches(true));
   ASSERT_THAT(constant_upper_bound(true || x), matches(true));
   ASSERT_THAT(constant_upper_bound(x && false), matches(false));
   ASSERT_THAT(constant_upper_bound(false && x), matches(false));
-  ASSERT_THAT(constant_upper_bound(x && true), matches(boolean(x)));
-  ASSERT_THAT(constant_upper_bound(true && x), matches(boolean(x)));
+  ASSERT_THAT(constant_upper_bound(x && true), matches(true));
+  ASSERT_THAT(constant_upper_bound(true && x), matches(true));
 }
 
 TEST(evaluate_constant_lower_bound, basic) {
@@ -1236,14 +1245,14 @@ TEST(evaluate_constant_lower_bound, basic) {
   ASSERT_EQ(evaluate_constant_lower_bound(min(1, max(x, 1))), 1);
   ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3)), -2);
 
-  ASSERT_EQ(evaluate_constant_lower_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(false || x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x || false), false);
+  ASSERT_EQ(evaluate_constant_lower_bound(false || x), false);
   ASSERT_EQ(evaluate_constant_lower_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_lower_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_lower_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_lower_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_lower_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x && true), false);
+  ASSERT_EQ(evaluate_constant_lower_bound(true && x), false);
 }
 
 TEST(evaluate_constant_upper_bound, basic) {
@@ -1268,14 +1277,14 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) < 0), 0);
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) * 256 < 0), 0);
 
-  ASSERT_EQ(evaluate_constant_upper_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(false || x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x || false), true);
+  ASSERT_EQ(evaluate_constant_upper_bound(false || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_upper_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_upper_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_upper_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x && true), true);
+  ASSERT_EQ(evaluate_constant_upper_bound(true && x), true);
 }
 
 TEST(evaluate_constant, basic) {

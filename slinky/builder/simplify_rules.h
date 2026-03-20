@@ -280,7 +280,6 @@ bool apply_add_rules(Fn&& apply) {
   return
       apply(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
-      apply(x + 0, x) ||
       apply(x + (x - y), x*2 - y) ||
       apply(x + (y - x), y) ||
       apply(x + x*y, x*(y + 1), !is_constant(x)) ||
@@ -316,7 +315,6 @@ bool apply_sub_rules(Fn&& apply) {
   return
       apply(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      apply(x - 0, x) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
       apply(x - y/c0, x + y/eval(-c0), c0 <= 0) ||
       apply(x - (c0 - y), (x + y) + eval(-c0)) ||
@@ -384,8 +382,6 @@ bool apply_mul_rules(Fn&& apply) {
       apply(rewrite::negative_infinity()*c0,
         rewrite::negative_infinity(), c0 > 0,
         rewrite::positive_infinity(), c0 < 0) ||
-      apply(x*0, 0) ||
-      apply(x*1, x) ||
       apply((x*c0)*c1, x*eval(c0*c1)) ||
       apply((x + c0)*c1, x*c1 + eval(c0*c1)) ||
       apply((c0 - x)*c1, x*eval(-c1) + eval(c0*c1)) ||
@@ -408,14 +404,11 @@ bool apply_div_rules(Fn&& apply) {
       apply(rewrite::negative_infinity()/c0,
         rewrite::negative_infinity(), c0 > 0,
         rewrite::positive_infinity(), c0 < 0) ||
-      apply(x/0, 0) ||
-      apply(0/x, 0) ||
-      apply(x/1, x) ||
       apply(x/-1, -x) ||
       apply(x/x, x != 0) ||
 
-      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1)) ||
-      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1)) ||
+      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), c0 > 0) ||
+      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1), c0 > 0) ||
       apply((x*c0)/(y*c1), (x*eval(c0/c1))/y, c1 > 0 && c0%c1 == 0) ||
       apply((x*c0)/(y*c1), x/(y*eval(c1/c0)), c0 > 0 && c1%c0 == 0) ||
       apply((x*c0)/c1, x*eval(c0/c1), c0%c1 == 0) ||
@@ -445,8 +438,6 @@ bool apply_div_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_mod_rules(Fn&& apply) {
   return
-      apply(x%1, 0) ||
-      apply(x%0, 0) ||
       apply(x%x, 0) ||
 
       apply((x + c0)%c1, (x + eval(c0%c1))%c1, c0%c1 != c0) ||
@@ -628,24 +619,17 @@ bool apply_equal_rules(Fn&& apply) {
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
     
-      apply(max(x, c0)/c1 == c2,
+      apply(max(x, c0)/may_be<1>(c1) == c2,
         x/c1 == c2, c1 > 0 && c0/c1 < c2,
         x < (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
-        false) ||
-      apply(min(x, c0)/c1 == c2,
+        false, c1 > 0 && c0/c1 > c2) ||
+      apply(min(x, c0)/may_be<1>(c1) == c2,
         x/c1 == c2, c1 > 0 && c0/c1 > c2,
-        x > (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
-        false) ||
+        x >= c2*c1, c1 > 0 && c0/c1 == c2,
+        false, c1 > 0 && c0/c1 < c2) ||
 
       apply(max(x, c0) == max(x, c1), x >= eval(max(c0, c1)), c0 != c1) ||
       apply(min(x, c0) == min(x, c1), x <= eval(min(c0, c1)), c0 != c1) ||
-
-      apply(max(x, c0) == c1,
-        false, c0 > c1,
-        x == c1, c0 < c1) ||
-      apply(min(x, c0) == c1,
-        false, c0 < c1,
-        x == c1, c0 > c1) ||
 
       false;
 }
@@ -653,9 +637,6 @@ bool apply_equal_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_and_rules(Fn&& apply) {
   return
-      apply(x && c0,
-        boolean(x), c0 != 0,
-        false) ||
       apply(x && x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
@@ -721,9 +702,6 @@ bool apply_logical_and_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_or_rules(Fn&& apply) {
   return
-      apply(x || c0,
-        boolean(x), c0 == 0,
-        true) ||
       apply(x || x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.

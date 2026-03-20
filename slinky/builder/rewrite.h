@@ -127,7 +127,8 @@ SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>&, const match_contex
 
 template <int N>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_wildcard<N>&) {
-  static constexpr char names[] = "xyzwuv";
+  static constexpr char names[] = "xyzwuvt";
+  static_assert(N + 1 < sizeof(names));
   return os << names[N];
 }
 
@@ -344,7 +345,7 @@ std::ostream& operator<<(std::ostream& os, const pattern_binary<T, A, B>& p) {
   case not_equal::static_type: return os << '(' << p.a << " != " << p.b << ')';
   case logical_and::static_type: return os << '(' << p.a << " && " << p.b << ')';
   case logical_or::static_type: return os << '(' << p.a << " || " << p.b << ')';
-  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(T::static_type);
+  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(T::static_type); return os;
   }
 }
 

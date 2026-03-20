@@ -89,11 +89,11 @@ auto p = []() -> ::slinky::pipeline {
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{in, {{((((x * 2)) + 0)), ((((x * 2)) + 1))}, {((((y * 2)) + 0)), ((((y * 2)) + 1))}}}};
+    const func::input inputs[] = {{in, {{((x * 2)), ((((x * 2)) + 1))}, {((y * 2)), ((((y * 2)) + 1))}}}};
     const std::vector<var> outputs[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in, {{((((x * 2)) + 0)), ((((x * 2)) + 1))}, {((((y * 2)) + 0)), ((((y * 2)) + 1))}}}}, {{intm, {x, y}}}, {});
+  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in, {{((x * 2)), ((((x * 2)) + 1))}, {((y * 2)), ((((y * 2)) + 1))}}}}, {{intm, {x, y}}}, {});
   auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0, &i1};
     const buffer<void>* output_buffers[] = {&o0};
@@ -281,7 +281,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_4 = func::make(std::move(_replica_fn_5), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}}, {});
   auto _6 = out->sym();
-  auto _fn_0 = func::make_copy({{intm1, {point(x), point(((y - 0)))}, {point(expr()), {0, (((((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 0)) - 1))}}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {}}, {intm2, {point(x), point(((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))))}, {point(expr()), {0, (((((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))) - 1))}}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {}}}, {out, {x, y}});
+  auto _fn_0 = func::make_copy({{intm1, {point(x), point(y)}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) + -1))}}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) + -1))}}, {}}, {intm2, {point(x), point(((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))))}, {point(expr()), {0, (((((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))) + -1))}}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) + -1))}}, {}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {}, {.no_alias_buffers = true});
   return p;
 };
