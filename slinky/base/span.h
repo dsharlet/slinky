@@ -2,6 +2,7 @@
 #define SLINKY_BASE_SPAN_H
 
 #include <array>
+#include <limits>
 #include <cassert>
 #include <vector>
 
