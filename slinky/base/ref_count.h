@@ -14,6 +14,22 @@ class ref_counted {
   mutable std::atomic<int> ref_count_{0};
 
 public:
+  ref_counted() = default;
+  ref_counted(const ref_counted&) {
+    // A copy starts with a new reference count.
+  }
+  ref_counted(ref_counted&&) {
+    // A copy starts with a new reference count.
+  }
+  ref_counted& operator=(const ref_counted&) { 
+    // Do not modify the reference count.
+    return *this;
+  }
+  ref_counted& operator=(ref_counted&&) {
+    // Do not modify the reference count.
+    return *this;
+  }
+
   int ref_count() const { return ref_count_.load(std::memory_order_relaxed); }
   void add_ref() const { ref_count_.fetch_add(1, std::memory_order_relaxed); }
   void release() const {
