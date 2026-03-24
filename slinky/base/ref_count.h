@@ -15,26 +15,17 @@ class ref_counted {
 
 public:
   ref_counted() = default;
+  virtual ~ref_counted() = default;
 
   // std::atomic<int> does not have any copy or move constructors. This makes sense, such operations would be racy.
   // However, we want to allow making copies of reference counted objects. In this case, what should happen to the
   // reference count? The reference count is for the allocation, and will determine when the value is freed. In that
   // case, it makes sense that the reference count should stay with the object, and not change or be copied when the
   // object is copied or assigned.
-  ref_counted(const ref_counted&) {
-    // A copy starts with a new reference count.
-  }
-  ref_counted(ref_counted&&) {
-    // A copy starts with a new reference count.
-  }
-  ref_counted& operator=(const ref_counted&) {
-    // Do not modify the reference count.
-    return *this;
-  }
-  ref_counted& operator=(ref_counted&&) {
-    // Do not modify the reference count.
-    return *this;
-  }
+  ref_counted(const ref_counted&) {}
+  ref_counted(ref_counted&&) {}
+  ref_counted& operator=(const ref_counted&) { return *this; }
+  ref_counted& operator=(ref_counted&&) { return *this; }
 
   int ref_count() const { return ref_count_.load(std::memory_order_relaxed); }
   void add_ref() const { ref_count_.fetch_add(1, std::memory_order_relaxed); }
@@ -45,8 +36,6 @@ public:
       T::destroy(const_cast<T*>(static_cast<const T*>(this)));
     }
   }
-
-  virtual ~ref_counted() = default;
 };
 
 // A smart pointer to a ref_counted base.
