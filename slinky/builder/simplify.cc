@@ -267,9 +267,14 @@ public:
     // The dimension metadata for this buffer.
     std::vector<dim_expr> dims;
 
-    // If true, we know that all the dimensions in the buffer are in the `dims` vector above. If not, there may be more
-    // dimensions we don't know about.
-    bool all_dims_known = false;
+    dim_expr& dim(size_t d) {
+      if (d >= dims.size()) dims.resize(d + 1);
+      return dims[d];
+    }
+    dim_expr dim(size_t d) const { return d < dims.size() ? dims[d] : dim_expr{}; }
+
+    // If non-negative, we know how many dimensions are in this buffer.
+    int rank = -1;
 
     // The op that defined this buffer.
     stmt decl;
@@ -292,28 +297,10 @@ public:
       for (std::size_t d = 0; d < value->rank; ++d) {
         dims[d] = dim_expr(value->dim(d));
       }
-      all_dims_known = true;
+      rank = value->rank;
     }
 
-    buffer_info(var sym, int rank) : dims(rank) {
-      elem_size = buffer_elem_size(sym);
-      for (int d = 0; d < rank; ++d) {
-        dims[d] = buffer_dim(sym, d);
-      }
-    }
-
-    void init_dims(var sym, int rank) {
-      for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
-        if (!dims[d].bounds.min.defined()) dims[d].bounds.min = buffer_min(sym, d);
-        if (!dims[d].bounds.max.defined()) dims[d].bounds.max = buffer_max(sym, d);
-        if (!dims[d].stride.defined()) dims[d].stride = buffer_stride(sym, d);
-        if (!dims[d].fold_factor.defined()) dims[d].fold_factor = buffer_fold_factor(sym, d);
-      }
-      dims.reserve(rank);
-      for (int d = dims.size(); d < rank; ++d) {
-        dims.push_back(buffer_dim(sym, d));
-      }
-    }
+    buffer_info(var sym) { elem_size = buffer_elem_size(sym); }
   };
 
   struct expr_info {
@@ -505,16 +492,12 @@ public:
         }
         std::optional<buffer_info>& info = buffers[buf];
         if (x->dim >= 0) {
-          if (!info) {
-            info = buffer_info(buf, x->dim + 1);
-          } else {
-            info->init_dims(buf, x->dim + 1);
-          }
+          if (!info) info = buffer_info(buf);
           switch (x->field) {
-          case buffer_field::min: info->dims[x->dim].bounds.min = std::move(value); break;
-          case buffer_field::max: info->dims[x->dim].bounds.max = std::move(value); break;
-          case buffer_field::stride: info->dims[x->dim].stride = std::move(value); break;
-          case buffer_field::fold_factor: info->dims[x->dim].fold_factor = std::move(value); break;
+          case buffer_field::min: info->dim(x->dim).bounds.min = std::move(value); break;
+          case buffer_field::max: info->dim(x->dim).bounds.max = std::move(value); break;
+          case buffer_field::stride: info->dim(x->dim).stride = std::move(value); break;
+          case buffer_field::fold_factor: info->dim(x->dim).fold_factor = std::move(value); break;
           default: break;
           }
         } else if (x->field == buffer_field::elem_size) {
@@ -525,12 +508,8 @@ public:
           }
         } else if (x->field == buffer_field::rank) {
           if (auto rank = as_constant(value)) {
-            if (!info) {
-              info = buffer_info(buf, *rank);
-            } else {
-              info->init_dims(buf, *rank);
-            }
-            info->all_dims_known = true;
+            if (!info) info = buffer_info(buf);
+            info->rank = *rank;
           }
         }
       }
@@ -745,6 +724,10 @@ public:
           // - The value is something we should substitute (it's simple and pure).
           // - The value is another buffer meta expression.
           // - We're trying to prove something (as opposed to producing a simplified expression).
+          if (!x.defined()) {
+            // We don't have a value for this field.
+            return false;
+          }
           if (!info->decl.defined() || should_substitute(x) || x.as<variable>() || (proving && x.defined())) {
             if (!match(x, op)) {
               // This is a value we should substitute, and it's different from what we started with.
@@ -764,11 +747,18 @@ public:
         case buffer_field::min:
         case buffer_field::max:
         case buffer_field::stride:
-        case buffer_field::fold_factor:
+        case buffer_field::fold_factor: {
+          expr field_val;
           if (op->dim < static_cast<index_t>(info->dims.size())) {
-            if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
+            field_val = info->dims[op->dim].get_field(op->field);
           }
+          // If we don't have a value for this field, use the src.
+          if (!field_val.defined() && info->src.defined()) {
+            field_val = variable::make(info->src, op->field, op->dim);
+          }
+          if (visit_buffer_meta_value(field_val)) return;
           break;
+        }
         default: break;
         }
       }
@@ -1561,7 +1551,7 @@ public:
       info.dims.push_back(mutate(op->dims[d]));
       changed = changed || !info.dims.back().same_as(op->dims[d]);
     }
-    info.all_dims_known = true;
+    info.rank = info.dims.size();
     info.decl = stmt(op);
     return changed;
   }
@@ -1624,8 +1614,9 @@ public:
       const expr& x, const expr& value, var sym, buffer_field field, int dim, const expr& def = expr()) {
     if (!x.defined() && !value.defined()) return true;
     if (is_variable(x, sym, field, dim)) return true;
-    if (prove_true(x == value)) return true;
-    if (!x.defined() && def.defined() && prove_true(value == def)) return true;
+    expr effective_value = value.defined() ? value : variable::make(sym, field, dim);
+    if (prove_true(x == effective_value)) return true;
+    if (!x.defined() && def.defined() && prove_true(effective_value == def)) return true;
     return false;
   }
 
@@ -1692,8 +1683,8 @@ public:
         canonicalize_buffer(info, *src_info, *src_buf);
       }
 
-      auto make_truncate = [&](var src, std::size_t rank, stmt body) {
-        if (src_info && src_info->all_dims_known && src_info->dims.size() == rank) {
+      auto make_truncate = [&](var src, int rank, stmt body) {
+        if (src_info && src_info->rank == rank) {
           // We know all the dims, and the rank is already what we want to truncate to.
           return body;
         }
@@ -1706,9 +1697,8 @@ public:
         // the dimensions to be identity.
         auto is_slice = [&]() {
           int dim = 0;
-          std::size_t slice_rank = 0;
-          std::size_t at_rank =
-              std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
+          int slice_rank = 0;
+          int at_rank = std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
           for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
             if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
               // Skip this dimension.
@@ -1841,13 +1831,9 @@ public:
     set_result(lift_decl_invariants(body, op->sym, make_constant_buffer));
   }
 
-  std::optional<buffer_info> get_buffer_info(var buf, int rank) {
+  std::optional<buffer_info> get_buffer_info(var buf) {
     std::optional<buffer_info> info = buffers[buf];
-    if (!info) {
-      info = buffer_info(buf, rank);
-    } else {
-      info->init_dims(buf, rank);
-    }
+    if (!info) info = buffer_info(buf);
     return info;
   }
 
@@ -1873,7 +1859,7 @@ public:
       } else {
         bounds.insert(x);
       }
-    } else {
+    } else if (x.defined()) {
       bounds.insert(add_offset(std::move(x)));
     }
   }
@@ -2010,13 +1996,17 @@ public:
         result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }
+    
+    // The default value of the buffer bounds is the min/max of the buffer itself.
+    expr buf_min = buffer.min.defined() ? buffer.min : buffer_min(buf, dim);
+    expr buf_max = buffer.max.defined() ? buffer.max : buffer_max(buf, dim);
 
-    if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
-    if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
+    if (result.min.defined() && prove_true(result.min <= buf_min)) result.min = expr();
+    if (result.max.defined() && prove_true(result.max >= buf_max)) result.max = expr();
 
     // TODO: I think it might be possible to avoid generating these min/max + mutate in some cases.
-    if (result.min.defined()) buffer.min = mutate(max(buffer.min, result.min));
-    if (result.max.defined()) buffer.max = mutate(min(buffer.max, result.max));
+    if (result.min.defined()) buffer.min = mutate(max(buf_min, result.min));
+    if (result.max.defined()) buffer.max = mutate(min(buf_max, result.max));
 
     return result;
   }
@@ -2028,7 +2018,7 @@ public:
   }
 
   void visit_crop(const base_stmt_node* op, var op_sym, var op_src, box_expr op_bounds, stmt op_body) {
-    std::optional<buffer_info> info = get_buffer_info(op_src, op_bounds.size());
+    std::optional<buffer_info> info = get_buffer_info(op_src);
 
     while (info && info->decl.defined() && info->loop_depth == 0) {
       if (const crop_buffer* c = info->decl.as<crop_buffer>()) {
@@ -2041,7 +2031,7 @@ public:
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
         op_bounds = c->bounds & op_bounds;
         op_src = c->src;
-        info = get_buffer_info(op_src, op_bounds.size());
+        info = get_buffer_info(op_src);
         op = nullptr;
       } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
         // Substitute the outer crop bounds into this crop's bounds.
@@ -2053,7 +2043,7 @@ public:
         op_bounds.resize(std::max<int>(op_bounds.size(), c->dim + 1));
         op_bounds[c->dim] = c->bounds & op_bounds[c->dim];
         op_src = c->src;
-        info = get_buffer_info(op_src, op_bounds.size());
+        info = get_buffer_info(op_src);
         op = nullptr;
       } else {
         break;
@@ -2064,7 +2054,7 @@ public:
     bool changed = op == nullptr;
     box_expr bounds(op_bounds.size());
     for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
-      bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dims[i].bounds);
+      bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dim(i).bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
 
@@ -2275,7 +2265,7 @@ public:
 
     buffer_info sym_info{expr()};
     if (src_info && *src_info) {
-      if (transpose::is_truncate(dims) && (*src_info)->all_dims_known && (*src_info)->dims.size() <= dims.size()) {
+      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 && (*src_info)->rank <= dims.size()) {
         // transpose can't add dimensions.
         assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
@@ -2288,7 +2278,7 @@ public:
       // This is like `permute`, but we can't guarantee that we know all the dimensions of src_info (it could be a
       // buffer external to the pipeline).
       sym_info.dims.resize(op->dims.size());
-      sym_info.all_dims_known = true;
+      sym_info.rank = sym_info.dims.size();
       for (size_t i = 0; i < op->dims.size(); ++i) {
         if (op->dims[i] < static_cast<int>((*src_info)->dims.size())) {
           sym_info.dims[i] = (*src_info)->dims[op->dims[i]];
