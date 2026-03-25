@@ -267,6 +267,12 @@ public:
     // The dimension metadata for this buffer.
     std::vector<dim_expr> dims;
 
+    dim_expr& dim(size_t d) {
+      if (d >= dims.size()) dims.resize(d + 1);
+      return dims[d];
+    }
+    dim_expr dim(size_t d) const { return d < dims.size() ? dims[d] : dim_expr{}; }
+
     // If non-negative, we know how many dimensions are in this buffer.
     int rank = -1;
 
@@ -294,25 +300,7 @@ public:
       rank = value->rank;
     }
 
-    buffer_info(var sym, int rank) : dims(rank) {
-      elem_size = buffer_elem_size(sym);
-      for (int d = 0; d < rank; ++d) {
-        dims[d] = buffer_dim(sym, d);
-      }
-    }
-
-    void init_dims(var sym, int rank) {
-      for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
-        if (!dims[d].bounds.min.defined()) dims[d].bounds.min = buffer_min(sym, d);
-        if (!dims[d].bounds.max.defined()) dims[d].bounds.max = buffer_max(sym, d);
-        if (!dims[d].stride.defined()) dims[d].stride = buffer_stride(sym, d);
-        if (!dims[d].fold_factor.defined()) dims[d].fold_factor = buffer_fold_factor(sym, d);
-      }
-      dims.reserve(rank);
-      for (int d = dims.size(); d < rank; ++d) {
-        dims.push_back(buffer_dim(sym, d));
-      }
-    }
+    buffer_info(var sym, int) { elem_size = buffer_elem_size(sym); }
   };
 
   struct expr_info {
@@ -506,14 +494,12 @@ public:
         if (x->dim >= 0) {
           if (!info) {
             info = buffer_info(buf, x->dim + 1);
-          } else {
-            info->init_dims(buf, x->dim + 1);
           }
           switch (x->field) {
-          case buffer_field::min: info->dims[x->dim].bounds.min = std::move(value); break;
-          case buffer_field::max: info->dims[x->dim].bounds.max = std::move(value); break;
-          case buffer_field::stride: info->dims[x->dim].stride = std::move(value); break;
-          case buffer_field::fold_factor: info->dims[x->dim].fold_factor = std::move(value); break;
+          case buffer_field::min: info->dim(x->dim).bounds.min = std::move(value); break;
+          case buffer_field::max: info->dim(x->dim).bounds.max = std::move(value); break;
+          case buffer_field::stride: info->dim(x->dim).stride = std::move(value); break;
+          case buffer_field::fold_factor: info->dim(x->dim).fold_factor = std::move(value); break;
           default: break;
           }
         } else if (x->field == buffer_field::elem_size) {
@@ -526,8 +512,6 @@ public:
           if (auto rank = as_constant(value)) {
             if (!info) {
               info = buffer_info(buf, *rank);
-            } else {
-              info->init_dims(buf, *rank);
             }
             info->rank = *rank;
           }
@@ -744,6 +728,10 @@ public:
           // - The value is something we should substitute (it's simple and pure).
           // - The value is another buffer meta expression.
           // - We're trying to prove something (as opposed to producing a simplified expression).
+          if (!x.defined()) {
+            // We don't have a value for this field.
+            return false;
+          }
           if (!info->decl.defined() || should_substitute(x) || x.as<variable>() || (proving && x.defined())) {
             if (!match(x, op)) {
               // This is a value we should substitute, and it's different from what we started with.
@@ -763,11 +751,18 @@ public:
         case buffer_field::min:
         case buffer_field::max:
         case buffer_field::stride:
-        case buffer_field::fold_factor:
+        case buffer_field::fold_factor: {
+          expr field_val;
           if (op->dim < static_cast<index_t>(info->dims.size())) {
-            if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
+            field_val = info->dims[op->dim].get_field(op->field);
           }
+          // If we don't have a value for this field, use the src.
+          if (!field_val.defined() && info->src.defined()) {
+            field_val = variable::make(info->src, op->field, op->dim);
+          }
+          if (visit_buffer_meta_value(field_val)) return;
           break;
+        }
         default: break;
         }
       }
@@ -1623,8 +1618,9 @@ public:
       const expr& x, const expr& value, var sym, buffer_field field, int dim, const expr& def = expr()) {
     if (!x.defined() && !value.defined()) return true;
     if (is_variable(x, sym, field, dim)) return true;
-    if (prove_true(x == value)) return true;
-    if (!x.defined() && def.defined() && prove_true(value == def)) return true;
+    expr effective_value = value.defined() ? value : variable::make(sym, field, dim);
+    if (prove_true(x == effective_value)) return true;
+    if (!x.defined() && def.defined() && prove_true(effective_value == def)) return true;
     return false;
   }
 
@@ -1706,8 +1702,7 @@ public:
         auto is_slice = [&]() {
           int dim = 0;
           int slice_rank = 0;
-          int at_rank =
-              std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
+          int at_rank = std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
           for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
             if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
               // Skip this dimension.
@@ -1844,8 +1839,6 @@ public:
     std::optional<buffer_info> info = buffers[buf];
     if (!info) {
       info = buffer_info(buf, rank);
-    } else {
-      info->init_dims(buf, rank);
     }
     return info;
   }
@@ -1872,7 +1865,7 @@ public:
       } else {
         bounds.insert(x);
       }
-    } else {
+    } else if (x.defined()) {
       bounds.insert(add_offset(std::move(x)));
     }
   }
@@ -2009,13 +2002,17 @@ public:
         result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }
+    
+    // The default value of the buffer bounds is the min/max of the buffer itself.
+    expr buf_min = buffer.min.defined() ? buffer.min : buffer_min(buf, dim);
+    expr buf_max = buffer.max.defined() ? buffer.max : buffer_max(buf, dim);
 
-    if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
-    if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
+    if (result.min.defined() && prove_true(result.min <= buf_min)) result.min = expr();
+    if (result.max.defined() && prove_true(result.max >= buf_max)) result.max = expr();
 
     // TODO: I think it might be possible to avoid generating these min/max + mutate in some cases.
-    if (result.min.defined()) buffer.min = mutate(max(buffer.min, result.min));
-    if (result.max.defined()) buffer.max = mutate(min(buffer.max, result.max));
+    if (result.min.defined()) buffer.min = mutate(max(buf_min, result.min));
+    if (result.max.defined()) buffer.max = mutate(min(buf_max, result.max));
 
     return result;
   }
@@ -2063,7 +2060,7 @@ public:
     bool changed = op == nullptr;
     box_expr bounds(op_bounds.size());
     for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
-      bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dims[i].bounds);
+      bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dim(i).bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
 
