@@ -1,9 +1,9 @@
 #include <benchmark/benchmark.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <chrono>
 
 #include "slinky/base/thread_pool_impl.h"
 #include "slinky/runtime/evaluate.h"
@@ -27,7 +27,15 @@ using clock = std::chrono::steady_clock;
 using nanoseconds = std::chrono::nanoseconds;
 
 // These benchmarks mostly work by generating nodes around a call counter, and wrapping that node with a loop.
-stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size = nanoseconds{0}) {
+stmt make_call_counter(std::atomic<int>& calls) {
+  return call_stmt::make(
+      [&](const call_stmt*, eval_context& ctx) -> index_t {
+        ++calls;
+        return 0;
+      },
+      {}, {}, {}, {});
+}
+stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size) {
   return call_stmt::make(
       [&, task_size](const call_stmt*, eval_context& ctx) -> index_t {
         ++calls;
