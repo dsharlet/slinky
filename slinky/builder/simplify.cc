@@ -300,7 +300,7 @@ public:
       rank = value->rank;
     }
 
-    buffer_info(var sym, int) { elem_size = buffer_elem_size(sym); }
+    buffer_info(var sym) { elem_size = buffer_elem_size(sym); }
   };
 
   struct expr_info {
@@ -492,9 +492,7 @@ public:
         }
         std::optional<buffer_info>& info = buffers[buf];
         if (x->dim >= 0) {
-          if (!info) {
-            info = buffer_info(buf, x->dim + 1);
-          }
+          if (!info) info = buffer_info(buf);
           switch (x->field) {
           case buffer_field::min: info->dim(x->dim).bounds.min = std::move(value); break;
           case buffer_field::max: info->dim(x->dim).bounds.max = std::move(value); break;
@@ -510,9 +508,7 @@ public:
           }
         } else if (x->field == buffer_field::rank) {
           if (auto rank = as_constant(value)) {
-            if (!info) {
-              info = buffer_info(buf, *rank);
-            }
+            if (!info) info = buffer_info(buf);
             info->rank = *rank;
           }
         }
@@ -1835,11 +1831,9 @@ public:
     set_result(lift_decl_invariants(body, op->sym, make_constant_buffer));
   }
 
-  std::optional<buffer_info> get_buffer_info(var buf, int rank) {
+  std::optional<buffer_info> get_buffer_info(var buf) {
     std::optional<buffer_info> info = buffers[buf];
-    if (!info) {
-      info = buffer_info(buf, rank);
-    }
+    if (!info) info = buffer_info(buf);
     return info;
   }
 
@@ -2024,7 +2018,7 @@ public:
   }
 
   void visit_crop(const base_stmt_node* op, var op_sym, var op_src, box_expr op_bounds, stmt op_body) {
-    std::optional<buffer_info> info = get_buffer_info(op_src, op_bounds.size());
+    std::optional<buffer_info> info = get_buffer_info(op_src);
 
     while (info && info->decl.defined() && info->loop_depth == 0) {
       if (const crop_buffer* c = info->decl.as<crop_buffer>()) {
@@ -2037,7 +2031,7 @@ public:
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
         op_bounds = c->bounds & op_bounds;
         op_src = c->src;
-        info = get_buffer_info(op_src, op_bounds.size());
+        info = get_buffer_info(op_src);
         op = nullptr;
       } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
         // Substitute the outer crop bounds into this crop's bounds.
@@ -2049,7 +2043,7 @@ public:
         op_bounds.resize(std::max<int>(op_bounds.size(), c->dim + 1));
         op_bounds[c->dim] = c->bounds & op_bounds[c->dim];
         op_src = c->src;
-        info = get_buffer_info(op_src, op_bounds.size());
+        info = get_buffer_info(op_src);
         op = nullptr;
       } else {
         break;
