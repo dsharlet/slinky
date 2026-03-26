@@ -554,7 +554,8 @@ TEST_P(multiple_uses, cannot_alias_input_output) {
   //
   //   in -> a -> b -> c
   //
-  // where a and c are both outputs, we can't compute b in place with a, because it corrupts the value of a, which is an output.
+  // where a and c are both outputs, we can't compute b in place with a, because it corrupts the value of a, which is an
+  // output.
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
 
@@ -571,8 +572,7 @@ TEST_P(multiple_uses, cannot_alias_input_output) {
   func in_a = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{a, {x, y}}});
   func a_b = func::make(add_1<short>, {{a, {point(x), point(y)}}}, {{b, {x, y}}},
       call_stmt::attributes{.allow_in_place = in_place == 0 ? 0x1 : 0, .name = "a_b"});
-  func b_c = func::make(add_1<short>, {{b, {point(x), point(y)}}}, {{c, {x, y}}},
-      call_stmt::attributes{.name = "b_c"});
+  func b_c = func::make(add_1<short>, {{b, {point(x), point(y)}}}, {{c, {x, y}}}, call_stmt::attributes{.name = "b_c"});
 
   pipeline p = build_pipeline(ctx, {in}, {a, c});
 
@@ -847,6 +847,67 @@ TEST_P(constrained_stencil, may_alias) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
     ASSERT_EQ(eval_ctx.copy_calls, 1);
   }
+}
+
+TEST(padded_reshape, cannot_alias_pad) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(int));
+  auto zero = buffer_expr::make_scalar(ctx, "zero", 0);
+
+  // intm has a stride constraint.
+  intm->dim(0).stride = sizeof(int);
+  intm->dim(1).stride = sizeof(int) * intm->dim(0).extent();
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  test_context eval_ctx;
+
+  call_stmt::attributes attrs;
+  attrs.name = "memcpy";
+  // Hopefully this just aliases and is a no-op.
+  attrs.allow_in_place = 0x1;
+
+  func reshape = func::make(opaque_copy<int>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, attrs);
+  func pad = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {intm2, {x, y}}, {zero}, eval_ctx.copy);
+  func op = func::make(add_1<int>, {{intm2, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  reshape.compute_root();
+  op.loops({{y, 1}});
+  intm2->store_at({&op, y});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 10;
+  const int H = 12;
+
+  buffer<int, 2> in_buf({W - 2, H - 3});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      if (in_buf.contains(x, y)) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x, y) + 1);
+      } else {
+        ASSERT_EQ(out_buf(x, y), 1);
+      }
+    }
+  }
+
+  // The reshape should alias, but the padding should not, because doing so would violate the stride constraint of the
+  // reshape output.
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), H);
 }
 
 }  // namespace slinky

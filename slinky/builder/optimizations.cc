@@ -252,7 +252,7 @@ stmt remove_copy(const stmt& s, var a, var b) {
   return copy_remover(a, b).mutate(s);
 }
 
-bool dim_has_stride(const dim_expr& d) { 
+bool dim_has_stride(const dim_expr& d) {
   if (d.bounds.is_point()) {
     // If the dim has extent 1, the stride doesn't matter.
     return false;
@@ -373,7 +373,7 @@ class copy_aliaser : public stmt_mutator {
       const dim_expr& alias_dim = alias_dims[d];
       if (!alias.assume_in_bounds) {
         // The alias might grow the target allocation, so we can't use the target's strides.
-        if (alloc_dims[d].stride.defined()) {
+        if (alloc_dims[d].stride.defined() || simplify(alias_dim.stride).defined()) {
           if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
             // This alias would violate a constraint on the stride of the buffer.
             return false;
