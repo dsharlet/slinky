@@ -647,7 +647,7 @@ TEST(simplify, clone) {
                           dummy_call({}, {x, z}))))),
       matches(crop_dim::make(x, u, 1, point(10),
           make_buffer::make(z, buffer_at(w), buffer_elem_size(w),
-              {buffer_dim(u, 0), {buffer_bounds(x, 1), buffer_stride(u, 1), buffer_fold_factor(u, 1)}},
+              {buffer_dim(x, 0), buffer_dim(x, 1)},
               dummy_call({}, {x, z})))));
 }
 
