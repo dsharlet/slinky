@@ -21,7 +21,7 @@ jobs:
   #         extensions: 'h,cc'
   #         clangFormatVersion: 17
 
-  build:
+  build_bazel:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
