@@ -1,5 +1,6 @@
 # Output directories
 bazel-*
+out/*
 
 *.lock
 
