@@ -748,15 +748,9 @@ public:
         case buffer_field::max:
         case buffer_field::stride:
         case buffer_field::fold_factor: {
-          expr field_val;
           if (op->dim < static_cast<index_t>(info->dims.size())) {
-            field_val = info->dims[op->dim].get_field(op->field);
+            if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
           }
-          // If we don't have a value for this field, use the src.
-          if (!field_val.defined() && info->src.defined()) {
-            field_val = variable::make(info->src, op->field, op->dim);
-          }
-          if (visit_buffer_meta_value(field_val)) return;
           break;
         }
         default: break;
