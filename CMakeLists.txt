@@ -10,12 +10,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Mirror the flags from .bazelrc
 if(MSVC)
     add_compile_options(
-        /Zi
-        /GR-
-        /EHs-
+        /Zi        # debug info
+        /GR-       # disable RTTI
+        /EHs-      # exception handling
         /EHa-
-        /wd4018
-        /bigobj
+        /wd4018    # sign-compare warnings
     )
 else()
     add_compile_options(
