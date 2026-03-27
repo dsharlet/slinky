@@ -16,4 +16,6 @@ add_library(slinky_chrome_trace
     chrome_trace.cc
 )
 
-add_subdirectory(test)
+if(SLINKY_ENABLE_TESTS)
+    add_subdirectory(test)
+endif()

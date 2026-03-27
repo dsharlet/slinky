@@ -17,4 +17,6 @@ add_library(slinky_visualize
 )
 target_link_libraries(slinky_visualize PUBLIC slinky_runtime slinky_base)
 
-add_subdirectory(test)
+if(SLINKY_ENABLE_TESTS)
+    add_subdirectory(test)
+endif()
