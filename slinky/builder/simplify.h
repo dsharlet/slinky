@@ -24,9 +24,6 @@ interval_expr bounds_of(
 interval_expr bounds_of(
     const interval_expr& x, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
 
-// True if `fn` can be evaluated if its arguments are constants.
-bool can_evaluate(intrinsic fn);
-
 // Determine a lower or upper bound of x that is conservative if the bound can be made constant.
 expr constant_lower_bound(const expr& x);
 expr constant_upper_bound(const expr& x);
