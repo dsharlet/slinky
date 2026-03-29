@@ -163,6 +163,27 @@ TEST(buffer, buffer) {
   }
 }
 
+TEST(buffer, unslice) {
+  buffer<int, 3> buf({10, 20});
+  buf.unslice(2, slinky::dim(0, 29, 1));
+  ASSERT_EQ(buf.dim(0).min(), 0);
+  ASSERT_EQ(buf.dim(1).min(), 0);
+  ASSERT_EQ(buf.dim(2).min(), 0);
+  ASSERT_EQ(buf.dim(0).extent(), 10);
+  ASSERT_EQ(buf.dim(1).extent(), 20);
+  ASSERT_EQ(buf.dim(2).extent(), 30);
+}
+
+TEST(buffer, unslice_broadcasts) {
+  buffer<int, 3> buf({});
+  buf.unslice(2, slinky::dim(0, 9, 1));
+  ASSERT_EQ(buf.dim(0), slinky::dim::broadcast());
+  ASSERT_EQ(buf.dim(1), slinky::dim::broadcast());
+  ASSERT_EQ(buf.dim(2).min(), 0);
+  ASSERT_EQ(buf.dim(2).extent(), 10);
+  ASSERT_EQ(buf.dim(2).stride(), 1);
+}
+
 TEST(buffer, broadcast) {
   buffer<int, 2> rank1({10});
   buffer<int, 2> rank2({10, 1});
@@ -201,6 +222,46 @@ TEST(buffer, broadcast) {
   // When we copy the buffer with a broadcast dimension, it should broadcast.
   copy(rank2_broadcast, dst, scalar<int>(3));
   ASSERT_TRUE(is_filled_buffer(dst, 7));
+}
+
+TEST(buffer, broadcast_rank) {
+  // A rank-1 buffer has infinite broadcast dimensions beyond dim 0.
+  buffer<int, 2> buf({10});
+  buf.allocate();
+  for (int j = 0; j < 10; ++j) {
+    buf(j) = j;
+  }
+
+  // Accessing with more indices than rank should broadcast (extra indices ignored).
+  ASSERT_EQ(&buf(0, 0), &buf(0, 99));
+  ASSERT_EQ(&buf(5, 0), &buf(5, 42));
+  ASSERT_EQ(buf.flat_offset_bytes(3, 7), buf.flat_offset_bytes(3, 0));
+  ASSERT_EQ(buf.flat_offset_bytes(3, 7), buf.flat_offset_bytes(3));
+
+  // contains() should return true for any index in a broadcast dimension.
+  ASSERT_TRUE(buf.contains(0, 0));
+  ASSERT_TRUE(buf.contains(0, 999));
+  ASSERT_FALSE(buf.contains(10, 0));  // out of bounds in dim 0
+}
+
+TEST(buffer, broadcast_slice_crop) {
+  buffer<int, 2> buf({10, 20});
+  buf.allocate();
+
+  // Slicing a dimension >= rank is a no-op.
+  raw_buffer sliced = buf;
+  sliced.slice(2);
+  ASSERT_EQ(sliced.rank, 2);
+  ASSERT_EQ(sliced.dims, buf.dims);
+
+  sliced.slice(2, 5);
+  ASSERT_EQ(sliced.rank, 2);
+
+  // Cropping a dimension >= rank is a no-op.
+  raw_buffer cropped = buf;
+  cropped.crop(2, 0, 5);
+  ASSERT_EQ(cropped.rank, 2);
+  ASSERT_EQ(cropped.dims, buf.dims);
 }
 
 TEST(buffer, address_at_slice) {
