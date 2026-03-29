@@ -208,12 +208,11 @@ public:
     const raw_buffer* buf = context.lookup_buffer(*sym);
     assert(buf);
     void* result = buf->base;
-    assert(op->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
       if (op->args[d + 1].defined()) {
         index_t at = eval(op->args[d + 1]);
-        if (result && buf->dims[d].contains(at)) {
-          result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
+        if (result && buf->dim(d).contains(at)) {
+          result = offset_bytes_non_null(result, buf->dim(d).flat_offset_bytes(at));
         } else {
           result = nullptr;
         }
@@ -659,7 +658,7 @@ public:
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(context.lookup(op->sym));
     assert(buffer);
 
-    std::size_t crop_rank = op->bounds.size();
+    std::size_t crop_rank = std::min(op->bounds.size(), buffer->rank);
     interval* old_bounds = SLINKY_ALLOCA(interval, crop_rank);
 
     void* old_base = buffer->base;
@@ -678,8 +677,7 @@ public:
 
     buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
-      slinky::dim& dim = buffer->dims[d];
-      dim.set_bounds(old_bounds[d].min, old_bounds[d].max);
+      buffer->dims[d].set_bounds(old_bounds[d].min, old_bounds[d].max);
     }
     return result;
   }
@@ -692,8 +690,9 @@ public:
     raw_buffer sym_buf = *src_buf;
     sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
-    for (std::size_t d = 0; d < op->bounds.size(); ++d) {
-      const slinky::dim& dim = sym_buf.dims[d];
+    // Dims beyond rank are broadcasts; cropping them is a no-op.
+    for (std::size_t d = 0; d < std::min(op->bounds.size(), src_buf->rank); ++d) {
+      const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dim(d);
       interval bounds = eval(op->bounds[d], {dim.min(), dim.max()});
       sym_buf.crop(d, bounds.min, bounds.max);
     }
@@ -704,6 +703,12 @@ public:
   index_t eval_shadowed(const crop_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(context.lookup(op->sym));
     assert(buffer);
+
+    if (op->dim >= static_cast<int>(buffer->rank)) {
+      // Cropping a broadcast dimension is a no-op.
+      return eval(op->body);
+    }
+
     slinky::dim& dim = buffer->dims[op->dim];
     index_t old_min = dim.min();
     index_t old_max = dim.max();
@@ -727,7 +732,8 @@ public:
     raw_buffer sym_buf = *src_buf;
     sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
-    slinky::dim& dim = sym_buf.dims[op->dim];
+    // dim() returns broadcast for op->dim >= rank, and crop is a no-op in that case.
+    const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dim(op->dim);
     interval bounds = eval(op->bounds, {dim.min(), dim.max()});
     sym_buf.crop(op->dim, bounds.min, bounds.max);
 
@@ -745,8 +751,6 @@ public:
   SLINKY_NO_STACK_PROTECTOR index_t eval(const slice_buffer* op) {
     raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
-    assert(op->at.size() <= src_buf->rank);
-
     raw_buffer sym_buf;
     sym_buf.base = src_buf->base;
     sym_buf.elem_size = src_buf->elem_size;
@@ -775,7 +779,15 @@ public:
   SLINKY_NO_STACK_PROTECTOR index_t eval(const slice_dim* op) {
     raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
-    assert(op->dim < static_cast<int>(src_buf->rank));
+
+    if (op->dim >= static_cast<int>(src_buf->rank)) {
+      // Slicing a broadcast dimension is a no-op: base and dims are unchanged.
+      // TODO: Maybe we can just use the original buffer?
+      raw_buffer sym_buf = *src_buf;
+      sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+      internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
+      return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
+    }
 
     raw_buffer sym_buf;
     sym_buf.base = nullptr;
@@ -800,10 +812,10 @@ public:
   }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const transpose* op) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
-    assert(src_buf);
-
     if (op->sym == op->src && op->is_truncate()) {
+      raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
+      assert(src_buf);
+
       // In-place truncate, all we need to do is set the rank (and restore it).
       std::size_t old_rank = src_buf->rank;
       src_buf->rank = op->dims.size();
@@ -811,29 +823,21 @@ public:
       src_buf->rank = old_rank;
       return result;
     } else {
+      const raw_buffer* src_buf = reinterpret_cast<const raw_buffer*>(context.lookup(op->src));
+      assert(src_buf);
+
       // Make the transposed dims.
       dim* dims = SLINKY_ALLOCA(dim, op->dims.size());
       for (std::size_t i = 0; i < op->dims.size(); ++i) {
-        dims[i] = src_buf->dims[op->dims[i]];
+        dims[i] = src_buf->dim(op->dims[i]);
       }
 
-      if (op->sym == op->src) {
-        // In-place, swap in the transposed dims and rank
-        std::size_t old_rank = src_buf->rank;
-        std::swap(src_buf->dims, dims);
-        src_buf->rank = op->dims.size();
-        index_t result = eval(op->body);
-        src_buf->rank = old_rank;
-        src_buf->dims = dims;
-        return result;
-      } else {
-        raw_buffer sym_buf;
-        sym_buf.base = src_buf->base;
-        sym_buf.elem_size = src_buf->elem_size;
-        sym_buf.rank = op->dims.size();
-        sym_buf.dims = dims;
-        return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
-      }
+      raw_buffer sym_buf;
+      sym_buf.base = src_buf->base;
+      sym_buf.elem_size = src_buf->elem_size;
+      sym_buf.rank = op->dims.size();
+      sym_buf.dims = dims;
+      return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
     }
   }
 

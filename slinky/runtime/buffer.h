@@ -785,10 +785,6 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
 
 inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.max() == b.max(); }
 
-inline const dim& dim_or_broadcast(const raw_buffer& buf, std::ptrdiff_t d) {
-  return d < static_cast<std::ptrdiff_t>(buf.rank) ? buf.dim(d) : dim::broadcast();
-}
-
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
 template <typename... Bufs>
@@ -800,7 +796,7 @@ bool same_bounds(std::size_t d, const raw_buffer& buf0, const raw_buffer& buf1, 
 inline bool can_fuse(std::ptrdiff_t, std::ptrdiff_t) { return true; }
 template <typename... Bufs>
 bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf, const Bufs&... bufs) {
-  return can_fuse(dim_or_broadcast(buf, inner), dim_or_broadcast(buf, outer)) && can_fuse(inner, outer, bufs...);
+  return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
 }
 
 // Fuse two dimensions of all buffers.
