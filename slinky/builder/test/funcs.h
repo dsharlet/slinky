@@ -32,7 +32,6 @@ index_t opaque_copy(const buffer<const T>& in, const buffer<T>& out) {
 
 template <typename T>
 index_t zero_padded_copy(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
   slinky::copy(in, out, static_cast<T>(0));
   return 0;
 }
@@ -40,8 +39,8 @@ index_t zero_padded_copy(const buffer<const T>& in, const buffer<T>& out) {
 // Copy rows, where the output y is -y in the input.
 template <typename T>
 index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == 2);
-  assert(out.rank == 2);
+  assert(in.rank <= 2);
+  assert(out.rank <= 2);
   std::size_t size = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     const T* src = &in(out.dim(0).min(), -y);
@@ -53,37 +52,30 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
   for_each_element([&](T* out, const T* in) { *out = *in * 2; }, out, in);
   return 0;
 }
 
 template <typename T>
 index_t square(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
   for_each_element([&](T* out, const T* in) { *out = *in * *in; }, out, in);
   return 0;
 }
 
 template <typename T>
 index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
   for_each_element([&](T* out, const T* in) { *out = *in + 1; }, out, in);
   return 0;
 }
 
 template <typename T>
 index_t subtract(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
-  assert(a.rank == out.rank);
-  assert(b.rank == out.rank);
   for_each_element([&](T* out, const T* a, const T* b) { *out = *a - *b; }, out, a, b);
   return 0;
 }
 
 template <typename T>
 index_t multiply(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
-  assert(a.rank == out.rank);
-  assert(b.rank == out.rank);
   for_each_element([&](T* out, const T* a, const T* b) { *out = *a * *b; }, out, a, b);
   return 0;
 }
@@ -91,8 +83,8 @@ index_t multiply(const buffer<const T>& a, const buffer<const T>& b, const buffe
 // A 2D stencil, sums [x + dx0, x + dx1] x [y + dy0, y + dy]
 template <typename T, int dx0, int dy0, int dx1, int dy1>
 index_t sum_stencil(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == 2);
-  assert(out.rank == 2);
+  assert(in.rank <= 2);
+  assert(out.rank <= 2);
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
       T sum = 0;
@@ -142,8 +134,6 @@ index_t upsample_nn_2x(const buffer<const T>& in, const buffer<T>& out) {
 // `dims` is an array of `{dimension, min, max}` indicating which dimension and the bounds that should be reduced over.
 template <typename T>
 index_t sum(const buffer<const T>& in, const buffer<T>& out, std::vector<std::tuple<int, int, int>> dims) {
-  assert(in.rank == out.rank + static_cast<int>(dims.size()));
-
   // Initialize with 0
   copy(scalar<T>(0), out);
 

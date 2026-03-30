@@ -646,9 +646,8 @@ TEST(simplify, clone) {
                       make_buffer::make(z, buffer_at(w), buffer_elem_size(w), {buffer_dim(y, 0), buffer_dim(y, 1)},
                           dummy_call({}, {x, z}))))),
       matches(crop_dim::make(x, u, 1, point(10),
-          make_buffer::make(z, buffer_at(w), buffer_elem_size(w),
-              {buffer_dim(x, 0), buffer_dim(x, 1)},
-              dummy_call({}, {x, z})))));
+          make_buffer::make(
+              z, buffer_at(w), buffer_elem_size(w), {buffer_dim(x, 0), buffer_dim(x, 1)}, dummy_call({}, {x, z})))));
 }
 
 TEST(simplify, allocate) {
@@ -665,6 +664,22 @@ TEST(simplify, allocate) {
       matches(block::make({check::make(y),
           allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x))),
           check::make(z)})));
+
+  // Drop trailing broadcast dimensions.
+  ASSERT_THAT(simplify(allocate::make(
+                  x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}, {{0, 0}, 0, 0}}, check::make(buffer_at(x)))),
+      matches(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x)))));
+
+  // Drop multiple trailing broadcast dimensions.
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1,
+                  {{bounds(2, 3), 4, 5}, {{0, 0}, 0, 0}, {{0, 0}, 0, 0}}, check::make(buffer_at(x)))),
+      matches(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x)))));
+
+  // A broadcast dimension that is not trailing should not be removed.
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1,
+                  {{{0, 0}, 0, 0}, {bounds(2, 3), 4, 5}}, check::make(buffer_at(x)))),
+      matches(allocate::make(x, memory_type::heap, 1,
+          {{{0, 0}, 0, 0}, {bounds(2, 3), 4, expr()}}, check::make(buffer_at(x)))));
 }
 
 TEST(simplify, constant_buffer) {
@@ -710,6 +725,29 @@ TEST(simplify, slice_of_crop) {
   // Test support for slicing multiple dimensions.
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_buffer::make(b3, b1, {{1}, {0}}, body))),
       matches(slice_buffer::make(b3, b0, {{1}, {0}}, body)));
+
+  // Slice entries beyond the known source rank are broadcast and can be trimmed.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+                  slice_buffer::make(b1, b0, {y, z}, dummy_call({b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+          slice_dim::make(b1, b0, 0, y, dummy_call({b1}, {})))));
+
+  // Slice of only broadcast dimensions is a no-op.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+                  slice_buffer::make(b1, b0, {expr(), z}, dummy_call({b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}}, dummy_call({b0}, {}))));
+
+  // Slicing a dimension known to be broadcast is a no-op.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+                  slice_dim::make(b1, b0, 0, y, dummy_call({b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+          dummy_call({b0}, {}))));
+
+  // Broadcast dim is skipped, non-broadcast dim is kept.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+                  slice_buffer::make(b1, b0, {y, z}, dummy_call({b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+          slice_dim::make(b1, b0, 1, z, dummy_call({b1}, {})))));
 }
 
 TEST(simplify, slice_of_const_buffer) {
@@ -883,6 +921,29 @@ TEST(simplify, crop) {
           check::make(buffer_min(b0, 0) == 0),
           crop_dim::make(b2, b0, 0, {select(buffer_max(b0, 0) < 0, buffer_max(b0, 0), -32) + 32, expr()}, body),
       })));
+
+  // Bounds beyond the known source rank are broadcast and can be trimmed.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+                  crop_buffer::make(b1, b0, {{y, z}, {w, u}}, dummy_call({}, {b1})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+          crop_dim::make(b1, b0, 0, {y, z}, dummy_call({}, {b1})))));
+
+  // Crop of a dimension beyond the known rank is a no-op.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+                  crop_dim::make(b1, b0, 1, {y, z}, dummy_call({}, {b1})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}}, dummy_call({}, {b0}))));
+
+  // Cropping a dimension known to be broadcast is a no-op.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+                  crop_dim::make(b1, b0, 0, {y, z}, dummy_call({}, {b1})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+          dummy_call({}, {b0}))));
+
+  // Cropping broadcast and non-broadcast dimensions only removes the broadcast crop.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+                  crop_buffer::make(b1, b0, {{y, z}, {w, u}}, dummy_call({}, {b1})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{{0, 0}, 0, 0}, {bounds(0, x), 1, expr()}},
+          crop_dim::make(b1, b0, 1, {w, u}, dummy_call({}, {b1})))));
 }
 
 TEST(simplify, make_buffer) {
