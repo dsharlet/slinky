@@ -643,6 +643,20 @@ public:
   auto& at(span<const index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
 
+  // This differs from `raw_buffer::dim(std::size_t)` because it will expand the rank with broadcast dimensions if
+  // necessary to return a reference to dimension d.
+  slinky::dim& dim(std::size_t d) {
+    if (d >= rank) {
+      slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
+      assert(dims + d + 1 <= &dims_storage[DimsSize]);
+      for (size_t i = rank; i <= d; ++i) {
+        dims[i] = slinky::dim::broadcast();
+      }
+      rank = d + 1;
+    }
+    return dims[d];
+  }
+
   // Insert a new dimension `dim` at index d, increasing the rank by 1. This function is only safe to use if the
   // dimension was previously sliced from the buffer.
   buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
@@ -655,14 +669,8 @@ public:
       assert(&dims_storage[0] <= dims && dims + rank + 1 <= &dims_storage[DimsSize]);
       std::copy_backward(dims + d, dims + rank, dims + rank + 1);
       rank += 1;
-    } else {
-      assert(&dims_storage[0] <= dims && dims + d + 1 <= &dims_storage[DimsSize]);
-      for (size_t i = rank; i < d; ++i) {
-        dims[i] = slinky::dim::broadcast();
-      }
-      rank = d + 1;
     }
-    dims[d] = dim;
+    this->dim(d) = dim;
     return *this;
   }
 
