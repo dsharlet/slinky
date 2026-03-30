@@ -226,7 +226,7 @@ public:
   std::size_t elem_size;
 
   // `rank` is the number of dimensions in the `dims` array. However, conceptually, the buffer has infinite dimensions
-  // that are broadcasts, and only the dimensions explicitly provided in the `dims` array or not broadcasts.
+  // beyond the dimensions in the `dims` array, all of which are broadcasts.
   std::size_t rank;
   slinky::dim* dims;
 
