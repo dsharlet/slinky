@@ -144,6 +144,8 @@ public:
   }
   bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }
   bool is_folded() const { return is_folded(min(), max()); }
+
+  bool is_broadcast() const { return min() == 0 && max() == 0 && stride() == 0 && fold_factor() == 0; }
 };
 
 template <typename T, std::size_t DimsSize = 0>
@@ -232,9 +234,7 @@ public:
     assert(i < rank);
     return dims[i];
   }
-  const slinky::dim& dim(std::size_t i) const {
-    return i < rank ? dims[i] : slinky::dim::broadcast();
-  }
+  const slinky::dim& dim(std::size_t i) const { return i < rank ? dims[i] : slinky::dim::broadcast(); }
 
   // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>

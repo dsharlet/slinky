@@ -63,6 +63,12 @@ const let_stmt* as_closure(const stmt& s) {
   return l && l->is_closure ? l : nullptr;
 }
 
+SLINKY_INLINE void remove_trailing_broadcasts(raw_buffer& buffer) {
+  while (buffer.rank > 0 && buffer.dims[buffer.rank - 1].is_broadcast()) {
+    --buffer.rank;
+  }
+}
+
 class evaluator {
 public:
   eval_context& context;
@@ -591,6 +597,8 @@ public:
       buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
     }
 
+    remove_trailing_broadcasts(buffer);
+
     if (op->storage == memory_type::heap) {
       buffer.allocation = context.config->allocate(op->sym, &buffer);
     } else {
@@ -635,6 +643,8 @@ public:
       buf_d.set_stride(eval(op_d.stride));
       buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
     }
+
+    remove_trailing_broadcasts(buffer);
 
     return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
   }
@@ -831,12 +841,15 @@ public:
       for (std::size_t i = 0; i < op->dims.size(); ++i) {
         dims[i] = src_buf->dim(op->dims[i]);
       }
-
+      
       raw_buffer sym_buf;
       sym_buf.base = src_buf->base;
       sym_buf.elem_size = src_buf->elem_size;
       sym_buf.rank = op->dims.size();
       sym_buf.dims = dims;
+
+      remove_trailing_broadcasts(sym_buf);
+
       return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
     }
   }
