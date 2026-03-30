@@ -647,8 +647,7 @@ public:
   // necessary to return a reference to dimension d.
   slinky::dim& mutable_dim(std::size_t d) {
     if (d >= rank) {
-      slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
-      assert(dims + d + 1 <= &dims_storage[DimsSize]);
+      assert(dims + d + 1 <= &reinterpret_cast<slinky::dim*>(dims_storage)[DimsSize]);
       for (size_t i = rank; i <= d; ++i) {
         dims[i] = slinky::dim::broadcast();
       }
