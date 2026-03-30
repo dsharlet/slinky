@@ -650,7 +650,7 @@ public:
     alias_info a;
     a.target = op->src;
     a.at = op->src_x;
-    a.permutation.resize(op->dst_x.size());
+    a.permutation.resize(info->dims.size());
     a.dims.resize(info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
@@ -664,13 +664,19 @@ public:
         return;
       }
 
+      if (at.defined()) {
+        a.at[src_d] = at - src_dim.bounds.min + buffer_min(op->dst, dst_d);
+      }
+
+      if (dst_d >= static_cast<int>(a.dims.size())) {
+        // This dst dim was simplified away (it was a broadcast dim beyond the allocation rank). Skip it.
+        continue;
+      }
+
       // We want the bounds of the original dst dimension, but the memory layout of the src dimension. This may
       // require the allocation to be expanded to accommodate this alias.
       a.dims[dst_d] = {buffer_bounds(op->dst, dst_d), src_dim.stride, src_dim.fold_factor};
       a.permutation[dst_d] = src_d;
-      if (at.defined()) {
-        a.at[src_d] = at - src_dim.bounds.min + a.dims[dst_d].bounds.min;
-      }
     }
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
@@ -698,7 +704,7 @@ public:
     a.at.resize(op->dst_x.size());
     a.dims.resize(op->src_x.size());
     a.permutation.resize(op->dst_x.size());
-    assert(op->src_x.size() == info->dims.size());
+    assert(op->src_x.size() >= info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
       if (!is_copy_dst_dim(op, dst_d, src_d)) {
@@ -719,12 +725,17 @@ public:
       // We want the intersection of the bounds of the src and dst, but with dst's memory layout.
       // Conceptually, we really just want the bounds of the src, but including the bounds of the dst enables us to
       // detect when the dst is smaller than the src, which makes the alias invalid.
-      a.dims[src_d] = {
-          info->dims[src_d].bounds & (buffer_bounds(op->dst, dst_d) + offset),
-          buffer_stride(op->dst, dst_d),
-          buffer_fold_factor(op->dst, dst_d),
-      };
-      a.at[dst_d] = info->dims[src_d].bounds.min - offset;
+      if (src_d < static_cast<int>(info->dims.size())) {
+        a.dims[src_d] = {
+            info->dims[src_d].bounds & (buffer_bounds(op->dst, dst_d) + offset),
+            buffer_stride(op->dst, dst_d),
+            buffer_fold_factor(op->dst, dst_d),
+        };
+        a.at[dst_d] = info->dims[src_d].bounds.min - offset;
+      } else {
+        a.dims[src_d] = dim::broadcast();
+        a.at[dst_d] = -offset;
+      }
       a.permutation[dst_d] = src_d;
     }
 

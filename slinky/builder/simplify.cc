@@ -748,6 +748,11 @@ public:
         case buffer_field::max:
         case buffer_field::stride:
         case buffer_field::fold_factor: {
+          if (info->rank >= 0 && op->dim >= info->rank) {
+            // This buffer metadata refers to an implicit broadcast dimension.
+            mutate_and_set_result(0);
+            return;
+          }
           if (op->dim < static_cast<index_t>(info->dims.size())) {
             if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
           }
@@ -1053,11 +1058,9 @@ public:
     std::vector<interval_expr> args_bounds;
     args.reserve(op->args.size());
     args_bounds.reserve(op->args.size());
-    bool changed = false;
     for (const expr& i : op->args) {
       expr_info i_info;
       args.push_back(mutate(i, &i_info));
-      changed = changed || !args.back().same_as(i);
       args_bounds.push_back(std::move(i_info.bounds));
     }
 
@@ -1071,12 +1074,19 @@ public:
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
+        if (info->rank >= 0 && args.size() > info->rank + 1) {
+          // These indices are trailing broadcast dimensions.
+          args.resize(info->rank + 1);
+        }
         for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {
           if (!info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == info->dims[d].bounds.min)) {
             // This argument is equal to the default value, and we know it is in bounds.
             args[d + 1] = expr();
           } else if (info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == 0)) {
             // This argument is equal to the default value, and we know it is in bounds.
+            args[d + 1] = expr();
+          } else if (prove_constant_true(info->dims[d].is_broadcast())) {
+            // This argument is to a broadcast dimension.
             args[d + 1] = expr();
           }
         }
@@ -1545,6 +1555,11 @@ public:
       info.dims.push_back(mutate(op->dims[d]));
       changed = changed || !info.dims.back().same_as(op->dims[d]);
     }
+    // Remove trailing broadcast dimensions.
+    while (!info.dims.empty() && prove_constant_true(info.dims.back().is_broadcast())) {
+      info.dims.pop_back();
+      changed = true;
+    }
     info.rank = info.dims.size();
     info.decl = stmt(op);
     return changed;
@@ -1678,7 +1693,7 @@ public:
       }
 
       auto make_truncate = [&](var src, int rank, stmt body) {
-        if (src_info && src_info->rank == rank) {
+        if (src_info && src_info->rank <= rank) {
           // We know all the dims, and the rank is already what we want to truncate to.
           return body;
         }
@@ -2047,10 +2062,20 @@ public:
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
     bool changed = op == nullptr;
     box_expr bounds(op_bounds.size());
-    for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
-      bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dim(i).bounds);
+    // Remove crops of trailing broadcast dimensions.
+    if (info && info->rank >= 0 && static_cast<int>(bounds.size()) > info->rank) {
+      bounds.resize(info->rank);
+    }
+
+    for (index_t i = 0; i < static_cast<index_t>(bounds.size()); ++i) {
+      if (i < static_cast<index_t>(info->dims.size()) && prove_constant_true(info->dims[i].is_broadcast())) {
+        bounds[i] = {expr(), expr()};
+      } else {
+        bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dim(i).bounds);
+      }
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
+
 
     // Remove trailing undefined bounds.
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
@@ -2170,12 +2195,33 @@ public:
 
     bool changed = op == nullptr;
 
-    for (index_t i = static_cast<index_t>(op_at.size()) - 1; i >= 0; --i) {
+    // Remove slices of trailing broadcast dimensions.
+    const int src_rank = info ? info->rank : -1;
+    if (src_rank >= 0 && static_cast<int>(at.size()) > src_rank) {
+      at.resize(src_rank);
+    }
+
+    for (index_t i = static_cast<index_t>(at.size()) - 1; i >= 0; --i) {
       if (op_at[i].defined()) {
-        at[i] = mutate(op_at[i]);
+        if (info && i < static_cast<index_t>(info->dims.size()) && prove_constant_true(info->dims[i].is_broadcast())) {
+          at[i] = expr();
+        } else {
+          at[i] = mutate(op_at[i]);
+        }
         changed = changed || !at[i].same_as(op_at[i]);
         if (info && static_cast<index_t>(info->dims.size()) > i) info->dims.erase(info->dims.begin() + i);
       }
+    }
+
+    // Remove trailing undefined bounds.
+    while (!at.empty() && !at.back().defined()) {
+      at.pop_back();
+    }
+
+    if (at.empty()) {
+      // This slice is a no-op.
+      set_result(mutate(substitute(op_body, op_sym, op_src)));
+      return;
     }
 
     if (info) {
@@ -2193,11 +2239,6 @@ public:
     if (!depends_on(body, op_sym).any()) {
       set_result(std::move(body));
       return;
-    }
-
-    // Remove trailing undefined bounds.
-    while (!at.empty() && !at.back().defined()) {
-      at.pop_back();
     }
 
     changed = changed || at.size() != op_at.size() || !body.same_as(op_body);
@@ -2219,12 +2260,7 @@ public:
       }
     };
 
-    if (at.empty()) {
-      // This slice was a no-op.
-      set_result(substitute(body, op_sym, op_src));
-    } else {
-      set_result(lift_decl_invariants(body, op_sym, make_slice));
-    }
+    set_result(lift_decl_invariants(body, op_sym, make_slice));
   }
 
   void visit(const slice_buffer* op) override {
@@ -2259,9 +2295,13 @@ public:
 
     buffer_info sym_info{expr()};
     if (src_info && *src_info) {
-      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 && (*src_info)->rank <= dims.size()) {
-        // transpose can't add dimensions.
-        assert((*src_info)->dims.size() == dims.size());
+      while (dims.size() > 0 && (*src_info)->rank >= 0 && dims.back() >= (*src_info)->rank) {
+        // The last dimension would be an implicit broadcast.
+        dims.pop_back();
+      }
+
+      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 &&
+          (*src_info)->rank <= static_cast<int>(dims.size())) {
         // This truncate is a no-op.
         auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
         set_result(mutate(op->body));

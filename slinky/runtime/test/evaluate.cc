@@ -80,7 +80,7 @@ TEST(evaluate, user_defined_call) {
   auto fn = [](const call* op, eval_context& ctx) {
     index_t x = evaluate(op->args[0], ctx);
     index_t y = evaluate(op->args[1], ctx);
-    return x * y; 
+    return x * y;
   };
 
   eval_context context;
@@ -138,15 +138,50 @@ void assert_buffer_extents_are(const raw_buffer& buf, const std::vector<int>& ex
   }
 }
 
-stmt make_check(var buffer, std::vector<int> extents, void* base = nullptr) {
+const void* not_null = &ctx;  // any global
+
+stmt make_check(var buffer, std::vector<int> extents, const void* base = nullptr) {
   return call_stmt::make(
       [=](const call_stmt*, eval_context& ctx) -> index_t {
         const raw_buffer& buf = *ctx.lookup_buffer(buffer);
         assert_buffer_extents_are(buf, extents);
-        assert(buf.base == base);
+        if (base == not_null) {
+          assert(buf.base);
+        } else {
+          assert(buf.base == base);
+        }
         return 0;
       },
       {}, {buffer}, {}, {});
+}
+
+TEST(evaluate, buffer_fields_broadcast) {
+  eval_context ctx;
+  buffer<int, 1> buf({10});
+  ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  ASSERT_EQ(evaluate(buffer_rank(x), ctx), 1);
+  ASSERT_EQ(evaluate(buffer_stride(x, 1), ctx), 0);
+  ASSERT_EQ(evaluate(buffer_fold_factor(x, 1), ctx), 0);
+}
+
+TEST(evaluate, allocate) {
+  eval_context ctx;
+  expr elem_size = 1;
+  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}}, make_check(x, {4}, not_null)));
+  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4}, not_null)));
+  evaluate(allocate::make(
+      x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4}, not_null)));
+}
+
+TEST(evaluate, make_buffer) {
+  eval_context ctx;
+  expr base = 0;
+  expr elem_size = 1;
+  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}}, make_check(x, {4})));
+  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4})));
+  evaluate(
+      make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4})));
 }
 
 TEST(evaluate, crop_dim) {
@@ -173,6 +208,9 @@ TEST(evaluate, crop_dim) {
                })),
       ctx);
   ASSERT_EQ(buf_before, buf);
+
+  // crop_dim on a trailing broadcast dimension is a no-op.
+  evaluate(crop_dim::make(y, x, 2, {5, 15}, make_check(y, {10, 20}, buf.base())), ctx);
 }
 
 TEST(evaluate, crop_buffer) {
@@ -201,6 +239,14 @@ TEST(evaluate, crop_buffer) {
                })),
       ctx);
   ASSERT_EQ(buf_before, buf);
+
+  // crop_buffer with bounds beyond rank is a no-op for those dimensions.
+  evaluate(crop_buffer::make(y, x, {{1, 3}, {}, {2, 5}, {}, {10, 30}},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {3, 20, 4, 40}, buf.address_at(1, slinky::slice, 2)),
+               })),
+      ctx);
 }
 
 TEST(evaluate, slice_dim) {
@@ -219,6 +265,9 @@ TEST(evaluate, slice_dim) {
                })),
       ctx);
   ASSERT_EQ(buf_before, buf);
+
+  // slice_dim on a trailing broadcast dimension is a no-op.
+  evaluate(slice_dim::make(y, x, 3, 5, make_check(y, {10, 20, 30}, buf.base())), ctx);
 }
 
 TEST(evaluate, slice_buffer) {
@@ -251,6 +300,13 @@ TEST(evaluate, slice_buffer) {
                })),
       ctx);
   ASSERT_EQ(buf_before, buf);
+
+  evaluate(slice_buffer::make(y, x, {{}, 4, {}, 2, {}, 7},
+               block::make({
+                   make_check(x, {10, 20, 30, 40}, buf.base()),
+                   make_check(y, {10, 30}, buf.address_at(slinky::slice, 4, slinky::slice, 2)),
+               })),
+      ctx);
 }
 
 TEST(evaluate, transpose) {
@@ -276,6 +332,9 @@ TEST(evaluate, transpose) {
                })),
       ctx);
   evaluate(transpose::make(y, x, {0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10}, buf.base())), ctx);
+
+  // The last dimension is a broadcast and is dropped.
+  evaluate(transpose::make(y, x, {0, 5}, make_check(y, {10}, buf.base())), ctx);
   ASSERT_EQ(buf_before, buf);
 }
 

@@ -144,6 +144,8 @@ public:
   }
   bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }
   bool is_folded() const { return is_folded(min(), max()); }
+
+  bool is_broadcast() const { return min() == 0 && max() == 0 && stride() == 0 && fold_factor() == 0; }
 };
 
 template <typename T, std::size_t DimsSize = 0>
@@ -173,23 +175,39 @@ static constexpr struct {
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer {
 protected:
-  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
-  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim*, decltype(slinky::slice)) { return 0; }
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, size_t rank, index_t i0) {
+    return rank == 0 ? 0 : dims->flat_offset_bytes(i0);
+  }
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim*, size_t, decltype(slinky::slice)) { return 0; }
 
   template <typename... Indices>
-  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, index_t i0, Indices... indices) {
-    return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
+  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, size_t rank, index_t i0, Indices... indices) {
+    if (rank == 0) {
+      // The rest of the dimensions are broadcasts.
+      return 0;
+    } else {
+      return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, rank - 1, indices...);
+    }
   }
   template <typename... Indices>
-  static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, decltype(slinky::slice), Indices... indices) {
-    return flat_offset_bytes_impl(dims + 1, indices...);
+  static std::ptrdiff_t flat_offset_bytes_impl(
+      const slinky::dim* dims, size_t rank, decltype(slinky::slice), Indices... indices) {
+    if (rank == 0) {
+      // The rest of the dimensions are broadcasts.
+      return 0;
+    } else {
+      return flat_offset_bytes_impl(dims + 1, rank - 1, indices...);
+    }
   }
 
-  static bool contains_impl(const slinky::dim* dims, index_t i0) { return dims->contains(i0); }
+  static bool contains_impl(const slinky::dim* dims, size_t rank, index_t i0) {
+    return rank == 0 || dims->contains(i0);
+  }
 
   template <typename... Indices>
-  static bool contains_impl(const slinky::dim* dims, index_t i0, Indices... indices) {
-    return dims->contains(i0) && contains_impl(dims + 1, indices...);
+  static bool contains_impl(const slinky::dim* dims, size_t rank, index_t i0, Indices... indices) {
+    if (rank == 0) return true;
+    return dims->contains(i0) && contains_impl(dims + 1, rank - 1, indices...);
   }
 
   static void translate_impl(slinky::dim* dims, index_t o0) { dims->translate(o0); }
@@ -206,37 +224,33 @@ public:
 
   alignas(16) void* base;
   std::size_t elem_size;
+
+  // `rank` is the number of dimensions in the `dims` array. However, conceptually, the buffer has infinite dimensions
+  // beyond the dimensions in the `dims` array, all of which are broadcasts.
   std::size_t rank;
   slinky::dim* dims;
 
-  slinky::dim& dim(std::size_t i) {
+  slinky::dim& mutable_dim(std::size_t i) {
     assert(i < rank);
     return dims[i];
   }
-  const slinky::dim& dim(std::size_t i) const {
-    assert(i < rank);
-    return dims[i];
-  }
+  const slinky::dim& dim(std::size_t i) const { return i < rank ? dims[i] : slinky::dim::broadcast(); }
 
   // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 <= rank);
-    return flat_offset_bytes_impl(dims, i0, indices...);
+    return flat_offset_bytes_impl(dims, rank, i0, indices...);
   }
   template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(decltype(slinky::slice) i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 <= rank);
-    return flat_offset_bytes_impl(dims, i0, indices...);
+    return flat_offset_bytes_impl(dims, rank, i0, indices...);
   }
   template <typename... Indices>
   void* address_at(index_t i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 <= rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
   template <typename... Indices>
   void* address_at(decltype(slinky::slice) i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 <= rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
   std::ptrdiff_t flat_offset_bytes() const { return 0; }
@@ -244,29 +258,25 @@ public:
 
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 <= rank);
-    return contains_impl(dims, i0, indices...);
+    return contains_impl(dims, rank, i0, indices...);
   }
   template <typename... Indices>
   bool contains(decltype(slinky::slice) i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 <= rank);
-    return contains_impl(dims, i0, indices...);
+    return contains_impl(dims, rank, i0, indices...);
   }
   bool contains() const { return true; }
 
   std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
-    assert(indices.size() <= rank);
     index_t offset = 0;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
+    for (std::size_t i = 0; i < std::min(indices.size(), rank); ++i) {
       offset += dims[i].flat_offset_bytes(indices[i]);
     }
     return offset;
   }
   void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
   bool contains(span<const index_t> indices) const {
-    assert(indices.size() <= rank);
     bool result = true;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
+    for (std::size_t i = 0; i < std::min(indices.size(), rank); ++i) {
       result = result && dims[i].contains(indices[i]);
     }
     return result;
@@ -299,11 +309,14 @@ public:
         break;
       }
     }
+    slice_leading = std::min(slice_leading, rank);
+    std::size_t slice_total = slice_leading;
 
     for (std::size_t i = slice_leading; i < ds.size(); ++i) {
       std::size_t d = ds[i];
+      if (d >= rank) break;
+      ++slice_total;
       std::size_t next_d = i + 1 < ds.size() ? ds[i + 1] : rank;
-      assert(d < rank);
       assert(next_d <= rank);
 
       // Move the dimensions between this slice and the next slice down by the number of slices we've done so far.
@@ -314,7 +327,7 @@ public:
     }
 
     dims += slice_leading;
-    rank -= ds.size();
+    rank -= slice_total;
 
     return *this;
   }
@@ -324,7 +337,11 @@ public:
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
   raw_buffer& slice(std::size_t d) {
-    assert(d < rank);
+    if (d >= rank) {
+      // slicing a broadcast dimension is a no-op.
+      return *this;
+    }
+
     rank -= 1;
     if (d == 0) {
       // Slicing the first leading dimension, we can just increment the dims pointer.
@@ -338,9 +355,15 @@ public:
     return *this;
   }
   raw_buffer& slice(std::size_t d, index_t at) {
+    if (d >= rank) {
+      // slicing a broadcast dimension is a no-op.
+      return *this;
+    }
+
     if (base != nullptr) {
-      if (dim(d).contains(at)) {
-        base = offset_bytes_non_null(base, dim(d).flat_offset_bytes(at));
+      const slinky::dim& dim_d = dim(d);
+      if (dim_d.contains(at)) {
+        base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at));
       } else {
         base = nullptr;
       }
@@ -351,13 +374,18 @@ public:
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
   // Updates the base pointer to point to the new min.
   raw_buffer& crop(std::size_t d, index_t min, index_t max) {
-    min = std::max(min, dim(d).min());
-    max = std::min(max, dim(d).max());
+    if (d >= rank) {
+      // Cropping a broadcast dimension is a no-op.
+      return *this;
+    }
+    slinky::dim& dim_d = dims[d];
+    min = std::max(min, dim_d.min());
+    max = std::min(max, dim_d.max());
 
     if (base != nullptr) {
       if (max >= min) {
-        if (dim(d).fold_factor() == dim::unfolded) {
-          index_t offset = dim(d).flat_offset_bytes(min);
+        if (dim_d.fold_factor() == dim::unfolded) {
+          index_t offset = dim_d.flat_offset_bytes(min);
           base = offset_bytes_non_null(base, offset);
         }
       } else {
@@ -365,7 +393,7 @@ public:
       }
     }
 
-    dim(d).set_bounds(min, max);
+    dim_d.set_bounds(min, max);
     return *this;
   }
 
@@ -615,19 +643,34 @@ public:
   auto& at(span<const index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
 
-  // Insert a new dimension `dim` at index d, increasing the rank by 1.
+  // This differs from `raw_buffer::dim(std::size_t)` because it will expand the rank with broadcast dimensions if
+  // necessary to return a reference to dimension d.
+  slinky::dim& mutable_dim(std::size_t d) {
+    if (d >= rank) {
+      slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
+      assert(dims + d + 1 <= &dims_storage[DimsSize]);
+      for (size_t i = rank; i <= d; ++i) {
+        dims[i] = slinky::dim::broadcast();
+      }
+      rank = d + 1;
+    }
+    return dims[d];
+  }
+
+  // Insert a new dimension `dim` at index d, increasing the rank by 1. This function is only safe to use if the
+  // dimension was previously sliced from the buffer.
   buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
-    assert(d <= rank);
     slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
     if (d == 0 && &dims_storage[0] < dims) {
       assert(dims < &dims_storage[DimsSize]);
       dims -= 1;
-    } else {
-      assert(&dims_storage[0] <= dims && dims + 1 < &dims_storage[DimsSize]);
+      rank += 1;
+    } else if (d <= rank) {
+      assert(&dims_storage[0] <= dims && dims + rank + 1 <= &dims_storage[DimsSize]);
       std::copy_backward(dims + d, dims + rank, dims + rank + 1);
+      rank += 1;
     }
-    rank += 1;
-    dims[d] = dim;
+    this->mutable_dim(d) = dim;
     return *this;
   }
 
@@ -715,7 +758,7 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
     assert(inner >= static_cast<index_t>(buf.rank) || can_fuse(buf.dim(inner), dim::broadcast()));
   } else if (inner >= static_cast<index_t>(buf.rank)) {
     // The inner dimension is an implicit broadcast.
-    dim& od = buf.dim(outer);
+    dim& od = buf.mutable_dim(outer);
     assert(can_fuse(dim::broadcast(), od));
     if (type == fuse_type::keep) {
       od.set_point(0);
@@ -725,8 +768,8 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
       assert(type == fuse_type::undef);
     }
   } else {
-    dim& id = buf.dim(inner);
-    dim& od = buf.dim(outer);
+    dim& id = buf.mutable_dim(inner);
+    dim& od = buf.mutable_dim(outer);
     id = fuse(id, od);
     if (type == fuse_type::keep) {
       od.set_point(0);
@@ -750,10 +793,6 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
 
 inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.max() == b.max(); }
 
-inline const dim& dim_or_broadcast(const raw_buffer& buf, std::ptrdiff_t d) {
-  return d < static_cast<std::ptrdiff_t>(buf.rank) ? buf.dim(d) : dim::broadcast();
-}
-
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
 template <typename... Bufs>
@@ -765,7 +804,7 @@ bool same_bounds(std::size_t d, const raw_buffer& buf0, const raw_buffer& buf1, 
 inline bool can_fuse(std::ptrdiff_t, std::ptrdiff_t) { return true; }
 template <typename... Bufs>
 bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf, const Bufs&... bufs) {
-  return can_fuse(dim_or_broadcast(buf, inner), dim_or_broadcast(buf, outer)) && can_fuse(inner, outer, bufs...);
+  return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
 }
 
 // Fuse two dimensions of all buffers.
@@ -778,8 +817,7 @@ void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... 
 }
 
 template <typename... Bufs>
-SLINKY_INLINE bool attempt_fuse(
-    std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
+SLINKY_INLINE bool attempt_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
     fuse<fuse_type::remove>(inner, outer, buf, bufs...);
     return true;
@@ -798,7 +836,9 @@ SLINKY_INLINE bool attempt_fuse(
   return attempt_fuse(inner, outer, buf, bufs...);
 }
 
-inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap(buf.dim(i), buf.dim(j)); }
+inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) {
+  std::swap(buf.mutable_dim(i), buf.mutable_dim(j));
+}
 template <typename... Bufs>
 void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, buf);

@@ -26,8 +26,8 @@ void allocate_buffer(buffer<T, N>& buf, const std::vector<index_t>& extents, ind
   index_t stride = buf.elem_size;
   buf.rank = extents.size();
   for (std::size_t d = 0; d < extents.size(); ++d) {
-    buf.dim(d).set_min_extent(0, extents[d]);
-    buf.dim(d).set_stride(stride);
+    buf.mutable_dim(d).set_min_extent(0, extents[d]);
+    buf.mutable_dim(d).set_stride(stride);
     stride *= buf.dim(d).extent() + (d == 0 ? dim_0_padding : 0);
   }
   buf.allocate();
@@ -96,7 +96,7 @@ void BM_pad(benchmark::State& state) {
 
   buffer<char, 3> src(extents);
   for (std::size_t d = 0; d < src.rank; ++d) {
-    src.dim(d).set_bounds(1, extents[d] - 2);
+    src.mutable_dim(d).set_bounds(1, extents[d] - 2);
   }
 
   scalar<char> five(5);
@@ -261,7 +261,7 @@ BENCHMARK(BM_for_each_element_batch_dims);
 
 void BM_for_each_element_folded(benchmark::State& state) {
   buffer<char, 1> src({256});
-  src.dim(0).set_fold_factor(state.range(0));
+  src.mutable_dim(0).set_fold_factor(state.range(0));
   src.allocate();
   buffer<char, 1> dst({256});
   dst.allocate();
@@ -281,10 +281,10 @@ void BM_init_strides(benchmark::State& state) {
 
   for (auto _ : state) {
     buffer<int, 4> buf;
-    buf.dim(0).set_min_extent(0, extent0);
-    buf.dim(1).set_min_extent(0, extent1);
-    buf.dim(2).set_min_extent(0, extent2);
-    buf.dim(3).set_min_extent(0, extent3);
+    buf.mutable_dim(0).set_min_extent(0, extent0);
+    buf.mutable_dim(1).set_min_extent(0, extent1);
+    buf.mutable_dim(2).set_min_extent(0, extent2);
+    buf.mutable_dim(3).set_min_extent(0, extent3);
 
     buf.init_strides();
   }
