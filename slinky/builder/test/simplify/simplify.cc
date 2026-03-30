@@ -1034,6 +1034,13 @@ TEST(simplify, make_buffer) {
                   make_buffer::make(b0, buffer_at(b1), buffer_elem_size(b1), {{{0, 10}, 2}}, dummy_call({}, {b0})))),
       matches(make_buffer::make(b0, buffer_at(b2), buffer_elem_size(b2), {{{0, 10}, 2}}, dummy_call({}, {b0}))));
 
+  // Truncating a consant buffer.
+  const dim const_dims[] = {dim::broadcast(), dim::broadcast()};
+  auto const_buffer = slinky::raw_buffer::make(/*rank=*/2, /*elem_size=*/1, const_dims);
+  ASSERT_THAT(
+      simplify(constant_buffer::make(b0, const_buffer, make_buffer::make(b1, buffer_at(b0, 0, 0), 1, {}, body))),
+      matches(constant_buffer::make(b0, const_buffer, transpose::make_truncate(b1, b0, 0, body))));
+
   // The same buffer
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
                   make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},

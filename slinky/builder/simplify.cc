@@ -1693,7 +1693,7 @@ public:
       }
 
       auto make_truncate = [&](var src, int rank, stmt body) {
-        if (src_info && src_info->rank == rank) {
+        if (src_info && src_info->rank <= rank) {
           // We know all the dims, and the rank is already what we want to truncate to.
           return body;
         }
@@ -2213,6 +2213,17 @@ public:
       }
     }
 
+    // Remove trailing undefined bounds.
+    while (!at.empty() && !at.back().defined()) {
+      at.pop_back();
+    }
+
+    if (at.empty()) {
+      // This slice is a no-op.
+      set_result(mutate(substitute(op_body, op_sym, op_src)));
+      return;
+    }
+
     if (info) {
       const constant_buffer* cb = info->decl.as<constant_buffer>();
       if (cb) {
@@ -2228,11 +2239,6 @@ public:
     if (!depends_on(body, op_sym).any()) {
       set_result(std::move(body));
       return;
-    }
-
-    // Remove trailing undefined bounds.
-    while (!at.empty() && !at.back().defined()) {
-      at.pop_back();
     }
 
     changed = changed || at.size() != op_at.size() || !body.same_as(op_body);
@@ -2254,12 +2260,7 @@ public:
       }
     };
 
-    if (at.empty()) {
-      // This slice was a no-op.
-      set_result(substitute(body, op_sym, op_src));
-    } else {
-      set_result(lift_decl_invariants(body, op_sym, make_slice));
-    }
+    set_result(lift_decl_invariants(body, op_sym, make_slice));
   }
 
   void visit(const slice_buffer* op) override {
