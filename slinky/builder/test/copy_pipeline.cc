@@ -722,6 +722,8 @@ TEST_P(broadcasted_elementwise, internal) {
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
   auto intm_broadcasted = buffer_expr::make(ctx, "intm_broadcasted", 2, sizeof(int));
 
+  intm->dim(broadcast_dim) = dim::broadcast();
+
   var x(ctx, "x");
   var y(ctx, "y");
   test_context eval_ctx;
@@ -730,8 +732,8 @@ TEST_P(broadcasted_elementwise, internal) {
 
   // Use the bounds of in2 to decide how to broadcast. We can't use the bounds of an internally allocated buffer.
   box_expr bounds = {
-      select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
-      select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
+      broadcast_dim == 0 ? point(0) : point(x),
+      broadcast_dim == 1 ? point(0) : point(y),
   };
   func broadcast = func::make_copy({intm, bounds}, {intm_broadcasted, {x, y}}, eval_ctx.copy);
   func g = func::make(subtract<int>, {{in1, {point(x), point(y)}}, {intm_broadcasted, {point(x), point(y)}}},
@@ -785,7 +787,11 @@ TEST_P(broadcasted_elementwise, constant) {
   const int H = 4;
 
   buffer<int, 2> in2_buf({W, H});
-  in2_buf.mutable_dim(broadcast_dim).set_extent(1);
+  if (broadcast_dim == 0) {
+    in2_buf.mutable_dim(0) = dim::broadcast();
+  } else {
+    in2_buf.slice(1);
+  }
   init_random(in2_buf);
 
   auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
@@ -793,12 +799,14 @@ TEST_P(broadcasted_elementwise, constant) {
   auto in2_broadcasted = buffer_expr::make(ctx, "in2_broadcasted", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
+  in2_broadcasted->dim(broadcast_dim) = dim::broadcast();
+
   var x(ctx, "x");
   var y(ctx, "y");
 
   box_expr bounds = {
-      select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
-      select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
+      broadcast_dim == 0 ? point(0) : point(x),
+      broadcast_dim == 1 ? point(0) : point(y),
   };
   func broadcast = func::make_copy({in2, bounds}, {in2_broadcasted, {x, y}});
   func f = func::make(
