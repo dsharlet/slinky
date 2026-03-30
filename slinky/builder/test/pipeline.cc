@@ -445,10 +445,10 @@ TEST_P(matmuls, pipeline) {
   buffer<int, 2> abc_buf({N, M});
   // TODO: There should be a more user friendly way to initialize a buffer with strides other than the default
   // order.
-  std::swap(a_buf.dim(1), a_buf.dim(0));
-  std::swap(b_buf.dim(1), b_buf.dim(0));
-  std::swap(c_buf.dim(1), c_buf.dim(0));
-  std::swap(abc_buf.dim(1), abc_buf.dim(0));
+  std::swap(a_buf.mutable_dim(1), a_buf.mutable_dim(0));
+  std::swap(b_buf.mutable_dim(1), b_buf.mutable_dim(0));
+  std::swap(c_buf.mutable_dim(1), c_buf.mutable_dim(0));
+  std::swap(abc_buf.mutable_dim(1), abc_buf.mutable_dim(0));
 
   init_random(a_buf);
   init_random(b_buf);
@@ -463,8 +463,8 @@ TEST_P(matmuls, pipeline) {
 
   buffer<int, 2> ref_ab({N, M});
   buffer<int, 2> ref_abc({N, M});
-  std::swap(ref_ab.dim(1), ref_ab.dim(0));
-  std::swap(ref_abc.dim(1), ref_abc.dim(0));
+  std::swap(ref_ab.mutable_dim(1), ref_ab.mutable_dim(0));
+  std::swap(ref_abc.mutable_dim(1), ref_abc.mutable_dim(0));
   ref_ab.allocate();
   ref_abc.allocate();
   matmul<int>(a_buf.cast<const int>(), b_buf.cast<const int>(), ref_ab.cast<int>());

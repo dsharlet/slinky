@@ -590,7 +590,7 @@ public:
 
     for (std::size_t d = 0; d < rank; ++d) {
       const dim_expr& op_d = op->dims[d];
-      dim& buf_d = buffer.dim(d);
+      dim& buf_d = buffer.dims[d];
       interval bounds = eval(op_d.bounds);
       buf_d.set_bounds(bounds.min, bounds.max);
       buf_d.set_stride(eval(op_d.stride, dim::auto_stride));
@@ -637,7 +637,7 @@ public:
 
     for (std::size_t d = 0; d < rank; ++d) {
       const dim_expr& op_d = op->dims[d];
-      dim& buf_d = buffer.dim(d);
+      dim& buf_d = buffer.dims[d];
       interval bounds = eval(op_d.bounds);
       buf_d.set_bounds(bounds.min, bounds.max);
       buf_d.set_stride(eval(op_d.stride));

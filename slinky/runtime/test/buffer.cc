@@ -86,7 +86,7 @@ void randomize_strides_and_padding(Rng& rng, buffer<T, N>& buf, const randomize_
 
   index_t stride = buf.elem_size;
   for (std::size_t d : permutation) {
-    slinky::dim& dim = buf.dim(d);
+    slinky::dim& dim = buf.mutable_dim(d);
     // Expand the bounds randomly.
     dim.set_bounds(dim.min() - random(rng, options.padding_min, options.padding_max),
         dim.max() + random(rng, options.padding_min, options.padding_max));
@@ -188,7 +188,7 @@ TEST(buffer, broadcast) {
   buffer<int, 2> rank1({10});
   buffer<int, 2> rank2({10, 1});
   buffer<int, 2> rank2_broadcast({10, 1});
-  rank2_broadcast.dim(1) = dim::broadcast();
+  rank2_broadcast.mutable_dim(1) = dim::broadcast();
   rank1.allocate();
   rank2.allocate();
   rank2_broadcast.allocate();
@@ -269,8 +269,8 @@ TEST(buffer, address_at_slice) {
 
   ASSERT_EQ(buf.rank, 2);
 
-  buf.dim(0) = {4, 14};
-  buf.dim(1) = {5, 20};
+  buf.mutable_dim(0) = {4, 14};
+  buf.mutable_dim(1) = {5, 20};
   buf.allocate();
 
   ASSERT_EQ(&buf(), buf.base());
@@ -284,8 +284,8 @@ TEST(buffer, folded_address_at_slice) {
 
   ASSERT_EQ(buf.rank, 2);
 
-  buf.dim(0) = {4, 14, dim::auto_stride, 3};
-  buf.dim(1) = {5, 20, dim::auto_stride, 6};
+  buf.mutable_dim(0) = {4, 14, dim::auto_stride, 3};
+  buf.mutable_dim(1) = {5, 20, dim::auto_stride, 6};
   buf.allocate();
 
   ASSERT_EQ(&buf(), buf.base());
@@ -387,7 +387,7 @@ TEST(buffer, shallow_copy_different_capacity) {
 TEST(buffer, folded) {
   buffer<char, 2> buf({10, 20});
   ASSERT_EQ(buf.size_bytes(), 10 * 20);
-  buf.dim(1).set_fold_factor(2);
+  buf.mutable_dim(1).set_fold_factor(2);
   ASSERT_EQ(buf.size_bytes(), 10 * 2);
   buf.allocate();
 
@@ -511,7 +511,7 @@ TEST(buffer, slice_at_out_of_bounds) {
 
 TEST(buffer, for_each_element_folded) {
   buffer<char, 1> buf({10});
-  buf.dim(0).set_fold_factor(4);
+  buf.mutable_dim(0).set_fold_factor(4);
   buf.allocate();
   int count = 0;
   for_each_element(
@@ -541,7 +541,7 @@ TEST(buffer, for_each_element_cropped) {
       },
       dst, src);
   ASSERT_EQ(total, 10);
-  ASSERT_EQ(in_bounds, src.dim(0).extent());
+  ASSERT_EQ(in_bounds, src.mutable_dim(0).extent());
 }
 
 TEST(buffer, for_each_contiguous_slice) {
@@ -571,10 +571,10 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
 
 TEST(buffer, for_each_contiguous_folded) {
   buffer<char, 3> buf({10, 20, 30});
-  buf.dim(1).set_fold_factor(4);
+  buf.mutable_dim(1).set_fold_factor(4);
   buf.allocate();
   for (int crop_extent : {1, 2, 3, 4}) {
-    buf.dim(1).set_min_extent(8, crop_extent);
+    buf.mutable_dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
     for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
       std::fill_n(slice, slice_extent, 7);
@@ -584,7 +584,7 @@ TEST(buffer, for_each_contiguous_folded) {
     ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
   // Also check an unaligned crop with the fold.
-  buf.dim(1).set_min_extent(6, 4);
+  buf.mutable_dim(1).set_min_extent(6, 4);
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
     std::fill_n(slice, slice_extent, 7);
@@ -596,7 +596,7 @@ TEST(buffer, for_each_contiguous_folded) {
 
 TEST(buffer, for_each_contiguous_folded_innermost) {
   buffer<char, 3> buf({10});
-  buf.dim(0).set_fold_factor(4);
+  buf.mutable_dim(0).set_fold_factor(4);
   buf.allocate();
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
@@ -609,9 +609,9 @@ TEST(buffer, for_each_contiguous_folded_innermost) {
 
 TEST(buffer, for_each_contiguous_folded_innermost_dim_1) {
   buffer<char, 3> buf({10, 20});
-  buf.dim(0).set_fold_factor(4);
+  buf.mutable_dim(0).set_fold_factor(4);
   buf.init_strides();
-  std::swap(buf.dim(0), buf.dim(1));
+  std::swap(buf.mutable_dim(0), buf.mutable_dim(1));
   buf.allocate();
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
@@ -654,7 +654,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
   for (int padded_dim = 0; padded_dim < 2; ++padded_dim) {
     buffer<char, 3> buf({10, 20, 30});
     buf.allocate();
-    buf.dim(padded_dim).set_bounds(0, 8);
+    buf.mutable_dim(padded_dim).set_bounds(0, 8);
     for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { std::fill_n(slice, slice_extent, 7); });
     ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
@@ -663,7 +663,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
 TEST(buffer, for_each_contiguous_slice_non_innermost) {
   buffer<int, 3> buf({10, 20, 30});
   buf.allocate();
-  std::swap(buf.dim(0), buf.dim(1));
+  std::swap(buf.mutable_dim(0), buf.mutable_dim(1));
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, int* slice) {
     ASSERT_EQ(slice_extent, 10);
@@ -676,7 +676,7 @@ template <typename T, typename Rng>
 void test_for_each_contiguous_slice_fill(Rng& rng) {
   buffer<T, 4> dst;
   for (std::size_t d = 0; d < dst.rank; ++d) {
-    dst.dim(d).set_min_extent(0, 5);
+    dst.mutable_dim(d).set_min_extent(0, 5);
   }
   randomize_strides_and_padding(rng, dst, {-1, 1, true});
   dst.allocate();
@@ -699,8 +699,8 @@ void test_for_each_contiguous_slice_copy(Rng& rng) {
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
-    src.dim(d).set_min_extent(0, 3);
-    dst.dim(d).set_min_extent(0, 3);
+    src.mutable_dim(d).set_min_extent(0, 3);
+    dst.mutable_dim(d).set_min_extent(0, 3);
   }
   randomize_strides_and_padding(rng, src, {-1, 1, true, true});
   randomize_strides_and_padding(rng, dst, {-1, 1, false});
@@ -742,8 +742,8 @@ void test_for_each_element_copy(Rng& rng) {
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
-    src.dim(d).set_min_extent(0, 3);
-    dst.dim(d).set_min_extent(0, 3);
+    src.mutable_dim(d).set_min_extent(0, 3);
+    dst.mutable_dim(d).set_min_extent(0, 3);
   }
   randomize_strides_and_padding(rng, src, {-1, 1, true, true});
   randomize_strides_and_padding(rng, dst, {-1, 1, false});
@@ -776,13 +776,13 @@ void test_for_each_contiguous_slice_add(Rng& rng) {
   buffer<A, 4> a;
   buffer<B, 4> b;
   for (std::size_t d = 0; d < a.rank; ++d) {
-    a.dim(d).set_min_extent(0, 5);
-    b.dim(d).set_min_extent(0, 5);
+    a.mutable_dim(d).set_min_extent(0, 5);
+    b.mutable_dim(d).set_min_extent(0, 5);
   }
 
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < a.rank; ++d) {
-    dst.dim(d) = a.dim(d);
+    dst.mutable_dim(d) = a.dim(d);
   }
 
   randomize_strides_and_padding(rng, a, {0, 1, true, true});
@@ -911,7 +911,7 @@ template <typename T, std::size_t N>
 void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr, bool broadcast = false) {
   index_t stride = broadcast ? 0 : buf.elem_size;
   for (std::size_t i = 0; i < N; ++i) {
-    dim& d = buf.dim(permutation ? permutation[i] : i);
+    dim& d = buf.mutable_dim(permutation ? permutation[i] : i);
     d.set_stride(stride);
     stride *= d.extent() + (padding ? padding[i] : 0);
     if (stride == 0) {
@@ -929,9 +929,9 @@ TEST(buffer, for_each_element_fuzz) {
     for (buffer<int, max_rank>& buf : bufs) {
       buf.rank = random(rng, 0, max_rank);
       for (std::size_t d = 0; d < buf.rank; ++d) {
-        buf.dim(d).set_bounds(random(rng, -4, 2), random(rng, -2, 4));
-        buf.dim(d).set_stride(random(rng, 0, 4));
-        buf.dim(d).set_fold_factor((rng() & 3) == 0 ? random(rng, 1, 4) : dim::unfolded);
+        buf.mutable_dim(d).set_bounds(random(rng, -4, 2), random(rng, -2, 4));
+        buf.mutable_dim(d).set_stride(random(rng, 0, 4));
+        buf.mutable_dim(d).set_fold_factor((rng() & 3) == 0 ? random(rng, 1, 4) : dim::unfolded);
       }
       buf.allocate();
     }
@@ -951,7 +951,7 @@ TEST(buffer, copy) {
 
     buffer<void, max_rank> dst(rank, elem_size);
     for (int d = 0; d < rank; ++d) {
-      dst.dim(d).set_min_extent(0, 5);
+      dst.mutable_dim(d).set_min_extent(0, 5);
     }
     buffer<void, max_rank> src = dst;
     randomize_strides_and_padding(rng, src, {-1, 1, true});
@@ -999,14 +999,14 @@ TEST(buffer, copy_empty_src) {
   for (int empty_dim = 0; empty_dim < rank; empty_dim++) {
     buffer<int, rank> src;
     for (int d = 0; d < rank; d++) {
-      src.dim(0).set_min_extent(0, D);
+      src.mutable_dim(0).set_min_extent(0, D);
     }
-    src.dim(empty_dim).set_min_extent(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
+    src.mutable_dim(empty_dim).set_min_extent(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
     init_random(rng, src);
 
     buffer<int, rank> dst;
     for (int d = 0; d < rank; d++) {
-      dst.dim(0).set_min_extent(0, D);
+      dst.mutable_dim(0).set_min_extent(0, D);
     }
     dst.allocate();
     copy(scalar<int>(7), dst);
@@ -1098,7 +1098,7 @@ TEST(fuse_contiguous_dims, fuse3) {
 
 TEST(fuse_contiguous_dims, fuse_folded) {
   buffer<int, 3> a({6, 7, 8}), b({6, 7, 8});
-  a.dim(2).set_fold_factor(3);
+  a.mutable_dim(2).set_fold_factor(3);
   ASSERT_EQ(fuse_contiguous_dims(a, b), 2);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
@@ -1110,10 +1110,10 @@ TEST(fuse_contiguous_dims, fuse_folded) {
 
 TEST(fuse_contiguous_dims, fuse_broadcasted) {
   buffer<int, 3> a({6, 1, 1}), b({6, 1, 1});
-  a.dim(1) = dim::broadcast();
-  a.dim(2) = dim::broadcast();
-  b.dim(1) = dim::broadcast();
-  b.dim(2) = dim::broadcast();
+  a.mutable_dim(1) = dim::broadcast();
+  a.mutable_dim(2) = dim::broadcast();
+  b.mutable_dim(1) = dim::broadcast();
+  b.mutable_dim(2) = dim::broadcast();
 
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
@@ -1129,11 +1129,11 @@ TEST(fuse_contiguous_dims, fuse_broadcasted) {
 TEST(fuse_contiguous_dims, fuse_bounded_and_unbounded_broadcasts) {
   buffer<int, 2> a, b;
   // Bounded broadcasts
-  a.dim(0) = dim(0, 5, 0);
-  b.dim(0) = dim(0, 5, 0);
+  a.mutable_dim(0) = dim(0, 5, 0);
+  b.mutable_dim(0) = dim(0, 5, 0);
   // Unbounded broadcasts
-  a.dim(1) = dim::broadcast();
-  b.dim(1) = dim::broadcast();
+  a.mutable_dim(1) = dim::broadcast();
+  b.mutable_dim(1) = dim::broadcast();
 
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 1);
@@ -1144,8 +1144,8 @@ TEST(fuse_contiguous_dims, fuse_bounded_and_unbounded_broadcasts) {
 
 TEST(fuse_contiguous_dims, fuse_implicit_broadcasted) {
   buffer<int, 3> a({6, 1, 1}), b({6});
-  a.dim(1) = dim::broadcast();
-  a.dim(2) = dim::broadcast();
+  a.mutable_dim(1) = dim::broadcast();
+  a.mutable_dim(2) = dim::broadcast();
 
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
@@ -1175,7 +1175,7 @@ TEST(fuse_contiguous_dims, fuse_extent1) {
 
 TEST(fuse_contiguous_dims, cant_fuse_extent1) {
   buffer<char, 3> a({1, 4, 3}), b({1, 3, 4});
-  a.dim(1).set_stride(0);
+  a.mutable_dim(1).set_stride(0);
 
   ASSERT_EQ(fuse_contiguous_dims(a, b), 0);
   ASSERT_EQ(a.rank, 3);
@@ -1186,8 +1186,8 @@ TEST(fuse_contiguous_dims, cant_fuse) {
   buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
   ASSERT_NE(a.dim(0).stride(), 0);
   ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
-  std::swap(a.dim(2), a.dim(3));
-  std::swap(b.dim(2), b.dim(3));
+  std::swap(a.mutable_dim(2), a.mutable_dim(3));
+  std::swap(b.mutable_dim(2), b.mutable_dim(3));
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 3);
   ASSERT_EQ(b.rank, 3);
@@ -1201,7 +1201,7 @@ TEST(fuse_contiguous_dims, cant_fuse) {
 
 TEST(fuse_contiguous_dims, cant_fuse_broadcasted_inner) {
   buffer<int, 3> a({1, 7, 8}), b({6, 7, 8});
-  a.dim(0) = dim::broadcast();
+  a.mutable_dim(0) = dim::broadcast();
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);
@@ -1216,7 +1216,7 @@ TEST(fuse_contiguous_dims, cant_fuse_broadcasted_inner) {
 
 TEST(fuse_contiguous_dims, cant_fuse_broadcasted_outer) {
   buffer<int, 3> a({6, 7, 1}), b({6, 7, 8});
-  a.dim(2) = dim::broadcast();
+  a.mutable_dim(2) = dim::broadcast();
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 2);
   ASSERT_EQ(b.rank, 2);

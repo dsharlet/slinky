@@ -58,10 +58,10 @@ auto p = []() -> ::slinky::pipeline {
   buffer<int, 2> b_buf({N, M});
   buffer<int, 2> c_buf({N, M});
   buffer<int, 2> abc_buf({N, M});
-  std::swap(a_buf.dim(1), a_buf.dim(0));
-  std::swap(b_buf.dim(1), b_buf.dim(0));
-  std::swap(c_buf.dim(1), c_buf.dim(0));
-  std::swap(abc_buf.dim(1), abc_buf.dim(0));
+  std::swap(a_buf.mutable_dim(1), a_buf.mutable_dim(0));
+  std::swap(b_buf.mutable_dim(1), b_buf.mutable_dim(0));
+  std::swap(c_buf.mutable_dim(1), c_buf.mutable_dim(0));
+  std::swap(abc_buf.mutable_dim(1), abc_buf.mutable_dim(0));
 
   init_random(a_buf);
   init_random(b_buf);

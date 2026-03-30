@@ -230,7 +230,7 @@ public:
   std::size_t rank;
   slinky::dim* dims;
 
-  slinky::dim& dim(std::size_t i) {
+  slinky::dim& mutable_dim(std::size_t i) {
     assert(i < rank);
     return dims[i];
   }
@@ -645,7 +645,7 @@ public:
 
   // This differs from `raw_buffer::dim(std::size_t)` because it will expand the rank with broadcast dimensions if
   // necessary to return a reference to dimension d.
-  slinky::dim& dim(std::size_t d) {
+  slinky::dim& mutable_dim(std::size_t d) {
     if (d >= rank) {
       slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
       assert(dims + d + 1 <= &dims_storage[DimsSize]);
@@ -670,7 +670,7 @@ public:
       std::copy_backward(dims + d, dims + rank, dims + rank + 1);
       rank += 1;
     }
-    this->dim(d) = dim;
+    this->mutable_dim(d) = dim;
     return *this;
   }
 
@@ -758,7 +758,7 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
     assert(inner >= static_cast<index_t>(buf.rank) || can_fuse(buf.dim(inner), dim::broadcast()));
   } else if (inner >= static_cast<index_t>(buf.rank)) {
     // The inner dimension is an implicit broadcast.
-    dim& od = buf.dim(outer);
+    dim& od = buf.mutable_dim(outer);
     assert(can_fuse(dim::broadcast(), od));
     if (type == fuse_type::keep) {
       od.set_point(0);
@@ -768,8 +768,8 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
       assert(type == fuse_type::undef);
     }
   } else {
-    dim& id = buf.dim(inner);
-    dim& od = buf.dim(outer);
+    dim& id = buf.mutable_dim(inner);
+    dim& od = buf.mutable_dim(outer);
     id = fuse(id, od);
     if (type == fuse_type::keep) {
       od.set_point(0);
@@ -836,7 +836,9 @@ SLINKY_INLINE bool attempt_fuse(
   return attempt_fuse(inner, outer, buf, bufs...);
 }
 
-inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap(buf.dim(i), buf.dim(j)); }
+inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) {
+  std::swap(buf.mutable_dim(i), buf.mutable_dim(j));
+}
 template <typename... Bufs>
 void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, buf);

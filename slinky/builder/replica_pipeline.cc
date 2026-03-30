@@ -156,15 +156,17 @@ public:
       (void)print_assignment_explicit(const_name, "std::make_shared<buffer<void, ", c->rank, ">>(/*rank=*/", c->rank,
           ", /*elem_size=*/", elem_size, ")");
       for (std::size_t d = 0; d < c->rank; d++) {
-        os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << c->dim(d).min() << ", " << c->dim(d).max()
-            << ");\n";
-        os_ << "  " << const_name << "->dim(" << d << ").set_stride(" << c->dim(d).stride() << ");\n";
-        os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(" << c->dim(d).fold_factor() << ");\n";
+        os_ << "  " << const_name << "->mutable_dim(" << d << ").set_bounds(" << c->dim(d).min() << ", "
+            << c->dim(d).max() << ");\n";
+        os_ << "  " << const_name << "->mutable_dim(" << d << ").set_stride(" << c->dim(d).stride() << ");\n";
+        os_ << "  " << const_name << "->mutable_dim(" << d << ").set_fold_factor(" << c->dim(d).fold_factor() << ");\n";
       }
       os_ << "  " << const_name << "->allocate();\n";
       os_ << "  std::uint8_t " << const_name << "_fill[" << elem_size << "] = { 0 };\n";
-      os_ << "  copy(*raw_buffer::make_scalar(" << elem_size << ", " << const_name << "_fill), *" << const_name << ");\n";
-      (void)print_assignment_explicit(name, "buffer_expr::make_constant(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
+      os_ << "  copy(*raw_buffer::make_scalar(" << elem_size << ", " << const_name << "_fill), *" << const_name
+          << ");\n";
+      (void)print_assignment_explicit(
+          name, "buffer_expr::make_constant(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
     } else {
       (void)print_assignment_explicit(
           name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");

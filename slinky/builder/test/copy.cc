@@ -125,7 +125,7 @@ TEST(trivial_2d, copy) {
     buffer<int, 2> pad_buf({W, H});
     for (int d = 0; d < 2; ++d) {
       if (d == pad_non_broadcast_dim) continue;
-      pad_buf.dim(d).set_stride(0);
+      pad_buf.mutable_dim(d).set_stride(0);
     }
     init_random(pad_buf);
 
@@ -305,7 +305,7 @@ TEST(flip_x, copy) {
   init_random(in_buf);
 
   buffer<int, 1> out_buf({W});
-  out_buf.dim(0).translate(-W + 1);
+  out_buf.mutable_dim(0).translate(-W + 1);
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
@@ -354,7 +354,7 @@ TEST_P(flip_y, copy) {
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
-  out_buf.dim(1).translate(-H + 1);
+  out_buf.mutable_dim(1).translate(-H + 1);
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
@@ -553,7 +553,7 @@ TEST_P(broadcast, copy) {
 
   // Run the pipeline.
   buffer<int, 3> in_buf({W, H, D});
-  in_buf.dim(broadcast_dim).set_extent(1);
+  in_buf.mutable_dim(broadcast_dim).set_extent(1);
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
@@ -654,7 +654,7 @@ TEST_P(broadcast, optional) {
   // Run the pipeline.
   const int broadcast_dim = GetParam();
   buffer<int, 3> in_buf({W, H, D});
-  in_buf.dim(broadcast_dim).set_extent(1);
+  in_buf.mutable_dim(broadcast_dim).set_extent(1);
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
@@ -710,8 +710,8 @@ TEST_P(concatenate, copy) {
   buffer<int, 3> in2_buf({W, H2, D});
   init_random(in1_buf);
   init_random(in2_buf);
-  if (H1 == 1) in1_buf.dim(2).set_stride(0);
-  if (H2 == 1) in2_buf.dim(2).set_stride(0);
+  if (H1 == 1) in1_buf.mutable_dim(2).set_stride(0);
+  if (H2 == 1) in2_buf.mutable_dim(2).set_stride(0);
 
   buffer<int, 3> out_buf({W, H1 + H2, D});
   out_buf.allocate();

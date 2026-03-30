@@ -140,14 +140,15 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
   std::size_t unknown_begin = rank;
   std::size_t unknown_end = 0;
   for (std::size_t i = 0; i < rank; ++i) {
-    if (dim(i).stride() == 0) continue;
+    slinky::dim& dim_i = mutable_dim(i);
+    if (dim_i.stride() == 0) continue;
 
-    index_t alloc_extent_i = alloc_extent(dim(i));
+    index_t alloc_extent_i = alloc_extent(dim_i);
     if (alloc_extent_i <= 1) {
       // The buffer is empty or has extent 1, we don't care about the stride.
-      if (dim(i).stride() == dim::auto_stride) dim(i).set_stride(elem_size);
-    } else if (dim(i).stride() != dim::auto_stride) {
-      learn_dim(init_stride_dim(std::abs(dim(i).stride()), alloc_extent_i));
+      if (dim_i.stride() == dim::auto_stride) dim_i.set_stride(elem_size);
+    } else if (dim_i.stride() != dim::auto_stride) {
+      learn_dim(init_stride_dim(std::abs(dim_i.stride()), alloc_extent_i));
     } else {
       // Track the range of dimensions we need to find the stride of.
       unknown_begin = std::min(unknown_begin, i);
@@ -156,15 +157,16 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
   }
 
   for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
-    if (dim(i).stride() != dim::auto_stride) continue;
+    slinky::dim& dim_i = mutable_dim(i);
+    if (dim_i.stride() != dim::auto_stride) continue;
 
-    const index_t alloc_extent_i = alloc_extent(dim(i));
+    const index_t alloc_extent_i = alloc_extent(dim_i);
     assert(alloc_extent_i > 1);
 
     span<const init_stride_dim> known_dims{dims, dims_end};
     if (is_stride_ok(elem_size, alloc_extent_i, known_dims)) {
       // This dimension can have stride elem_size, no other stride could be better.
-      dim(i).set_stride(elem_size);
+      dim_i.set_stride(elem_size);
       learn_dim(init_stride_dim(elem_size, alloc_extent_i));
       continue;
     }
@@ -173,13 +175,13 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
     for (const init_stride_dim& dim_j : known_dims) {
       const index_t candidate = (dim_j.dim_stride + (alignment - 1)) & ~(alignment - 1);
       if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims)) {
-        dim(i).set_stride(candidate);
+        dim_i.set_stride(candidate);
         learn_dim(init_stride_dim(candidate, alloc_extent_i));
         // The dims are sorted, so no subsequent candidate will be better.
         break;
       }
     }
-    assert(dim(i).stride() != dim::auto_stride);
+    assert(dim_i.stride() != dim::auto_stride);
   }
 
   return (flat_max + elem_size + (alignment - 1)) & ~(alignment - 1);
@@ -341,14 +343,14 @@ void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
       dst.crop(d, dst_d.min(), src_d.min() - 1);
       copy_impl(pad, dst);
       dst.base = dst_base;
-      dst.dim(d) = dst_d;
+      dst.mutable_dim(d) = dst_d;
     }
     if (dst_d.max() > src_d.max()) {
       // There's padding after the max in this dimension.
       dst.crop(d, src_d.max() + 1, dst_d.max());
       copy_impl(pad, dst);
       dst.base = dst_base;
-      dst.dim(d) = dst_d;
+      dst.mutable_dim(d) = dst_d;
     }
     // Crop off the padded areas we've filled in this dimension.
     dst.crop(d, src_d.min(), src_d.max());
@@ -412,7 +414,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
 
   raw_buffer src = {nullptr, dst.elem_size, dst.rank, SLINKY_ALLOCA(dim, dst.rank)};
   for (std::size_t d = 0; d < dst.rank; ++d) {
-    src.dim(d) = {in_bounds[d].min(), in_bounds[d].max(), 0, in_bounds[d].fold_factor()};
+    src.mutable_dim(d) = {in_bounds[d].min(), in_bounds[d].max(), 0, in_bounds[d].fold_factor()};
   }
 
   raw_buffer pad_opt = pad;
