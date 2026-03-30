@@ -664,6 +664,10 @@ public:
         return;
       }
 
+      if (at.defined()) {
+        a.at[src_d] = at - src_dim.bounds.min + buffer_min(op->dst, dst_d);
+      }
+
       if (dst_d >= static_cast<int>(a.dims.size())) {
         // This dst dim was simplified away (it was a broadcast dim beyond the allocation rank). Skip it.
         continue;
@@ -673,9 +677,6 @@ public:
       // require the allocation to be expanded to accommodate this alias.
       a.dims[dst_d] = {buffer_bounds(op->dst, dst_d), src_dim.stride, src_dim.fold_factor};
       a.permutation[dst_d] = src_d;
-      if (at.defined()) {
-        a.at[src_d] = at - src_dim.bounds.min + a.dims[dst_d].bounds.min;
-      }
     }
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
