@@ -2289,7 +2289,13 @@ public:
 
     buffer_info sym_info{expr()};
     if (src_info && *src_info) {
-      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 && (*src_info)->rank <= static_cast<int>(dims.size())) {
+      while (dims.size() > 0 && (*src_info)->rank >= 0 && dims.back() >= (*src_info)->rank) {
+        // The last dimension would be an implicit broadcast.
+        dims.pop_back();
+      }
+
+      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 &&
+          (*src_info)->rank <= static_cast<int>(dims.size())) {
         // This truncate is a no-op.
         auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
         set_result(mutate(op->body));
