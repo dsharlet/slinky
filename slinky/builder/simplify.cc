@@ -1053,11 +1053,9 @@ public:
     std::vector<interval_expr> args_bounds;
     args.reserve(op->args.size());
     args_bounds.reserve(op->args.size());
-    bool changed = false;
     for (const expr& i : op->args) {
       expr_info i_info;
       args.push_back(mutate(i, &i_info));
-      changed = changed || !args.back().same_as(i);
       args_bounds.push_back(std::move(i_info.bounds));
     }
 
@@ -1071,12 +1069,19 @@ public:
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
+        if (info->rank >= 0 && args.size() > info->rank + 1) {
+          // These indices are trailing broadcast dimensions.
+          args.resize(info->rank + 1);
+        }
         for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {
           if (!info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == info->dims[d].bounds.min)) {
             // This argument is equal to the default value, and we know it is in bounds.
             args[d + 1] = expr();
           } else if (info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == 0)) {
             // This argument is equal to the default value, and we know it is in bounds.
+            args[d + 1] = expr();
+          } else if (prove_constant_true(info->dims[d].is_broadcast())) {
+            // This argument is to a broadcast dimension.
             args[d + 1] = expr();
           }
         }

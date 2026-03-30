@@ -327,7 +327,7 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
 
 expr simplify(const call* op, intrinsic fn, const call::callable& target, std::vector<expr> args) {
   bool constant = true;
-  bool changed = op == nullptr;
+  bool changed = op == nullptr || op->args.size() != args.size();
   for (std::size_t i = 0; i < args.size(); ++i) {
     constant = constant && as_constant(args[i]);
     changed = changed || !args[i].same_as(op->args[i]);

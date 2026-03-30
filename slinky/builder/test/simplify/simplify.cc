@@ -1161,6 +1161,16 @@ TEST(simplify, knowledge) {
   simplify(huge_select);
 }
 
+TEST(simplify, buffer_at) {
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::automatic, 1, {dim::broadcast(), {{0, 10}, 1}},
+                  check::make(buffer_at(b0, 2, 3, 4)))),
+      matches(allocate::make(
+          b0, memory_type::automatic, 1, {dim::broadcast(), {{0, 10}, 1}}, check::make(buffer_at(b0, expr(), 3)))));
+  ASSERT_THAT(
+      simplify(allocate::make(b0, memory_type::automatic, 1, {{{0, 10}, 1}}, check::make(buffer_at(b0, 2, 3, 4)))),
+      matches(allocate::make(b0, memory_type::automatic, 1, {{{0, 10}, 1}}, check::make(buffer_at(b0, 2)))));
+}
+
 TEST(simplify, bounds_of) {
   // Test bounds_of by testing expressions of up to two operands, and setting the
   // bounds of the two operands to all possible cases of overlap. This approach
