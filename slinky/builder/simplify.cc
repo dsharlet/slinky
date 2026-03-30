@@ -748,6 +748,11 @@ public:
         case buffer_field::max:
         case buffer_field::stride:
         case buffer_field::fold_factor: {
+          if (info->rank >= 0 && op->dim >= info->rank) {
+            // This buffer metadata refers to an implicit broadcast dimension.
+            mutate_and_set_result(0);
+            return;
+          }
           if (op->dim < static_cast<index_t>(info->dims.size())) {
             if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
           }

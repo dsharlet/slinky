@@ -617,6 +617,11 @@ TEST(simplify, buffer_bounds) {
                   crop_dim::make(b1, b0, 0, {select(x <= 0, x, expr()), y}, use_buffer(b1)))),
       matches(loop::make(
           x, loop::serial, {0, y}, z, crop_dim::make(b1, b0, 0, {select(x <= 0, 0, expr()), y}, use_buffer(b1)))));
+
+  ASSERT_THAT(
+      simplify(decl_bounds(b0, {{-10, 10}},
+          loop::make(x, loop::serial, buffer_bounds(b0, 1), 1, crop_dim::make(b1, b0, 0, point(x), use_buffer(b1))))),
+      matches(decl_bounds(b0, {{-10, 10}}, crop_dim::make(b1, b0, 0, point(0), use_buffer(b1)))));
 }
 
 TEST(simplify, crop_not_needed) {
@@ -1071,8 +1076,8 @@ TEST(simplify, transpose) {
   // Transposes that put trailing broadcasts at the end of the buffer should be dropped.
   ASSERT_THAT(simplify(block::make(
                   {check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0, 3, 2}, dummy_call({}, {b1}))})),
-      matches(block::make(
-          {check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0}, dummy_call({}, {b1}))})));
+      matches(
+          block::make({check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0}, dummy_call({}, {b1}))})));
 }
 
 TEST(simplify, knowledge) {
