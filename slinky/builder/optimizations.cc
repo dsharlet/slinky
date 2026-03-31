@@ -385,12 +385,17 @@ class copy_aliaser : public stmt_mutator {
         if (!alloc_info.dims[d].stride.defined()) continue;
         int target_d = alias.permutation[d];
         if (target_d >= 0) {
-          expr& target_stride_d = target_stride[target_d];
-          if (target_stride_d.defined() && !prove_true(target_stride_d == alloc_info.dims[d].stride)) {
-            // We tried to set the same dimension to two different strides.
+          if (target_d < static_cast<int>(target_stride.size())) {
+            expr& target_stride_d = target_stride[target_d];
+            if (target_stride_d.defined() && !prove_true(target_stride_d == alloc_info.dims[d].stride)) {
+              // We tried to set the same dimension to two different strides.
+              return false;
+            }
+            target_stride_d = alloc_info.dims[d].stride;
+          } else if (!prove_true(alloc_info.dims[d].stride == 0)) {
+            // This dimension must have stride 0, or we can't alias an implicit broadcast.
             return false;
           }
-          target_stride_d = alloc_info.dims[d].stride;
         }
       } else {
         // There are strides on both the allocation and the target, they must be equal.
@@ -519,9 +524,10 @@ public:
             if (!info.dims[d].stride.defined()) continue;
             int alias_d = alias.permutation[d];
             if (alias_d >= 0) {
-              assert(alias_d < static_cast<int>(target_info->dims.size()));
-              if (target_info->dims[alias_d].stride.defined()) {
-                assert(prove_true(target_info->dims[alias_d].stride == info.dims[d].stride));
+              if (alias_d >= static_cast<int>(target_info->dims.size())) {
+                assert(prove_true(info.dims[d].stride) == 0);
+              } else if (target_info->dims[alias_d].stride.defined()) {
+                assert(prove_true(info.dims[d].stride == target_info->dims[alias_d].stride));
               } else if (is_constant(info.dims[d].stride, 0)) {
                 // TODO(dsharlet|vksnk): stride 0 has a special meaning (i.e. that dim is broadcasted), so
                 // it might be incorrect to propagate it to the target buffer in some cases (this is an

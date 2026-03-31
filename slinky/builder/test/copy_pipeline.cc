@@ -8,7 +8,6 @@
 #include "slinky/builder/test/funcs.h"
 #include "slinky/builder/test/util.h"
 #include "slinky/runtime/expr.h"
-#include "slinky/runtime/pipeline.h"
 
 namespace slinky {
 
@@ -475,8 +474,8 @@ TEST_P(concatenated_output, pipeline) {
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-  func concatenated =
-      func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()}, eval_ctx.copy);
+  func concatenated = func::make_concat(
+      {intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -546,8 +545,8 @@ TEST_P(transposed_output, pipeline) {
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
-  func transposed =
-      func::make_copy({intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}}, eval_ctx.copy);
+  func transposed = func::make_copy(
+      {intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}}, eval_ctx.copy);
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -931,6 +930,76 @@ TEST_P(constrained_transpose, pipeline) {
   }
 }
 
+class constrained_transpose_broadcast : public testing::TestWithParam<std::tuple<bool, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(broadcast_dim, constrained_transpose_broadcast,
+    testing::Combine(testing::Bool(), testing::Range(0, 3)),
+    test_params_to_string<constrained_transpose_broadcast::ParamType>);
+
+TEST_P(constrained_transpose_broadcast, pipeline) {
+  const bool no_alias_buffers = std::get<0>(GetParam());
+  const int broadcast_dim = std::get<1>(GetParam());
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", 3, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 3, sizeof(short));
+
+  intm2->dim(0).stride = sizeof(short);
+  intm2->dim(1).stride = sizeof(short) * out->dim(0).extent();
+  intm2->dim(2).stride = sizeof(short) * out->dim(0).extent() * out->dim(1).extent();
+
+  const int permutation[] = {0, 2, 1};
+
+  intm1->dim(broadcast_dim) = dim::broadcast();
+  intm2->dim(permutation[broadcast_dim]) = dim::broadcast();
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+  test_context eval_ctx;
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add_in = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm1, {x, y, z}}}});
+  func transposed = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}}, eval_ctx.copy);
+  func add_out = func::make(add_1<short>, {{intm2, {point(x), point(y), point(z)}}}, {{{out, {x, y, z}}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = broadcast_dim == 0 ? 1 : 20;
+  const int H = broadcast_dim == 2 ? 1 : 5;
+  const int D = broadcast_dim == 1 ? 1 : 4;
+  buffer<short, 3> in_buf({W, D, H});
+  init_random(in_buf);
+
+  buffer<short, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x, z, y) + 2);
+      }
+    }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+  }
+}
+
 class tile_untile : public testing::TestWithParam<int> {};
 
 INSTANTIATE_TEST_SUITE_P(split_factor, tile_untile, testing::Values(0, 4));
@@ -955,7 +1024,8 @@ TEST_P(tile_untile, copy) {
 
   const int N = 4;
 
-  func copy1 = func::make_copy({in, {point(xo * N + xi), point(yo * N + yi)}}, {tiled, {xi, yi, xo, yo}}, eval_ctx.copy);
+  func copy1 =
+      func::make_copy({in, {point(xo * N + xi), point(yo * N + yi)}}, {tiled, {xi, yi, xo, yo}}, eval_ctx.copy);
   // TODO: Try to optimize this copy.
   func copy2 =
       func::make_copy({tiled, {point(x % N), point(y % N), point(x / N), point(y / N)}}, {out, {x, y}}, eval_ctx.copy);
@@ -1005,8 +1075,8 @@ TEST(copy_pipeline, padded_stencil) {
   var y(ctx, "y");
   var k(ctx, "k");
 
-  func pad = func::make_copy({in, {point(x), point(y)}, in->bounds()}, {padded, {x, y}},
-      {buffer_expr::make_scalar<short>(ctx, "padding", 0)});
+  func pad = func::make_copy(
+      {in, {point(x), point(y)}, in->bounds()}, {padded, {x, y}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)});
 
   func stencil_copy = func::make_copy({padded, {point(x), point(y + k - 1)}}, {stencil, {x, y, k}});
 
