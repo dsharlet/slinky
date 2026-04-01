@@ -49,13 +49,17 @@ stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size) {
 stmt make_loop(stmt body) { return loop::make(x, loop::serial, range(0, iterations), 1, body); }
 
 // For nodes that need a buffer, we can add a buffer outside that loop, the cost of constructing it will be negligible.
-stmt make_buf(var buf, int rank, stmt body) {
+std::vector<dim_expr> make_dims(int rank) {
   std::vector<dim_expr> dims;
+  index_t stride = 1;
   for (int i = 0; i < rank; ++i) {
-    dims.push_back({{0, 100}, i, dim::unfolded});
+    dims.push_back({{0, i + 1}, stride, dim::unfolded});
+    stride *= i + 1;
   }
-  return make_buffer::make(buf, 0, 1, dims, body);
+  return dims;
 }
+
+stmt make_buf(var buf, int rank, stmt body) { return make_buffer::make(buf, 0, 1, make_dims(rank), body); }
 
 void BM_call(benchmark::State& state) {
   std::atomic<int> calls = 0;
@@ -176,8 +180,8 @@ BENCHMARK(BM_transpose)->DenseRange(0, 1);
 
 void BM_allocate(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = allocate::make(buf, memory_type::stack, 1, {{{0, 100}, 1, dim::unfolded}}, make_call_counter(calls));
-  stmt body = make_loop(c);
+  stmt op = allocate::make(buf, memory_type::stack, 1, make_dims(state.range(0)), make_call_counter(calls));
+  stmt body = make_loop(op);
 
   for (auto _ : state) {
     evaluate(body);
@@ -186,11 +190,26 @@ void BM_allocate(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_allocate);
+BENCHMARK(BM_allocate)->DenseRange(1, 4);
 
-void BM_make_buffer(benchmark::State& state) {
+enum class dim_type {
+  constant,
+  expr,
+};
+
+void BM_make_buffer(benchmark::State& state, dim_type kind) {
+  const int rank = state.range(0);
   std::atomic<int> calls = 0;
-  stmt body = make_loop(make_buf(buf, 3, make_call_counter(calls)));
+  stmt op;
+  expr at = buffer_at(src);
+  expr elem_size = buffer_elem_size(src);
+  stmt call_counter = make_call_counter(calls);
+  switch (kind) {
+  case dim_type::expr: op = make_buffer::make(buf, at, elem_size, buffer_dims(src, rank), call_counter); break;
+  case dim_type::constant: op = make_buffer::make(buf, at, elem_size, make_dims(rank), call_counter); break;
+  }
+  stmt l = make_loop(op);
+  stmt body = make_buf(src, rank, l);
 
   for (auto _ : state) {
     evaluate(body);
@@ -199,22 +218,11 @@ void BM_make_buffer(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_make_buffer);
+void BM_make_buffer_constant(benchmark::State& state) { BM_make_buffer(state, dim_type::constant); }
+void BM_make_buffer_expr(benchmark::State& state) { BM_make_buffer(state, dim_type::expr); }
 
-void BM_buffer_metadata(benchmark::State& state) {
-  std::atomic<int> calls = 0;
-  std::vector<dim_expr> dims = {buffer_dim(buf, 0), buffer_dim(buf, 1), buffer_dim(buf, 2)};
-  stmt clone = make_buffer::make(buf2, buffer_at(buf), buffer_elem_size(buf), dims, make_call_counter(calls));
-  stmt body = make_buf(buf, 3, make_loop(clone));
-
-  for (auto _ : state) {
-    evaluate(body);
-  }
-
-  state.SetItemsProcessed(calls);
-}
-
-BENCHMARK(BM_buffer_metadata);
+BENCHMARK(BM_make_buffer_constant)->DenseRange(1, 4);
+BENCHMARK(BM_make_buffer_expr)->DenseRange(1, 4);
 
 void benchmark_parallel_loop(benchmark::State& state, bool synchronize, nanoseconds task_size = nanoseconds{1000}) {
   const int workers = state.range(0);
