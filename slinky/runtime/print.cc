@@ -163,7 +163,11 @@ public:
   printer& operator<<(const interval_expr& e) { return *this << "[" << e.min << ", " << e.max << "]"; }
 
   printer& operator<<(const dim_expr& d) {
-    return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
+    if (is_zero(d.min()) && is_zero(d.max()) && is_zero(d.stride) && is_zero(d.fold_factor)) {
+      return *this << "{}";
+    } else {
+      return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
+    }
   }
 
   printer& operator<<(const std::pair<var, expr>& let) {
