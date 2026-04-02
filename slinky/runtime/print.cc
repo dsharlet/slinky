@@ -3,6 +3,7 @@
 #include <cassert>
 #include <sstream>
 #include <string>
+#include <iomanip>
 
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
@@ -163,7 +164,11 @@ public:
   printer& operator<<(const interval_expr& e) { return *this << "[" << e.min << ", " << e.max << "]"; }
 
   printer& operator<<(const dim_expr& d) {
-    return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
+    if (is_zero(d.min()) && is_zero(d.max()) && is_zero(d.stride) && is_zero(d.fold_factor)) {
+      return *this << "{}";
+    } else {
+      return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
+    }
   }
 
   printer& operator<<(const std::pair<var, expr>& let) {
@@ -375,7 +380,21 @@ public:
 
   void visit(const constant_buffer* n) override {
     const raw_buffer& buf = *n->value;
-    *this << indent() << n->sym << " = constant_buffer(" << buf.base << ", " << buf.elem_size << ", {";
+    *this << indent() << n->sym << " = constant_buffer(";
+    const size_t size = buf.size_bytes();
+    if (size <= 16) {
+      *this << "[";
+      const uint8_t* bytes = reinterpret_cast<uint8_t*>(buf.base);
+      for (size_t i = 0; i < size; ++i) {
+        if (i > 0 && i % 4 == 0) *this << ' ';
+        *this << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(bytes[size - i - 1]);
+      }
+      *this << std::dec;
+      *this << "]";
+    } else {
+      *this << buf.base;
+    }
+    *this << ", " << buf.elem_size << ", {";
     if (buf.rank > 0) {
       *this << "" << indent(2);
       print_vector(span<const dim>{buf.dims, buf.rank}, "," + indent(2));
