@@ -384,12 +384,14 @@ public:
     const size_t size = buf.size_bytes();
     if (size <= 16) {
       *this << "[";
+      std::stringstream data;
+      data << std::hex << std::setfill('0');
       const uint8_t* bytes = reinterpret_cast<uint8_t*>(buf.base);
       for (size_t i = 0; i < size; ++i) {
-        if (i > 0 && i % 4 == 0) *this << ' ';
-        *this << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(bytes[size - i - 1]);
+        if (i > 0 && i % 4 == 0) data << ' ';
+        data << std::setw(2) << static_cast<int>(bytes[size - i - 1]);
       }
-      *this << std::dec;
+      *this << data.str();
       *this << "]";
     } else {
       *this << buf.base;
