@@ -61,12 +61,14 @@ class dim {
   index_t stride_;
   index_t fold_factor_;
 
+  static const dim broadcast_;
+  
 public:
   static constexpr index_t auto_stride = std::numeric_limits<index_t>::max();
   static constexpr index_t unfolded = -1;
 
-  dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
-  dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
+  constexpr dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
+  constexpr dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
       : min_(min), max_(max), stride_(stride), fold_factor_(fold_factor) {}
 
   friend bool operator==(const dim& lhs, const dim& rhs) {
@@ -76,7 +78,7 @@ public:
 
   friend bool operator!=(const dim& lhs, const dim& rhs) { return !(lhs == rhs); }
 
-  static const dim& broadcast();
+  static const dim& broadcast() { return broadcast_; }
 
   index_t min() const { return min_; }
   index_t max() const { return max_; }
@@ -147,6 +149,8 @@ public:
 
   bool is_broadcast() const { return min() == 0 && max() == 0 && stride() == 0 && fold_factor() == 0; }
 };
+
+inline constexpr dim dim::broadcast_{0, 0, 0, 0};
 
 template <typename T, std::size_t DimsSize = 0>
 class buffer;

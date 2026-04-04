@@ -14,14 +14,6 @@ namespace slinky {
 
 namespace {
 
-dim broadcast_dim(0, 0, 0, 0);
-
-}  // namespace
-
-const dim& dim::broadcast() { return broadcast_dim; }
-
-namespace {
-
 index_t alloc_extent(const dim& dim) {
   if (dim.fold_factor() > 0) {
     // TODO: We can do better than this if the dim doesn't cross a fold boundary.
@@ -273,7 +265,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
     memcpy(dst.base, src.base, elem_size);
   } else {
     const slinky::dim& dst_dim0 = dst.dim(0);
-    const slinky::dim& src_dim0 = src.rank > 0 ? src.dim(0) : broadcast_dim;
+    const slinky::dim& src_dim0 = src.rank > 0 ? src.dim(0) : slinky::dim::broadcast();
 
     if (dst_dim0.empty()) {
       // Empty destination, nothing to do.
@@ -332,7 +324,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
 void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
   for (int d = static_cast<int>(std::min(src.rank, dst.rank)) - 1; d >= 0; --d) {
     const slinky::dim& src_d = src.dim(d);
-    if (src_d == broadcast_dim) {
+    if (src_d == slinky::dim::broadcast()) {
       continue;
     }
     // TODO: Try to implement this without saving and restoring the dst buffer between each crop.
@@ -754,7 +746,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE void for_each_impl(span<const raw_buffer
           dims[n] = &buf_n_dim;
           loop->fold_factor = gcd_fold_factor(loop->fold_factor, buf_n_dim.fold_factor());
         } else {
-          dims[n] = &broadcast_dim;
+          dims[n] = &slinky::dim::broadcast();
         }
       }
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs.size()));
