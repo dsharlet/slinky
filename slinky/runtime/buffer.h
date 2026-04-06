@@ -89,9 +89,6 @@ public:
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
   bool empty() const { return max_ < min_; }
-  bool unbounded() const {
-    return min_ == std::numeric_limits<index_t>::min() && max_ == std::numeric_limits<index_t>::max();
-  }
 
   void set_extent(index_t extent) { max_ = min_ + extent - 1; }
   void set_point(index_t x) {
@@ -105,10 +102,6 @@ public:
   void set_range(index_t begin, index_t end) {
     min_ = begin;
     max_ = end - 1;
-  }
-  void set_unbounded() {
-    min_ = std::numeric_limits<index_t>::min();
-    max_ = std::numeric_limits<index_t>::max();
   }
   void set_min_extent(index_t min, index_t extent) {
     min_ = min;
@@ -735,23 +728,17 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
 // Fuse two dimensions of a buffer.
 inline slinky::dim fuse(slinky::dim inner, const slinky::dim& outer) {
   assert(can_fuse(inner, outer));
-  if (inner.unbounded()) {
-    // Already fused
-  } else if (outer == dim::broadcast()) {
-    inner = outer;
+  if (outer == dim::broadcast()) {
+    return outer;
   } else {
     const index_t inner_extent = inner.extent();
     if (outer.min() != outer.max() && outer.fold_factor() != dim::unfolded) {
       assert(!inner.is_folded());
       inner.set_fold_factor(outer.fold_factor() * inner_extent);
     }
-    if (outer.unbounded()) {
-      inner.set_unbounded();
-    } else {
-      inner.set_range(outer.begin() * inner_extent, outer.end() * inner_extent);
-    }
+    inner.set_range(outer.begin() * inner_extent, outer.end() * inner_extent);
+    return inner;
   }
-  return inner;
 }
 
 enum class fuse_type {
