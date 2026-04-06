@@ -797,12 +797,12 @@ void test_for_each_contiguous_slice_add(Rng& rng) {
       dst,
       [&](index_t slice_extent, Dst* dst, const A* a, const B* b) {
         for (index_t i = 0; i < slice_extent; ++i) {
-          dst[i] = saturate_add<Dst>(a[i], b[i]);
+          dst[i] = add_sat<Dst>(a[i], b[i]);
         }
       },
       a, b);
   for_each_index(dst,
-      [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
+      [&](const auto i) { ASSERT_EQ(dst(i), add_sat<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
