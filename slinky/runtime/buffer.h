@@ -223,6 +223,8 @@ protected:
     translate_impl(dims + 1, offsets...);
   }
 
+  std::size_t init_strides_impl(index_t alignment);
+
 public:
   using element = void;
   using pointer = void*;
@@ -409,7 +411,13 @@ public:
 
   // If any strides are `auto_stride`, replace them with automatically determined strides.
   // `alignment` must be a power of 2.
-  std::size_t init_strides(index_t alignment = 1);
+  std::size_t init_strides(index_t alignment = 1) {
+    if (rank == 0) {
+      return (elem_size + alignment - 1) & ~(alignment - 1);
+    } else {
+      return init_strides_impl(alignment);
+    }
+  }
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `aligned_free`. `base_alignment` and `stride_alignment` must be a power of 2.
