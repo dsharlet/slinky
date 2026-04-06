@@ -1,10 +1,13 @@
 #ifndef SLINKY_BUILDER_REWRITE_H
 #define SLINKY_BUILDER_REWRITE_H
 
+#include <algorithm>
+#include <array>
 #include <iostream>
+#include <utility>
 
+#include "slinky/base/util.h"
 #include "slinky/builder/substitute.h"
-#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
 

@@ -7,16 +7,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <set>
 #include <string>
-#include <thread>
 #include <utility>
 
 #include "slinky/base/chrome_trace.h"
 #include "slinky/base/thread_pool.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/depends_on.h"
 #include "slinky/runtime/expr.h"
@@ -214,11 +210,11 @@ public:
     const raw_buffer* buf = context.lookup_buffer(*sym);
     assert(buf);
     void* result = buf->base;
-    for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
+    for (std::size_t d = 0; d < std::min(buf->rank, op->args.size() - 1); ++d) {
       if (op->args[d + 1].defined()) {
         index_t at = eval(op->args[d + 1]);
-        if (result && buf->dim(d).contains(at)) {
-          result = offset_bytes_non_null(result, buf->dim(d).flat_offset_bytes(at));
+        if (result && buf->dims[d].contains(at)) {
+          result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
         } else {
           result = nullptr;
         }
@@ -702,7 +698,7 @@ public:
     internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
     // Dims beyond rank are broadcasts; cropping them is a no-op.
     for (std::size_t d = 0; d < std::min(op->bounds.size(), src_buf->rank); ++d) {
-      const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dim(d);
+      const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dims[d];
       interval bounds = eval(op->bounds[d], {dim.min(), dim.max()});
       sym_buf.crop(d, bounds.min, bounds.max);
     }
@@ -841,7 +837,7 @@ public:
       for (std::size_t i = 0; i < op->dims.size(); ++i) {
         dims[i] = src_buf->dim(op->dims[i]);
       }
-      
+
       raw_buffer sym_buf;
       sym_buf.base = src_buf->base;
       sym_buf.elem_size = src_buf->elem_size;

@@ -1,7 +1,11 @@
 #ifndef SLINKY_BUILDER_OPTIMIZATIONS_H
 #define SLINKY_BUILDER_OPTIMIZATIONS_H
 
+#include <vector>
+
+#include "slinky/base/span.h"
 #include "slinky/builder/pipeline.h"
+#include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 
 namespace slinky {
