@@ -12,18 +12,7 @@
 
 namespace slinky {
 
-namespace {
-
-index_t alloc_extent(const dim& dim) {
-  if (dim.fold_factor() > 0) {
-    // TODO: We can do better than this if the dim doesn't cross a fold boundary.
-    return dim.fold_factor();
-  } else {
-    return dim.extent();
-  }
-}
-
-std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
+std::size_t raw_buffer::alloc_size(std::size_t rank, std::size_t elem_size, const slinky::dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
@@ -36,8 +25,6 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
   }
   return flat_max - flat_min + elem_size;
 }
-
-}  // namespace
 
 std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, dims); }
 
@@ -115,7 +102,7 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_
 
 }  // namespace
 
-std::size_t raw_buffer::init_strides(index_t alignment) {
+std::size_t raw_buffer::init_strides_impl(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   init_stride_dim* dims_end = dims;

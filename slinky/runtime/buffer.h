@@ -179,6 +179,17 @@ static constexpr struct {
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer {
 protected:
+  static index_t alloc_extent(const dim& dim) {
+    if (dim.fold_factor() > 0) {
+      // TODO: We can do better than this if the dim doesn't cross a fold boundary.
+      return dim.fold_factor();
+    } else {
+      return dim.extent();
+    }
+  }
+
+  static std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims);
+
   static std::ptrdiff_t flat_offset_bytes_impl(const slinky::dim* dims, size_t rank, index_t i0) {
     return rank == 0 ? 0 : dims->flat_offset_bytes(i0);
   }
@@ -221,6 +232,8 @@ protected:
     dims->translate(o0);
     translate_impl(dims + 1, offsets...);
   }
+
+  std::size_t init_strides_impl(index_t alignment);
 
 public:
   using element = void;
@@ -407,7 +420,18 @@ public:
 
   // If any strides are `auto_stride`, replace them with automatically determined strides.
   // `alignment` must be a power of 2.
-  std::size_t init_strides(index_t alignment = 1);
+  std::size_t init_strides(index_t alignment = 1) {
+    if (rank == 0) {
+      return (elem_size + (alignment - 1)) & ~(alignment - 1);
+    } else if (rank == 1) {
+      if (dims[0].stride() == dim::auto_stride) {
+        dims[0].set_stride(elem_size);
+      }
+      return (alloc_extent(dims[0]) * dims[0].stride() + (alignment - 1)) & ~(alignment - 1);
+    } else {
+      return init_strides_impl(alignment);
+    }
+  }
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `aligned_free`. `base_alignment` and `stride_alignment` must be a power of 2.
