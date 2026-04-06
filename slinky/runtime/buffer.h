@@ -122,10 +122,6 @@ public:
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(contains(i));
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-    // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
-    if (stride() == 0) return 0;
-#endif
     if (stride() == 0 || fold_factor() == unfolded) {
       return (i - min()) * stride();
     } else {
@@ -714,12 +710,7 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   if (inner.empty()) return false;
   if (outer.min() == outer.max() && outer.fold_factor() != 0) return true;
 
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-  // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
-  index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner.extent();
-#else
   index_t next_stride = inner.stride() * (inner.max() - inner.min() + 1);
-#endif
   if (next_stride != outer.stride()) return false;
 
   return next_stride == 0 || inner.fold_factor() == dim::unfolded;
