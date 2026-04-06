@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <type_traits>
 
@@ -321,6 +322,7 @@ public:
       if (d >= rank) break;
       ++slice_total;
       std::size_t next_d = i + 1 < ds.size() ? ds[i + 1] : rank;
+      assert(next_d > d);
       assert(next_d <= rank);
 
       // Move the dimensions between this slice and the next slice down by the number of slices we've done so far.
@@ -365,7 +367,7 @@ public:
     }
 
     if (base != nullptr) {
-      const slinky::dim& dim_d = dim(d);
+      const slinky::dim& dim_d = dims[d];
       if (dim_d.contains(at)) {
         base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at));
       } else {
@@ -761,7 +763,7 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
     assert(inner >= static_cast<index_t>(buf.rank) || can_fuse(buf.dim(inner), dim::broadcast()));
   } else if (inner >= static_cast<index_t>(buf.rank)) {
     // The inner dimension is an implicit broadcast.
-    dim& od = buf.mutable_dim(outer);
+    dim& od = buf.dims[outer];
     assert(can_fuse(dim::broadcast(), od));
     if (type == fuse_type::keep) {
       od.set_point(0);
@@ -771,8 +773,8 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
       assert(type == fuse_type::undef);
     }
   } else {
-    dim& id = buf.mutable_dim(inner);
-    dim& od = buf.mutable_dim(outer);
+    dim& id = buf.dims[inner];
+    dim& od = buf.dims[outer];
     id = fuse(id, od);
     if (type == fuse_type::keep) {
       od.set_point(0);
@@ -786,21 +788,13 @@ inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
 
 namespace internal {
 
-// Returns true if all buffers have the same rank.
-inline bool same_rank(const raw_buffer&) { return true; }
-inline bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1) { return buf0.rank == buf1.rank; }
-template <typename... Bufs>
-bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
-  return buf0.rank == buf1.rank && same_rank(buf1, bufs...);
-}
-
 inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.max() == b.max(); }
 
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
 template <typename... Bufs>
 bool same_bounds(std::size_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
-  return (buf0.rank <= d || buf1.rank <= d || same_bounds(buf0.dim(d), buf1.dim(d))) && same_bounds(d, buf0, bufs...);
+  return (buf0.rank <= d || buf1.rank <= d || same_bounds(buf0.dims[d], buf1.dims[d])) && same_bounds(d, buf0, bufs...);
 }
 
 // Returns true if two dimensions of all buffers can be fused.
@@ -840,7 +834,7 @@ SLINKY_INLINE bool attempt_fuse(
 }
 
 inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) {
-  std::swap(buf.mutable_dim(i), buf.mutable_dim(j));
+  std::swap(buf.dims[i], buf.dims[j]);
 }
 template <typename... Bufs>
 void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
@@ -865,10 +859,10 @@ bool sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   // - Typically, buffer ranks are very small.
   // - To use std::sort or similar, we need to copy the buffer dimensions into a temporary, sort, and copy them back.
   // - This template will be instantiated very frequently, it's worth attempting to minimize code size.
-  for (std::size_t i = 0; i < rank; ++i) {
+  for (std::size_t i = 0; i + 1 < rank; ++i) {
     for (std::size_t j = i + 1; j < rank; ++j) {
       if (j < dim_sets.size() && dim_sets[i] != dim_sets[j]) continue;
-      if (buf.dim(i).stride() > buf.dim(j).stride()) {
+      if (buf.dims[i].stride() > buf.dims[j].stride()) {
         internal::swap_dims(i, j, buf, bufs...);
         modified = true;
       }

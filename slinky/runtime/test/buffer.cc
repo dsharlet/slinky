@@ -5,9 +5,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <numeric>
-#include <random>
 
 #include "slinky/base/test/seeded_test.h"
 #include "slinky/runtime/buffer.h"
@@ -1018,17 +1016,6 @@ TEST(buffer, copy_empty_src) {
 
 TEST(can_fuse, empty) {
   ASSERT_FALSE(can_fuse(dim{0, -1, 0}, dim::broadcast()));
-}
-
-TEST(fuse_contiguous_dims, same_rank) {
-  buffer<int, 1> r1;
-  buffer<int, 2> r2;
-  buffer<int, 3> r3;
-
-  ASSERT_TRUE(internal::same_rank(r1));
-  ASSERT_TRUE(internal::same_rank(r2, r2));
-  ASSERT_FALSE(internal::same_rank(r2, r1, r2));
-  ASSERT_TRUE(internal::same_rank(r3, r3, r3));
 }
 
 TEST(fuse_contiguous_dims, fuse0) {
