@@ -93,8 +93,9 @@ inline bool __builtin_mul_overflow(int32_t a, int32_t b, int32_t* r) { return _m
 inline bool __builtin_mul_overflow(int64_t a, int64_t b, int64_t* r) { return _mul_overflow_i64(a, b, r) != 0; }
 #endif  // defined(_MSC_VER) && !defined(__clang__)
 
+// These are C++26
 template <typename T>
-T saturate_add(T a, T b) {
+T add_sat(T a, T b) {
   T result;
   if (!__builtin_add_overflow(a, b, &result)) {
     return result;
@@ -104,20 +105,12 @@ T saturate_add(T a, T b) {
 }
 
 template <typename T>
-T saturate_sub(T a, T b) {
+T sub_sat(T a, T b) {
   T result;
   if (!__builtin_sub_overflow(a, b, &result)) {
     return result;
   } else {
     return (a >> 1) - (b >> 1) > 0 ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
-  }
-}
-template <typename T>
-T saturate_negate(T x) {
-  if (x == std::numeric_limits<T>::min()) {
-    return std::numeric_limits<T>::max();
-  } else {
-    return -x;
   }
 }
 
@@ -128,7 +121,7 @@ int sign(T x) {
 }
 
 template <typename T>
-T saturate_mul(T a, T b) {
+T mul_sat(T a, T b) {
   T result;
   if (!__builtin_mul_overflow(a, b, &result)) {
     return result;
@@ -138,22 +131,12 @@ T saturate_mul(T a, T b) {
 }
 
 template <typename T>
-T saturate_div(T a, T b) {
+T div_sat(T a, T b) {
   // This is safe from overflow unless a is max and b is -1.
   if (b == -1 && a == std::numeric_limits<T>::min()) {
     return std::numeric_limits<T>::max();
   } else {
     return euclidean_div(a, b);
-  }
-}
-
-template <typename T>
-T saturate_mod(T a, T b) {
-  // Can this overflow...?
-  if (b == -1) {
-    return 0;
-  } else {
-    return euclidean_mod(a, b);
   }
 }
 

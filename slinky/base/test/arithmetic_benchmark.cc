@@ -28,11 +28,10 @@ void BM_euclidean_div_positive_divisor(benchmark::State& state) {
 void BM_euclidean_mod_positive_modulus(benchmark::State& state) {
   BM_binary(state, euclidean_mod_positive_modulus<std::ptrdiff_t>);
 }
-void BM_saturate_add(benchmark::State& state) { BM_binary(state, saturate_add<std::ptrdiff_t>); }
-void BM_saturate_sub(benchmark::State& state) { BM_binary(state, saturate_sub<std::ptrdiff_t>); }
-void BM_saturate_mul(benchmark::State& state) { BM_binary(state, saturate_mul<std::ptrdiff_t>); }
-void BM_saturate_div(benchmark::State& state) { BM_binary(state, saturate_div<std::ptrdiff_t>); }
-void BM_saturate_mod(benchmark::State& state) { BM_binary(state, saturate_mod<std::ptrdiff_t>); }
+void BM_add_sat(benchmark::State& state) { BM_binary(state, add_sat<std::ptrdiff_t>); }
+void BM_sub_sat(benchmark::State& state) { BM_binary(state, sub_sat<std::ptrdiff_t>); }
+void BM_mul_sat(benchmark::State& state) { BM_binary(state, mul_sat<std::ptrdiff_t>); }
+void BM_div_sat(benchmark::State& state) { BM_binary(state, div_sat<std::ptrdiff_t>); }
 void BM_gcd(benchmark::State& state) { BM_binary(state, gcd<std::ptrdiff_t>); }
 void BM_lcm(benchmark::State& state) { BM_binary(state, lcm<std::ptrdiff_t>); }
 
@@ -40,11 +39,10 @@ BENCHMARK(BM_euclidean_div);
 BENCHMARK(BM_euclidean_mod);
 BENCHMARK(BM_euclidean_div_positive_divisor);
 BENCHMARK(BM_euclidean_mod_positive_modulus);
-BENCHMARK(BM_saturate_add);
-BENCHMARK(BM_saturate_sub);
-BENCHMARK(BM_saturate_mul);
-BENCHMARK(BM_saturate_div);
-BENCHMARK(BM_saturate_mod);
+BENCHMARK(BM_add_sat);
+BENCHMARK(BM_sub_sat);
+BENCHMARK(BM_mul_sat);
+BENCHMARK(BM_div_sat);
 BENCHMARK(BM_gcd);
 BENCHMARK(BM_lcm);
 
