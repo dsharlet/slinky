@@ -723,7 +723,7 @@ inline slinky::dim fuse(slinky::dim inner, const slinky::dim& outer) {
     return outer;
   } else {
     const index_t inner_extent = inner.extent();
-    if (outer.min() != outer.max() && outer.fold_factor() != dim::unfolded) {
+    if (outer.fold_factor() != dim::unfolded) {
       assert(!inner.is_folded());
       inner.set_fold_factor(outer.fold_factor() * inner_extent);
     }
