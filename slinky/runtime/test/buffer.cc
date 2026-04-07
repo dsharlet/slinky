@@ -1257,4 +1257,16 @@ TEST(fuse_contiguous_dims, cant_fuse_mismatched_bounds) {
   ASSERT_EQ(b.rank, 2);
 }
 
+TEST(optimize_dims, fuse_broadcasted) {
+  buffer<int, 3> a({1, 4, 1}), b({1, 6, 1});
+
+  ASSERT_EQ(optimize_dims(a, b), 2);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 4);
+  ASSERT_EQ(a.dim(0).stride(), 4);
+  ASSERT_EQ(b.dim(0).extent(), 6);
+  ASSERT_EQ(b.dim(0).stride(), 4);
+}
+
 }  // namespace slinky
