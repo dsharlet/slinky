@@ -20,7 +20,7 @@ std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::Stat
   return vec;
 }
 
-template <typename T, std::size_t N>
+template <typename T, int N>
 void allocate_buffer(buffer<T, N>& buf, const std::vector<index_t>& extents, index_t dim_0_padding = 0) {
   assert(extents.size() <= N);
   index_t stride = buf.elem_size;

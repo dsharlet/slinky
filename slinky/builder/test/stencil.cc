@@ -13,7 +13,7 @@ namespace slinky {
 
 constexpr int offsets[] = {0, 2, -3};
 
-template <typename T, std::size_t N>
+template <typename T, int N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
   for_each_contiguous_slice(x, [&](index_t extent, T* base) {

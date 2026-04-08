@@ -399,7 +399,7 @@ public:
     *this << ", " << buf.elem_size << ", {";
     if (buf.rank > 0) {
       *this << "" << indent(2);
-      print_vector(span<const dim>{buf.dims, buf.rank}, "," + indent(2));
+      print_vector(span<const dim>{buf.dims, buf.dims + buf.rank}, "," + indent(2));
       *this << "" << indent();
     }
     *this << "}) {";

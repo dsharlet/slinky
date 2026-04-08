@@ -60,7 +60,7 @@ public:
     } else {
       if (!try_match(self->rank, op->rank)) return false;
       if (!try_match(self->elem_size, op->elem_size)) return false;
-      if (!try_match(span<const dim>{self->dims, self->rank}, span<const dim>{op->dims, op->rank})) return false;
+      if (!try_match(span<const dim>{self->dims, self->dims + self->rank}, span<const dim>{op->dims, op->dims + op->rank})) return false;
 
       assert(self->size_bytes() == op->size_bytes());
       if (self->size_bytes() > 128) {

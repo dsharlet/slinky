@@ -210,7 +210,7 @@ public:
     const raw_buffer* buf = context.lookup_buffer(*sym);
     assert(buf);
     void* result = buf->base;
-    for (std::size_t d = 0; d < std::min(buf->rank, op->args.size() - 1); ++d) {
+    for (int d = 0; d < std::min(buf->rank, static_cast<int>(op->args.size()) - 1); ++d) {
       if (op->args[d + 1].defined()) {
         index_t at = eval(op->args[d + 1]);
         if (result && buf->dims[d].contains(at)) {
@@ -580,11 +580,11 @@ public:
   index_t eval(const allocate* op) {
     allocated_buffer buffer;
     buffer.elem_size = eval(op->elem_size);
-    std::size_t rank = op->dims.size();
+    int rank = op->dims.size();
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
-    for (std::size_t d = 0; d < rank; ++d) {
+    for (int d = 0; d < rank; ++d) {
       const dim_expr& op_d = op->dims[d];
       dim& buf_d = buffer.dims[d];
       interval bounds = eval(op_d.bounds);
@@ -627,11 +627,11 @@ public:
     } else {
       buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
     }
-    std::size_t rank = op->dims.size();
+    int rank = op->dims.size();
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
-    for (std::size_t d = 0; d < rank; ++d) {
+    for (int d = 0; d < rank; ++d) {
       const dim_expr& op_d = op->dims[d];
       dim& buf_d = buffer.dims[d];
       interval bounds = eval(op_d.bounds);
@@ -664,11 +664,11 @@ public:
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(context.lookup(op->sym));
     assert(buffer);
 
-    std::size_t crop_rank = std::min(op->bounds.size(), buffer->rank);
+    int crop_rank = std::min<int>(op->bounds.size(), buffer->rank);
     interval* old_bounds = SLINKY_ALLOCA(interval, crop_rank);
 
     void* old_base = buffer->base;
-    for (std::size_t d = 0; d < crop_rank; ++d) {
+    for (int d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       index_t old_min = dim.min();
       index_t old_max = dim.max();
@@ -682,7 +682,7 @@ public:
     index_t result = eval(op->body);
 
     buffer->base = old_base;
-    for (std::size_t d = 0; d < crop_rank; ++d) {
+    for (int d = 0; d < crop_rank; ++d) {
       buffer->dims[d].set_bounds(old_bounds[d].min, old_bounds[d].max);
     }
     return result;
@@ -697,7 +697,7 @@ public:
     sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
     // Dims beyond rank are broadcasts; cropping them is a no-op.
-    for (std::size_t d = 0; d < std::min(op->bounds.size(), src_buf->rank); ++d) {
+    for (int d = 0; d < std::min<int>(op->bounds.size(), src_buf->rank); ++d) {
       const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dims[d];
       interval bounds = eval(op->bounds[d], {dim.min(), dim.max()});
       sym_buf.crop(d, bounds.min, bounds.max);
@@ -764,7 +764,7 @@ public:
     sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     sym_buf.rank = 0;
 
-    for (std::size_t d = 0; d < src_buf->rank; ++d) {
+    for (int d = 0; d < src_buf->rank; ++d) {
       if (d < op->at.size() && op->at[d].defined()) {
         if (sym_buf.base) {
           index_t at_d = eval(op->at[d]);
@@ -823,7 +823,7 @@ public:
       assert(src_buf);
 
       // In-place truncate, all we need to do is set the rank (and restore it).
-      std::size_t old_rank = src_buf->rank;
+      int old_rank = src_buf->rank;
       src_buf->rank = op->dims.size();
       index_t result = eval(op->body);
       src_buf->rank = old_rank;
@@ -834,7 +834,7 @@ public:
 
       // Make the transposed dims.
       dim* dims = SLINKY_ALLOCA(dim, op->dims.size());
-      for (std::size_t i = 0; i < op->dims.size(); ++i) {
+      for (int i = 0; i < op->dims.size(); ++i) {
         dims[i] = src_buf->dim(op->dims[i]);
       }
 

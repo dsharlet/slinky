@@ -23,10 +23,10 @@ index_t alloc_extent(const dim& dim) {
   }
 }
 
-std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
+std::size_t alloc_size(int rank, int elem_size, const dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
-  for (std::size_t i = 0; i < rank; ++i) {
+  for (int i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
     index_t extent = alloc_extent(dims[i]);
     assert(extent >= 0);
@@ -43,13 +43,13 @@ std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, 
 
 std::size_t raw_buffer::elem_count() const {
   std::size_t result = 1;
-  for (std::size_t i = 0; i < rank; ++i) {
+  for (int i = 0; i < rank; ++i) {
     result *= std::max<index_t>(0, dims[i].extent());
   }
   return result;
 }
 
-raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims, index_t alignment) {
+raw_buffer_ptr raw_buffer::make(int rank, int elem_size, const class dim* dims, index_t alignment) {
   const std::size_t data_size = rank == 0 || dims ? alloc_size(rank, elem_size, dims) : 0;
   const std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank + data_size + alignment - 1;
   char* mem = reinterpret_cast<char*>(malloc(size));
@@ -75,7 +75,7 @@ raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src, index_t alignment) {
   return buf;
 }
 
-raw_buffer_ptr raw_buffer::make_scalar(std::size_t elem_size, const void* value, index_t alignment) {
+raw_buffer_ptr raw_buffer::make_scalar(int elem_size, const void* value, index_t alignment) {
   auto buf = make(0, elem_size, nullptr, alignment);
   memcpy(buf->base, value, elem_size);
   return buf;
@@ -129,9 +129,9 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
     ++dims_end;
   };
 
-  std::size_t unknown_begin = rank;
-  std::size_t unknown_end = 0;
-  for (std::size_t i = 0; i < rank; ++i) {
+  int unknown_begin = rank;
+  int unknown_end = 0;
+  for (int i = 0; i < rank; ++i) {
     slinky::dim& dim_i = this->dims[i];
     if (dim_i.stride() == 0) continue;
 
@@ -148,7 +148,7 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
     }
   }
 
-  for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
+  for (int i = unknown_begin; i < unknown_end; ++i) {
     slinky::dim& dim_i = this->dims[i];
     if (dim_i.stride() != dim::auto_stride) continue;
 
@@ -405,7 +405,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
   internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
   raw_buffer src = {nullptr, dst.elem_size, dst.rank, SLINKY_ALLOCA(dim, dst.rank)};
-  for (std::size_t d = 0; d < dst.rank; ++d) {
+  for (int d = 0; d < dst.rank; ++d) {
     src.dims[d] = {in_bounds[d].min(), in_bounds[d].max(), 0, in_bounds[d].fold_factor()};
   }
 
@@ -424,7 +424,7 @@ namespace internal {
 namespace {
 
 template <std::size_t BufsSize>
-SLINKY_INLINE bool is_contiguous_slice(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
+SLINKY_INLINE bool is_contiguous_slice(span<const raw_buffer*, BufsSize> bufs, int d) {
   const raw_buffer& buf = *bufs[0];
   if (buf.dim(d).stride() != static_cast<index_t>(buf.elem_size)) {
     // This dimension is not contiguous.
@@ -469,7 +469,7 @@ SLINKY_INLINE bool can_fuse(span<const raw_buffer*, BufsSize> bufs, std::size_t 
       // This is the same buffer as the base, or the base pointer is nullptr.
       continue;
     }
-    const std::size_t rank = buf_n.rank;
+    const int rank = buf_n.rank;
     if (d > rank) {
       // Both dimensions are broadcasts, they can be fused.
       continue;
@@ -562,7 +562,7 @@ std::ptrdiff_t sizeof_for_each_loop(std::size_t bufs_size) {
 //
 // We can't make a simple struct for this, because N and R are not necessarily compile-time constants.
 template <typename F>
-SLINKY_INLINE std::size_t size_of_plan(std::size_t bufs_size, std::size_t rank) {
+SLINKY_INLINE std::size_t size_of_plan(std::size_t bufs_size, int rank) {
   // We only need max(rank, 1) for each loops, but it only wastes a little stack and it's cheaper to compute the add.
   return sizeof_for_each_loop(bufs_size) * (rank + 1) + sizeof(F);
 }

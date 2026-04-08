@@ -142,7 +142,7 @@ public:
 
 inline constexpr dim dim::broadcast_{0, 0, 0, 0};
 
-template <typename T, std::size_t DimsSize = 0>
+template <typename T, int DimsSize = 0>
 class buffer;
 
 class raw_buffer;
@@ -218,19 +218,19 @@ public:
   using element = void;
   using pointer = void*;
 
-  alignas(16) void* base;
-  std::size_t elem_size;
+  void* base;
+  int elem_size;
 
   // `rank` is the number of dimensions in the `dims` array. However, conceptually, the buffer has infinite dimensions
   // beyond the dimensions in the `dims` array, all of which are broadcasts.
-  std::size_t rank;
+  int rank;
   slinky::dim* dims;
 
-  slinky::dim& mutable_dim(std::size_t i) {
+  slinky::dim& mutable_dim(int i) {
     assert(i < rank);
     return dims[i];
   }
-  const slinky::dim& dim(std::size_t i) const { return i < rank ? dims[i] : slinky::dim::broadcast(); }
+  const slinky::dim& dim(int i) const { return i < rank ? dims[i] : slinky::dim::broadcast(); }
 
   // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>
@@ -264,7 +264,7 @@ public:
 
   std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
     index_t offset = 0;
-    for (std::size_t i = 0; i < std::min(indices.size(), rank); ++i) {
+    for (int i = 0; i < std::min<int>(indices.size(), rank); ++i) {
       offset += dims[i].flat_offset_bytes(indices[i]);
     }
     return offset;
@@ -272,7 +272,7 @@ public:
   void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
   bool contains(span<const index_t> indices) const {
     bool result = true;
-    for (std::size_t i = 0; i < std::min(indices.size(), rank); ++i) {
+    for (int i = 0; i < std::min<int>(indices.size(), rank); ++i) {
       result = result && dims[i].contains(indices[i]);
     }
     return result;
@@ -286,19 +286,19 @@ public:
   }
   raw_buffer& translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
-    for (std::size_t i = 0; i < offsets.size(); ++i) {
+    for (int i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
     }
     return *this;
   }
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
-  raw_buffer& slice(span<const std::size_t> ds) {
+  raw_buffer& slice(span<const int> ds) {
     if (ds.size() == 1) return slice(ds[0]);
 
     // Handle any slices of leading dimensions by just incrementing the dims pointer.
-    std::size_t slice_leading = 0;
-    for (std::size_t d : ds) {
+    int slice_leading = 0;
+    for (int d : ds) {
       if (d == slice_leading) {
         ++slice_leading;
       } else {
@@ -306,19 +306,19 @@ public:
       }
     }
     slice_leading = std::min(slice_leading, rank);
-    std::size_t slice_total = slice_leading;
+    int slice_total = slice_leading;
 
-    for (std::size_t i = slice_leading; i < ds.size(); ++i) {
-      std::size_t d = ds[i];
+    for (int i = slice_leading; i < ds.size(); ++i) {
+      int d = ds[i];
       if (d >= rank) break;
       ++slice_total;
-      std::size_t next_d = i + 1 < ds.size() ? ds[i + 1] : rank;
+      int next_d = i + 1 < ds.size() ? ds[i + 1] : rank;
       assert(next_d > d);
       assert(next_d <= rank);
 
       // Move the dimensions between this slice and the next slice down by the number of slices we've done so far.
       // d and next_d are indices in the original dimensions.
-      for (std::size_t j = d; j + 1 < next_d; ++j) {
+      for (int j = d; j + 1 < next_d; ++j) {
         dims[j - (i - slice_leading)] = dims[j + 1];
       }
     }
@@ -328,12 +328,12 @@ public:
 
     return *this;
   }
-  raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }
+  raw_buffer& slice(std::initializer_list<int> ds) { return slice({&*ds.begin(), ds.size()}); }
 
   // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
-  raw_buffer& slice(std::size_t d) {
+  raw_buffer& slice(int d) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
       return *this;
@@ -345,13 +345,13 @@ public:
       dims += 1;
     } else {
       // We need to move all the dims above `d` down by one.
-      for (std::size_t i = d; i < rank; ++i) {
+      for (int i = d; i < rank; ++i) {
         dims[i] = dims[i + 1];
       }
     }
     return *this;
   }
-  raw_buffer& slice(std::size_t d, index_t at) {
+  raw_buffer& slice(int d, index_t at) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
       return *this;
@@ -370,7 +370,7 @@ public:
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
   // Updates the base pointer to point to the new min.
-  raw_buffer& crop(std::size_t d, index_t min, index_t max) {
+  raw_buffer& crop(int d, index_t min, index_t max) {
     if (d >= rank) {
       // Cropping a broadcast dimension is a no-op.
       return *this;
@@ -417,14 +417,14 @@ public:
 
   // Make a pointer to a buffer with an allocation for the dims and (optionally) elements in the same allocation.
   static raw_buffer_ptr make(
-      std::size_t rank, std::size_t elem_size = 0, const class slinky::dim* dims = nullptr, index_t alignment = 1);
+      int rank, int elem_size = 0, const class slinky::dim* dims = nullptr, index_t alignment = 1);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src, index_t alignment = 1);
 
   // Make a buffer around a scalar value. The resulting buffer will have rank 0. The result is a heap allocated
   // buffer that contains a copy of the scalar value.
-  static raw_buffer_ptr make_scalar(std::size_t elem_size, const void* value, index_t alignment = 1);
+  static raw_buffer_ptr make_scalar(int elem_size, const void* value, index_t alignment = 1);
   template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
   static raw_buffer_ptr make_scalar(const T& value, index_t alignment = 1) {
     return make_scalar(sizeof(T), &value, alignment);
@@ -432,7 +432,7 @@ public:
 
   // Make a buffer around a scalar value. The resulting buffer will have rank 0. The result is a buffer that contains a
   // pointer to the value.
-  static raw_buffer make_scalar_ref(std::size_t elem_size, void* value) {
+  static raw_buffer make_scalar_ref(int elem_size, void* value) {
     return raw_buffer{value, elem_size, 0, nullptr};
   }
   template <typename T>
@@ -459,15 +459,15 @@ namespace internal {
 
 template <typename T>
 struct type_info {
-  static constexpr std::size_t size = sizeof(T);
+  static constexpr int size = sizeof(T);
 };
 template <>
 struct type_info<void> {
-  static constexpr std::size_t size = 0;
+  static constexpr int size = 0;
 };
 template <>
 struct type_info<const void> {
-  static constexpr std::size_t size = 0;
+  static constexpr int size = 0;
 };
 
 template <typename T>
@@ -496,7 +496,7 @@ void copy_small_n_backward(const T* src, std::size_t n, T* dst) {
 
 }  // namespace internal
 
-template <typename T, std::size_t DimsSize>
+template <typename T, int DimsSize>
 class buffer : public raw_buffer {
 private:
   void* to_free;
@@ -504,7 +504,7 @@ private:
   // Avoid default constructor of slinky::dim, we might not use this.
   alignas(slinky::dim) char dims_storage[sizeof(slinky::dim) * DimsSize];
 
-  void assign_dims(std::size_t rank, const slinky::dim* src = nullptr) {
+  void assign_dims(int rank, const slinky::dim* src = nullptr) {
     assert(rank <= DimsSize);
     this->rank = rank;
     if (DimsSize > 0) {
@@ -533,7 +533,7 @@ private:
     return *this;
   }
 
-  template <std::size_t OtherDimsSize>
+  template <int OtherDimsSize>
   void move_construct(buffer<T, OtherDimsSize>&& m) {
     copy_construct(m);
     // Take ownership of the data.
@@ -541,7 +541,7 @@ private:
     m.to_free = nullptr;
   }
 
-  template <std::size_t OtherDimsSize>
+  template <int OtherDimsSize>
   buffer& move(buffer<T, OtherDimsSize>&& m) {
     assign(m);
     // Take ownership of the data.
@@ -566,7 +566,7 @@ public:
     elem_size = internal::type_info<T>::size;
   }
 
-  explicit buffer(std::size_t rank, std::size_t elem_size = internal::type_info<T>::size) {
+  explicit buffer(int rank, int elem_size = internal::type_info<T>::size) {
     raw_buffer::base = nullptr;
     to_free = nullptr;
     assign_dims(rank);
@@ -576,7 +576,7 @@ public:
   // Construct a buffer with extents, and strides computed such that the stride of dimension
   // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
   // dimension is "innermost".
-  buffer(span<const index_t> extents, std::size_t elem_size = internal::type_info<T>::size)
+  buffer(span<const index_t> extents, int elem_size = internal::type_info<T>::size)
       : buffer(extents.size(), elem_size) {
     slinky::dim* d = dims;
     for (index_t extent : extents) {
@@ -585,10 +585,10 @@ public:
     }
     init_strides();
   }
-  buffer(std::initializer_list<index_t> extents, std::size_t elem_size = internal::type_info<T>::size)
+  buffer(std::initializer_list<index_t> extents, int elem_size = internal::type_info<T>::size)
       : buffer({extents.begin(), extents.end()}, elem_size) {}
   // TODO: A more general version of this constructor would probably be useful.
-  buffer(T* base, index_t size, std::size_t elem_size = internal::type_info<T>::size) : buffer({size}) {
+  buffer(T* base, index_t size, int elem_size = internal::type_info<T>::size) : buffer({size}) {
     raw_buffer::base = base;
   }
   ~buffer() { free(); }
@@ -597,11 +597,11 @@ public:
   buffer(const raw_buffer& c) { copy_construct(c); }
   buffer(const buffer& c) { copy_construct(c); }
   buffer(buffer&& m) { move_construct(std::move(m)); }
-  template <std::size_t OtherDimsSize>
+  template <int OtherDimsSize>
   buffer(const buffer<T, OtherDimsSize>& c) {
     copy_construct(c);
   }
-  template <std::size_t OtherDimsSize>
+  template <int OtherDimsSize>
   buffer(buffer<T, OtherDimsSize>&& m) {
     move_construct(std::move(m));
   }
@@ -609,11 +609,11 @@ public:
   buffer& operator=(const raw_buffer& c) { return assign(c); }
   buffer& operator=(const buffer& c) { return assign(c); }
   buffer& operator=(buffer&& m) { return move(std::move(m)); }
-  template <std::size_t OtherDimsSize>
+  template <int OtherDimsSize>
   buffer& operator=(const buffer<T, OtherDimsSize>& c) {
     return assign(c);
   }
-  template <std::size_t OtherDimsSize>
+  template <int OtherDimsSize>
   buffer& operator=(buffer<T, OtherDimsSize>&& m) {
     return move(std::move(m));
   }
@@ -646,9 +646,9 @@ public:
   auto& at(span<const index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
 
-  // This differs from `raw_buffer::dim(std::size_t)` because it will expand the rank with broadcast dimensions if
+  // This differs from `raw_buffer::dim(int)` because it will expand the rank with broadcast dimensions if
   // necessary to return a reference to dimension d.
-  slinky::dim& mutable_dim(std::size_t d) {
+  slinky::dim& mutable_dim(int d) {
     if (d >= rank) {
       assert(dims + d + 1 <= &reinterpret_cast<slinky::dim*>(dims_storage)[DimsSize]);
       for (size_t i = rank; i <= d; ++i) {
@@ -661,7 +661,7 @@ public:
 
   // Insert a new dimension `dim` at index d, increasing the rank by 1. This function is only safe to use if the
   // dimension was previously sliced from the buffer.
-  buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
+  buffer<T, DimsSize>& unslice(int d, const slinky::dim& dim) {
     slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
     if (d == 0 && &dims_storage[0] < dims) {
       assert(dims < &dims_storage[DimsSize]);
@@ -782,7 +782,7 @@ inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() 
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
 template <typename... Bufs>
-bool same_bounds(std::size_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
   return (buf0.rank <= d || buf1.rank <= d || same_bounds(buf0.dims[d], buf1.dims[d])) && same_bounds(d, buf0, bufs...);
 }
 
@@ -822,11 +822,11 @@ SLINKY_INLINE bool attempt_fuse(
   return attempt_fuse(inner, outer, buf, bufs...);
 }
 
-inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) {
+inline void swap_dims(int i, int j, raw_buffer& buf) {
   std::swap(buf.dims[i], buf.dims[j]);
 }
 template <typename... Bufs>
-void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
+void swap_dims(int i, int j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, buf);
   swap_dims(i, j, bufs...);
 }
@@ -848,8 +848,8 @@ bool sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   // - Typically, buffer ranks are very small.
   // - To use std::sort or similar, we need to copy the buffer dimensions into a temporary, sort, and copy them back.
   // - This template will be instantiated very frequently, it's worth attempting to minimize code size.
-  for (std::size_t i = 0; i + 1 < rank; ++i) {
-    for (std::size_t j = i + 1; j < rank; ++j) {
+  for (int i = 0; i + 1 < rank; ++i) {
+    for (int j = i + 1; j < rank; ++j) {
       if (j < dim_sets.size() && dim_sets[i] != dim_sets[j]) continue;
       if (buf.dims[i].stride() > buf.dims[j].stride()) {
         internal::swap_dims(i, j, buf, bufs...);
@@ -909,7 +909,7 @@ int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
 namespace internal {
 
 template <std::size_t BufsSize>
-SLINKY_INLINE void increment_bases(std::size_t n, void** bases, const index_t* strides) {
+SLINKY_INLINE void increment_bases(int n, void** bases, const index_t* strides) {
   n = BufsSize != dynamic_extent ? BufsSize : n;
   bases[0] = offset_bytes(bases[0], strides[0]);
   if (1 < n) bases[1] = offset_bytes(bases[1], strides[1]);

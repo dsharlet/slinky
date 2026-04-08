@@ -17,7 +17,7 @@ int random(Rng& rng, int min, int max) {
   return rng() % (max - min + 1) + min;
 }
 
-template <typename T, std::size_t N, typename Rng>
+template <typename T, int N, typename Rng>
 void init_random(Rng& rng, buffer<T, N>& buf) {
   buf.allocate();
   std::size_t flat_size = buf.size_bytes();
@@ -56,10 +56,10 @@ SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) 
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, const F& f) {
-  for_each_index(span<const dim>{buf.dims, buf.rank}, f);
+  for_each_index(span<const dim>{buf.dims, buf.dims + buf.rank}, f);
 }
 
-template <typename T, std::size_t N, typename Value>
+template <typename T, int N, typename Value>
 bool is_filled_buffer(const buffer<T, N>& buf, Value value) {
   int errors = 0;
   for_each_element([value, &errors](const T* x) { errors += *x != value; }, buf);
@@ -73,7 +73,7 @@ struct randomize_options {
   bool randomize_rank = false;
 };
 
-template <typename T, std::size_t N, typename Rng>
+template <typename T, int N, typename Rng>
 void randomize_strides_and_padding(Rng& rng, buffer<T, N>& buf, const randomize_options& options) {
   std::vector<int> permutation(buf.rank);
   std::iota(permutation.begin(), permutation.end(), 0);
@@ -905,10 +905,10 @@ TEST(buffer, for_each_element_empty) {
   ASSERT_EQ(elements, 0);
 }
 
-template <typename T, std::size_t N>
+template <typename T, int N>
 void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr, bool broadcast = false) {
   index_t stride = broadcast ? 0 : buf.elem_size;
-  for (std::size_t i = 0; i < N; ++i) {
+  for (int i = 0; i < N; ++i) {
     dim& d = buf.mutable_dim(permutation ? permutation[i] : i);
     d.set_stride(stride);
     stride *= d.extent() + (padding ? padding[i] : 0);
