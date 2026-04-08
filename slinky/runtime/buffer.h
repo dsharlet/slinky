@@ -667,12 +667,15 @@ public:
       assert(dims < &dims_storage[DimsSize]);
       dims -= 1;
       rank += 1;
+      dims[0] = dim;
     } else if (d <= rank) {
       assert(&dims_storage[0] <= dims && dims + rank + 1 <= &dims_storage[DimsSize]);
       std::copy_backward(dims + d, dims + rank, dims + rank + 1);
       rank += 1;
+      dims[d] = dim;
+    } else {
+      mutable_dim(d) = dim;
     }
-    this->mutable_dim(d) = dim;
     return *this;
   }
 

@@ -132,7 +132,7 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
   std::size_t unknown_begin = rank;
   std::size_t unknown_end = 0;
   for (std::size_t i = 0; i < rank; ++i) {
-    slinky::dim& dim_i = mutable_dim(i);
+    slinky::dim& dim_i = this->dims[i];
     if (dim_i.stride() == 0) continue;
 
     index_t alloc_extent_i = alloc_extent(dim_i);
@@ -149,7 +149,7 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
   }
 
   for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
-    slinky::dim& dim_i = mutable_dim(i);
+    slinky::dim& dim_i = this->dims[i];
     if (dim_i.stride() != dim::auto_stride) continue;
 
     const index_t alloc_extent_i = alloc_extent(dim_i);
@@ -335,14 +335,14 @@ void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
       dst.crop(d, dst_d.min(), src_d.min() - 1);
       copy_impl(pad, dst);
       dst.base = dst_base;
-      dst.mutable_dim(d) = dst_d;
+      dst.dims[d] = dst_d;
     }
     if (dst_d.max() > src_d.max()) {
       // There's padding after the max in this dimension.
       dst.crop(d, src_d.max() + 1, dst_d.max());
       copy_impl(pad, dst);
       dst.base = dst_base;
-      dst.mutable_dim(d) = dst_d;
+      dst.dims[d] = dst_d;
     }
     // Crop off the padded areas we've filled in this dimension.
     dst.crop(d, src_d.min(), src_d.max());
@@ -406,7 +406,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
 
   raw_buffer src = {nullptr, dst.elem_size, dst.rank, SLINKY_ALLOCA(dim, dst.rank)};
   for (std::size_t d = 0; d < dst.rank; ++d) {
-    src.mutable_dim(d) = {in_bounds[d].min(), in_bounds[d].max(), 0, in_bounds[d].fold_factor()};
+    src.dims[d] = {in_bounds[d].min(), in_bounds[d].max(), 0, in_bounds[d].fold_factor()};
   }
 
   raw_buffer pad_opt = pad;
