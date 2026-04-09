@@ -298,7 +298,10 @@ public:
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
   void slice(span<const std::size_t> ds) {
-    if (ds.size() == 1) return slice(ds[0]);
+    if (ds.size() == 1) {
+      slice(ds[0]);
+      return;
+    }
 
     // Handle any slices of leading dimensions by just incrementing the dims pointer.
     std::size_t slice_leading = 0;
@@ -366,10 +369,10 @@ public:
         base = nullptr;
       }
     }
-    return slice(d);
+    slice(d);
   }
 
-  // This overload assumes that `at` is in bounds and that the buffer is non-null.
+  // This overload assumes that `at` is in bounds and that the buffer is non-null (it was in-bounds before too).
   void slice(std::size_t d, in_bounds at, bool assert_unfolded = false) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
@@ -381,7 +384,7 @@ public:
     assert(dim_d.contains(at.x));
     base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at.x, assert_unfolded));
 
-    return slice(d);
+    slice(d);
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
