@@ -279,21 +279,19 @@ public:
   }
 
   template <typename... Offsets>
-  raw_buffer& translate(index_t o0, Offsets... offsets) {
+  void translate(index_t o0, Offsets... offsets) {
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
-    return *this;
   }
-  raw_buffer& translate(span<const index_t> offsets) {
+  void translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
     }
-    return *this;
   }
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
-  raw_buffer& slice(span<const std::size_t> ds) {
+  void slice(span<const std::size_t> ds) {
     if (ds.size() == 1) return slice(ds[0]);
 
     // Handle any slices of leading dimensions by just incrementing the dims pointer.
@@ -325,18 +323,16 @@ public:
 
     dims += slice_leading;
     rank -= slice_total;
-
-    return *this;
   }
-  raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }
+  void slice(std::initializer_list<std::size_t> ds) { slice({&*ds.begin(), ds.size()}); }
 
   // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
-  raw_buffer& slice(std::size_t d) {
+  void slice(std::size_t d) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
-      return *this;
+      return;
     }
 
     rank -= 1;
@@ -349,12 +345,11 @@ public:
         dims[i] = dims[i + 1];
       }
     }
-    return *this;
   }
-  raw_buffer& slice(std::size_t d, index_t at) {
+  void slice(std::size_t d, index_t at) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
-      return *this;
+      return;
     }
 
     if (base != nullptr) {
@@ -370,10 +365,10 @@ public:
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
   // Updates the base pointer to point to the new min.
-  raw_buffer& crop(std::size_t d, index_t min, index_t max) {
+  void crop(std::size_t d, index_t min, index_t max) {
     if (d >= rank) {
       // Cropping a broadcast dimension is a no-op.
-      return *this;
+      return;
     }
     slinky::dim& dim_d = dims[d];
     min = std::max(min, dim_d.min());
@@ -391,7 +386,6 @@ public:
     }
 
     dim_d.set_bounds(min, max);
-    return *this;
   }
 
   std::size_t size_bytes() const;
