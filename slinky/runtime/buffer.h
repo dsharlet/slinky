@@ -154,6 +154,11 @@ using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 static constexpr struct {
 } slice;
 
+// This wrapper indicates that its value should be assumed to be in bounds.
+struct in_bounds {
+  index_t x;
+};
+
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
 // 2. We want to store metadata (dimensions) efficiently.
@@ -360,6 +365,21 @@ public:
         base = nullptr;
       }
     }
+    return slice(d);
+  }
+
+  // This overload assumes that `at` is in bounds and that the buffer is non-null.
+  void slice(std::size_t d, in_bounds at) {
+    if (d >= rank) {
+      // slicing a broadcast dimension is a no-op.
+      return;
+    }
+
+    assert(base);
+    const slinky::dim& dim_d = dims[d];
+    assert(dim_d.contains(at.x));
+    base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at.x));
+
     return slice(d);
   }
 
