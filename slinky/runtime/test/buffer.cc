@@ -255,6 +255,9 @@ TEST(buffer, broadcast_slice_crop) {
   sliced.slice(2, 5);
   ASSERT_EQ(sliced.rank, 2);
 
+  sliced.slice(2, in_bounds{5});
+  ASSERT_EQ(sliced.rank, 2);
+
   // Cropping a dimension >= rank is a no-op.
   raw_buffer cropped = buf;
   cropped.crop(2, 0, 5);
@@ -490,7 +493,7 @@ TEST(buffer, slice_at) {
   ASSERT_EQ(sliced.dim(1), buf.dim(2));
   ASSERT_EQ(&sliced(0, 0), &buf(0, 2, 0));
 
-  sliced.slice(/*dim=*/0, /*at=*/1);
+  sliced.slice(/*dim=*/0, /*at=*/in_bounds{1});
   ASSERT_EQ(sliced.rank, 1);
   ASSERT_EQ(sliced.dim(0), buf.dim(2));
   ASSERT_EQ(&sliced(0), &buf(1, 2, 0));

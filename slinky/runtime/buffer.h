@@ -120,9 +120,10 @@ public:
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
-  std::ptrdiff_t flat_offset_bytes(index_t i) const {
+  SLINKY_INLINE std::ptrdiff_t flat_offset_bytes(index_t i, bool assert_unfolded = false) const {
     assert(contains(i));
-    if (stride() == 0 || fold_factor() == unfolded) {
+    assert(fold_factor() == unfolded || !assert_unfolded);
+    if (stride() == 0 || fold_factor() == unfolded || assert_unfolded) {
       return (i - min()) * stride();
     } else {
       return euclidean_mod_positive_modulus(i, fold_factor()) * stride();
@@ -153,6 +154,11 @@ using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 // This value allows expressing `at` and `address_at` arguments that slice that dimension.
 static constexpr struct {
 } slice;
+
+// This wrapper indicates that its value should be assumed to be in bounds.
+struct in_bounds {
+  index_t x;
+};
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -279,22 +285,23 @@ public:
   }
 
   template <typename... Offsets>
-  raw_buffer& translate(index_t o0, Offsets... offsets) {
+  void translate(index_t o0, Offsets... offsets) {
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
-    return *this;
   }
-  raw_buffer& translate(span<const index_t> offsets) {
+  void translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
     }
-    return *this;
   }
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
-  raw_buffer& slice(span<const std::size_t> ds) {
-    if (ds.size() == 1) return slice(ds[0]);
+  void slice(span<const std::size_t> ds) {
+    if (ds.size() == 1) {
+      slice(ds[0]);
+      return;
+    }
 
     // Handle any slices of leading dimensions by just incrementing the dims pointer.
     std::size_t slice_leading = 0;
@@ -325,18 +332,16 @@ public:
 
     dims += slice_leading;
     rank -= slice_total;
-
-    return *this;
   }
-  raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }
+  void slice(std::initializer_list<std::size_t> ds) { slice({&*ds.begin(), ds.size()}); }
 
   // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
-  raw_buffer& slice(std::size_t d) {
+  void slice(std::size_t d) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
-      return *this;
+      return;
     }
 
     rank -= 1;
@@ -349,31 +354,45 @@ public:
         dims[i] = dims[i + 1];
       }
     }
-    return *this;
   }
-  raw_buffer& slice(std::size_t d, index_t at) {
+  void slice(std::size_t d, index_t at, bool assert_unfolded = false) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
-      return *this;
+      return;
     }
 
     if (base != nullptr) {
       const slinky::dim& dim_d = dims[d];
       if (dim_d.contains(at)) {
-        base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at));
+        base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at, assert_unfolded));
       } else {
         base = nullptr;
       }
     }
-    return slice(d);
+    slice(d);
+  }
+
+  // This overload assumes that `at` is in bounds and that the buffer is non-null (it was in-bounds before too).
+  void slice(std::size_t d, in_bounds at, bool assert_unfolded = false) {
+    if (d >= rank) {
+      // slicing a broadcast dimension is a no-op.
+      return;
+    }
+
+    assert(base);
+    const slinky::dim& dim_d = dims[d];
+    assert(dim_d.contains(at.x));
+    base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at.x, assert_unfolded));
+
+    slice(d);
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
   // Updates the base pointer to point to the new min.
-  raw_buffer& crop(std::size_t d, index_t min, index_t max) {
+  void crop(std::size_t d, index_t min, index_t max) {
     if (d >= rank) {
       // Cropping a broadcast dimension is a no-op.
-      return *this;
+      return;
     }
     slinky::dim& dim_d = dims[d];
     min = std::max(min, dim_d.min());
@@ -391,7 +410,6 @@ public:
     }
 
     dim_d.set_bounds(min, max);
-    return *this;
   }
 
   std::size_t size_bytes() const;
