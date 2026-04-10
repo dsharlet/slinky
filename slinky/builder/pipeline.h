@@ -347,6 +347,13 @@ public:
   bool is_padded_copy() const { return is_padded_copy_; }
 
   stmt make_call() const;
+
+  // Make all output buffers stored at the innermost loop level.
+  void store_outputs_innermost() {
+    for (auto& output : outputs_) {
+      output.buffer->store_at({this, slinky::var()});
+    }
+  }
 };
 
 struct build_options {
