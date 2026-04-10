@@ -348,7 +348,7 @@ public:
 
   stmt make_call() const;
 
-  // Make all output buffer stored at the innermost loop level.
+  // Make all output buffers stored at the innermost loop level.
   void store_innermost() {
     for (auto& output : outputs_) {
       output.buffer->store_at({this, slinky::var()});
