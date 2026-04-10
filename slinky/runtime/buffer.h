@@ -120,10 +120,9 @@ public:
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
-  SLINKY_INLINE std::ptrdiff_t flat_offset_bytes(index_t i, bool assert_unfolded = false) const {
+  SLINKY_INLINE std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(contains(i));
-    assert(fold_factor() == unfolded || !assert_unfolded);
-    if (stride() == 0 || fold_factor() == unfolded || assert_unfolded) {
+    if (stride() == 0 || fold_factor() == unfolded) {
       return (i - min()) * stride();
     } else {
       return euclidean_mod_positive_modulus(i, fold_factor()) * stride();
@@ -355,7 +354,7 @@ public:
       }
     }
   }
-  void slice(std::size_t d, index_t at, bool assert_unfolded = false) {
+  void slice(std::size_t d, index_t at) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
       return;
@@ -364,7 +363,7 @@ public:
     if (base != nullptr) {
       const slinky::dim& dim_d = dims[d];
       if (dim_d.contains(at)) {
-        base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at, assert_unfolded));
+        base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at));
       } else {
         base = nullptr;
       }
@@ -373,7 +372,7 @@ public:
   }
 
   // This overload assumes that `at` is in bounds and that the buffer is non-null (it was in-bounds before too).
-  void slice(std::size_t d, in_bounds at, bool assert_unfolded = false) {
+  void slice(std::size_t d, in_bounds at) {
     if (d >= rank) {
       // slicing a broadcast dimension is a no-op.
       return;
@@ -382,7 +381,7 @@ public:
     assert(base);
     const slinky::dim& dim_d = dims[d];
     assert(dim_d.contains(at.x));
-    base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at.x, assert_unfolded));
+    base = offset_bytes_non_null(base, dim_d.flat_offset_bytes(at.x));
 
     slice(d);
   }
