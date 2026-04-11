@@ -739,7 +739,7 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
 // Fuse two dimensions of a buffer.
 inline slinky::dim fuse(slinky::dim inner, const slinky::dim& outer) {
   assert(can_fuse(inner, outer));
-  if (outer == dim::broadcast()) {
+  if (outer.is_broadcast()) {
     return outer;
   } else {
     const index_t inner_extent = inner.extent();
