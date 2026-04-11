@@ -137,7 +137,7 @@ public:
   bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }
   bool is_folded() const { return is_folded(min(), max()); }
 
-  bool is_broadcast() const { return min() == 0 && max() == 0 && stride() == 0 && fold_factor() == 0; }
+  bool is_broadcast() const { return min() == 0 && max() == 0 && stride() == 0; }
 };
 
 inline constexpr dim dim::broadcast_{0, 0, 0, 0};
