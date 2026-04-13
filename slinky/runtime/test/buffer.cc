@@ -1017,9 +1017,9 @@ TEST(buffer, copy_empty_src) {
   }
 }
 
-TEST(can_fuse, empty) {
-  ASSERT_FALSE(can_fuse(dim{0, -1, 0}, dim::broadcast()));
-}
+TEST(can_fuse, empty) { ASSERT_FALSE(can_fuse(dim{0, -1, 0}, dim::broadcast())); }
+TEST(can_fuse, non_broadcast_extent_1) { ASSERT_TRUE(can_fuse(dim{0, 3, 1}, dim{0, 0, 4, dim::unfolded})); }
+TEST(can_fuse, broadcast_extent_1) { ASSERT_FALSE(can_fuse(dim{0, 3, 1}, dim{0, 0, 0, dim::unfolded})); }
 
 TEST(fuse_contiguous_dims, fuse0) {
   buffer<int, 1> a({}), b({});

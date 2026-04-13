@@ -728,7 +728,7 @@ void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (inner.empty()) return false;
-  if (outer.min() == outer.max() && outer.fold_factor() != 0) return true;
+  if (outer.min() == outer.max() && outer.stride() != 0) return true;
 
   index_t next_stride = inner.stride() * (inner.max() - inner.min() + 1);
   if (next_stride != outer.stride()) return false;
