@@ -446,7 +446,12 @@ public:
   }
 
   void visit(const transpose* n) override {
-    *this << indent() << n->sym << " = transpose(" << n->src << ", {" << n->dims << "}) {";
+    *this << indent() << n->sym << " = transpose(" << n->src << ", {";
+    for (std::size_t i = 0; i < n->dims.size(); ++i) {
+      if (i > 0) *this << ", ";
+      *this << (n->dims[i] == transpose::new_dim ? -1 : n->dims[i]);
+    }
+    *this << "}) {";
     *this << n->body;
     *this << indent() << "}";
   }
@@ -526,7 +531,7 @@ std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
 }
 
 std::ostream& operator<<(std::ostream& os, const dim& d) {
-  if (d == dim::broadcast()) {
+  if (d.is_broadcast()) {
     return os << "{}";
   }
   os << "{min=" << d.min() << ", max=" << d.max() << ", extent=" << d.extent() << ", stride=" << d.stride();

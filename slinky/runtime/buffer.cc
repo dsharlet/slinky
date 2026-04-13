@@ -324,7 +324,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
 void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
   for (int d = static_cast<int>(std::min(src.rank, dst.rank)) - 1; d >= 0; --d) {
     const slinky::dim& src_d = src.dim(d);
-    if (src_d == slinky::dim::broadcast()) {
+    if (src_d.is_broadcast()) {
       continue;
     }
     // TODO: Try to implement this without saving and restoring the dst buffer between each crop.

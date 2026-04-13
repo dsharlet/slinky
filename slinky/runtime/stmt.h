@@ -402,6 +402,8 @@ public:
   std::vector<int> dims;
   stmt body;
 
+  static constexpr int new_dim = std::numeric_limits<int>::max();
+
   static bool is_truncate(span<const int> dims);
   bool is_truncate() const;
 

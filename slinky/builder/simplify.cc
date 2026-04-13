@@ -1756,7 +1756,7 @@ public:
         }
 
         // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
-        // original buffer.
+        // original buffer, or a broadcast.
         // TODO: This could probably be built into the slice check above.
         std::vector<int> permutation;
         auto is_transpose = [&]() {
@@ -1766,6 +1766,8 @@ public:
             int dim = is_buffer_dim(info.dims[d], *src_buf);
             if (dim >= 0) {
               permutation.push_back(dim);
+            } else if (prove_constant_true(info.dims[d].is_broadcast())) {
+              permutation.push_back(transpose::new_dim);
             } else {
               return false;
             }
