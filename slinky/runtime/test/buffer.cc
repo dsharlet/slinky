@@ -1257,16 +1257,44 @@ TEST(fuse_contiguous_dims, cant_fuse_mismatched_bounds) {
   ASSERT_EQ(b.rank, 2);
 }
 
-TEST(optimize_dims, fuse_broadcasted) {
-  buffer<int, 3> a({1, 4, 1}), b({1, 6, 1});
+TEST(optimize_dims, trailing_extent_1) {
+  buffer<int, 3> a({6, 1, 1}), b({3});
 
   ASSERT_EQ(optimize_dims(a, b), 2);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
-  ASSERT_EQ(a.dim(0).extent(), 4);
+  ASSERT_EQ(a.dim(0).extent(), 6);
   ASSERT_EQ(a.dim(0).stride(), 4);
-  ASSERT_EQ(b.dim(0).extent(), 6);
+  ASSERT_EQ(b.dim(0).extent(), 3);
   ASSERT_EQ(b.dim(0).stride(), 4);
+}
+
+TEST(optimize_dims, leading_extent_1) {
+  buffer<int, 3> a({1, 1, 6}), b({1, 1, 3});
+
+  ASSERT_EQ(optimize_dims(a, b), 2);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 6);
+  ASSERT_EQ(a.dim(0).stride(), 4);
+  ASSERT_EQ(b.dim(0).extent(), 3);
+  ASSERT_EQ(b.dim(0).stride(), 4);
+}
+
+TEST(optimize_dims, extent_1) {
+  buffer<int, 3> a({2, 1, 6}), b({3, 1, 3});
+
+  ASSERT_EQ(optimize_dims(a, b), 1);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(a.dim(0).extent(), 2);
+  ASSERT_EQ(a.dim(0).stride(), 4);
+  ASSERT_EQ(b.dim(0).extent(), 3);
+  ASSERT_EQ(b.dim(0).stride(), 4);
+  ASSERT_EQ(a.dim(1).extent(), 6);
+  ASSERT_EQ(a.dim(1).stride(), 8);
+  ASSERT_EQ(b.dim(1).extent(), 3);
+  ASSERT_EQ(b.dim(1).stride(), 12);
 }
 
 }  // namespace slinky

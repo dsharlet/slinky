@@ -63,7 +63,7 @@ class dim {
   index_t fold_factor_;
 
   static const dim broadcast_;
-  
+
 public:
   static constexpr index_t auto_stride = std::numeric_limits<index_t>::max();
   static constexpr index_t unfolded = -1;
@@ -842,9 +842,7 @@ SLINKY_INLINE bool attempt_fuse(
   return attempt_fuse(inner, outer, buf, bufs...);
 }
 
-inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) {
-  std::swap(buf.dims[i], buf.dims[j]);
-}
+inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap(buf.dims[i], buf.dims[j]); }
 template <typename... Bufs>
 void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, buf);
@@ -924,23 +922,22 @@ int optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
 }
 template <typename... Bufs>
 int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
-  int fused = 0;
-
   // Remove dimensions of extent 1 from all dimensions in the same position.
-  // TODO: It would be nice to find a way to do this with `fuse_contiguous_dims` and avoid the extra pass over the dimensions.
-  int max_rank = std::max({buf.rank, bufs.rank...});
-  for (int d = 0; d < max_rank;) {
-    const dim& buf_d = buf.dim(d);
-    const index_t at = buf_d.min();
-    if (at == buf_d.max() && internal::all(bufs.dim(d).is_point(at)...)) {
+  // We go from the trailing dimensions first, assuming that extent 1 dimensions are more common there, so it should be
+  // faster to slice them first.
+  // TODO: Find a way to do this with `fuse_contiguous_dims` and avoid the extra pass over the dimensions.
+  const int max_rank = std::max({buf.rank, bufs.rank...});
+  int fused = 0;
+  for (int d = max_rank - 1; d >= 0; --d) {
+    index_t at = buf.dim(d).min();
+    if (internal::all(buf.dim(d).is_point(), bufs.dim(d).is_point(at)...)) {
       buf.slice(d, at);
       (bufs.slice(d, at), ...);
       ++fused;
-      --max_rank;
-    } else {
-      ++d;
     }
   }
+
+  fused += fuse_contiguous_dims(buf, bufs...);
 
   // The order of operations here is for performance: It's a lot faster to fuse dimensions than sort them. So we fuse
   // what we can before sorting, then if the sorting changed the order of the dimensions, attempt to fuse again.
