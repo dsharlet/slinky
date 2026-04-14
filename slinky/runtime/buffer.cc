@@ -516,7 +516,7 @@ SLINKY_INLINE bool use_nonlinear_loop(span<const raw_buffer*, BufsSize> bufs, st
       // Broadcast dimension.
       continue;
     }
-    const dim& buf_n_dim = buf_n.dim(d);
+    const dim& buf_n_dim = buf_n.dims[d];
     if (buf_n_dim.is_folded(buf_dim)) {
       // There's a folded buffer, we need a folded loop.
       return true;
@@ -648,7 +648,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
         }
         const dim& dim_n = *dims[n];
         assert(!dim_n.is_folded(i, max_i));
-        if (dim_n.fold_factor() == 0) {
+        if (dim_n.stride() == 0) {
           bases_i[n] = bases[n];
         } else if (dim_n.contains(i)) {
           // This interval starts out non-null, but could become null before the end of the interval.

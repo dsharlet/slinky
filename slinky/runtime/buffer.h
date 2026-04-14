@@ -116,7 +116,7 @@ public:
   }
 
   // Returns true if the interval [a, b] is in bounds of this dimension.
-  bool contains(index_t a, index_t b) const { return fold_factor_ == 0 || (min() <= a && b <= max()); }
+  bool contains(index_t a, index_t b) const { return stride_ == 0 || (min() <= a && b <= max()); }
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
