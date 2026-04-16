@@ -138,6 +138,9 @@ public:
   bool is_folded() const { return is_folded(min(), max()); }
 
   bool is_broadcast() const { return min() == 0 && max() == 0 && stride() == 0; }
+
+  bool is_point() const { return min() == max(); }
+  bool is_point(index_t x) const { return min() == x && max() == x; }
 };
 
 inline constexpr dim dim::broadcast_{0, 0, 0, 0};
@@ -846,6 +849,11 @@ void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, bufs...);
 }
 
+template <typename... Args>
+bool all(Args... args) {
+  return (... && args);
+}
+
 }  // namespace internal
 
 // Jointly sort the dimensions of all buffers such that the strides of the first buffer are in ascending order.
@@ -914,10 +922,30 @@ int optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
 }
 template <typename... Bufs>
 int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
-  int fused = fuse_contiguous_dims(buf, bufs...);
+  // Remove dimensions of extent 1 from all dimensions in the same position.
+  // We go from the trailing dimensions first, assuming that extent 1 dimensions are more common there, so it should be
+  // faster to slice them first.
+  // TODO: Find a way to do this with `fuse_contiguous_dims` and avoid the extra pass over the dimensions.
+  const int max_rank = std::max({buf.rank, bufs.rank...});
+  int fused = 0;
+  for (int d = max_rank - 1; d >= 0; --d) {
+    index_t at = buf.dim(d).min();
+    if (internal::all(buf.dim(d).is_point(), bufs.dim(d).is_point(at)...)) {
+      buf.slice(d, at);
+      (bufs.slice(d, at), ...);
+      ++fused;
+    }
+  }
+
+  fused += fuse_contiguous_dims(buf, bufs...);
+
+  // The order of operations here is for performance: It's a lot faster to fuse dimensions than sort them. So we fuse
+  // what we can before sorting, then if the sorting changed the order of the dimensions, attempt to fuse again.
+  fused += fuse_contiguous_dims(buf, bufs...);
   if (sort_dims(buf, bufs...)) {
     fused += fuse_contiguous_dims(buf, bufs...);
   }
+
   return fused;
 }
 
