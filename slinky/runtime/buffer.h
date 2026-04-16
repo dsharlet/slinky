@@ -63,7 +63,7 @@ class dim {
   index_t fold_factor_;
 
   static const dim broadcast_;
-  
+
 public:
   static constexpr index_t auto_stride = std::numeric_limits<index_t>::max();
   static constexpr index_t unfolded = -1;
@@ -839,9 +839,7 @@ SLINKY_INLINE bool attempt_fuse(
   return attempt_fuse(inner, outer, buf, bufs...);
 }
 
-inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) {
-  std::swap(buf.dims[i], buf.dims[j]);
-}
+inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap(buf.dims[i], buf.dims[j]); }
 template <typename... Bufs>
 void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, buf);
@@ -986,6 +984,13 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
 // `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
+  if (buf.rank == 0) {
+    // Skip the overhead of our machinery for rank 0 buffers.
+    f(reinterpret_cast<typename Buf::pointer>(buf.raw_buffer::base),
+        reinterpret_cast<typename Bufs::pointer>(bufs.raw_buffer::base)...);
+    return;
+  }
+
   static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
