@@ -1074,6 +1074,10 @@ TEST(simplify, transpose) {
       matches(crop_buffer::make(
           b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))));
 
+  // Outer dim index exceeds the inner transpose's dims size; out-of-bounds dims become new_dim.
+  ASSERT_THAT(simplify(transpose::make(b1, b0, {1, 0}, transpose::make(b2, b1, {0, 2, 1}, dummy_call({}, {b2})))),
+      matches(transpose::make(b2, b0, {1, transpose::new_dim, 0}, dummy_call({}, {b2}))));
+
   // Transposes that put trailing broadcasts at the end of the buffer should be dropped.
   ASSERT_THAT(simplify(block::make(
                   {check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0, 3, 2}, dummy_call({}, {b1}))})),

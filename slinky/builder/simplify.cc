@@ -2286,7 +2286,7 @@ public:
       if (const transpose* t = (*src_info)->decl.as<transpose>()) {
         if (t->sym == src) {
           // This is a transpose of another transpose. Rewrite this to directly transpose the parent.
-          dims = permute(dims, t->dims);
+          dims = permute(dims, t->dims, transpose::new_dim);
           src = t->src;
           src_info = &buffers[src];
           continue;

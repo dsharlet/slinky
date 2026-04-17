@@ -178,10 +178,10 @@ public:
 };
 
 template <typename T>
-std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
+std::vector<T> permute(span<const int> p, const std::vector<T>& x, T default_value = T()) {
   std::vector<T> result(p.size());
   for (std::size_t i = 0; i < p.size(); ++i) {
-    result[i] = x[p[i]];
+    result[i] = static_cast<std::size_t>(p[i]) < x.size() ? x[p[i]] : default_value;
   }
   return result;
 }
