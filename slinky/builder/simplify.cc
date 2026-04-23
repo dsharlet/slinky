@@ -1294,9 +1294,8 @@ public:
           result = crop->body;
           expr_info info_of_min, info_of_max;
           mutate(crop->bounds, &info_of_min, &info_of_max);
-          interval_expr crop_bounds = info_of_min.bounds | info_of_max.bounds;
-          // If the original loop was empty, we need to hack the crop bounds to produce an empty buffer.
-          crop_bounds.min = select(bounds.max < bounds.min, crop_bounds.max + 1, crop_bounds.min);
+          // The union of all crop intervals over the loop is [min of lower bounds, max of upper bounds].
+          interval_expr crop_bounds = {info_of_min.bounds.min, info_of_max.bounds.max};
           new_crops.emplace_back(crop->sym, crop->src, crop->dim, std::move(crop_bounds));
         } else {
           // This crop was not contiguous, we can't drop the loop.
@@ -1444,7 +1443,9 @@ public:
       // union of the bounds covered by the loop.
       stmt result = drop_loop(body, op->sym, bounds, step);
       if (!result.same_as(body)) {
-        set_result(mutate(result));
+        // Here we make the bounds of the loop such that the loop runs 0 or 1 times, depending on if the loop was empty.
+        bounds = {bounds.min > bounds.max, 0};
+        set_result(mutate(loop::make(op->sym, max_workers, bounds, 1, result)));
         return;
       }
     }
@@ -2007,7 +2008,7 @@ public:
         result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }
-    
+
     // The default value of the buffer bounds is the min/max of the buffer itself.
     expr buf_min = buffer.min.defined() ? buffer.min : buffer_min(buf, dim);
     expr buf_max = buffer.max.defined() ? buffer.max : buffer_max(buf, dim);
@@ -2077,7 +2078,6 @@ public:
       }
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
-
 
     // Remove trailing undefined bounds.
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
