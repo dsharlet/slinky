@@ -1068,6 +1068,7 @@ TEST(copy_pipeline, padded_stencil) {
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
+  auto added = buffer_expr::make(ctx, "added", 2, sizeof(short));
   auto padded = buffer_expr::make(ctx, "padded", 2, sizeof(short));
   auto stencil = buffer_expr::make(ctx, "stencil", 3, sizeof(short));
 
@@ -1075,8 +1076,10 @@ TEST(copy_pipeline, padded_stencil) {
   var y(ctx, "y");
   var k(ctx, "k");
 
+  func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{added, {x, y}}});
+
   func pad = func::make_copy(
-      {in, {point(x), point(y)}, in->bounds()}, {padded, {x, y}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)});
+      {added, {point(x), point(y)}, in->bounds()}, {padded, {x, y}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)});
 
   func stencil_copy = func::make_copy({padded, {point(x), point(y + k - 1)}}, {stencil, {x, y, k}});
 
@@ -1103,7 +1106,7 @@ TEST(copy_pipeline, padded_stencil) {
       for (int dk = 0; dk <= 2; ++dk) {
         int sy = y + dk - 1;
         if (0 <= sy && sy < H) {
-          correct += in_buf(x, sy);
+          correct += in_buf(x, sy) + 1;
         }
       }
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
