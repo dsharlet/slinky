@@ -428,6 +428,15 @@ class copy_aliaser : public stmt_mutator {
     return true;
   }
 
+  void substitute_bounds_into_allocs(var sym, var src, const std::vector<dim_expr>& dims) {
+    for (std::optional<buffer_info>& i : buffers) {
+      if (!i) continue;
+      for (dim_expr& d : i->dims) {
+        d.bounds = substitute_buffer(d.bounds, sym, dims, src);
+      }
+    }
+  }
+
 public:
   copy_aliaser(
       node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
@@ -471,6 +480,11 @@ public:
       i.stride = expr();
       i.fold_factor = expr();
     }
+    
+    // We're leaving this scope, we should substitute any uses of this buffer's bounds in other buffers with the values
+    // of those bounds.
+    substitute_bounds_into_allocs(op->sym, var(), op_dims_bounds);
+
     if (info.producers > 1) {
       // Don't try to alias a buffer with more than one producer (e.g. copies that concatenate).
       // TODO: We might be able to handle this case, if all the producers have a compatible alias with the same target?
@@ -835,15 +849,6 @@ public:
     merge_buffer_info(old_buffers, op->sym, op->src, handler);
   }
 
-  void substitute_crop_into_allocs(var sym, var src, const std::vector<dim_expr>& dims) {
-    for (std::optional<buffer_info>& i : buffers) {
-      if (!i) continue;
-      for (dim_expr& d : i->dims) {
-        d.bounds = substitute_buffer(d.bounds, sym, dims, src);
-      }
-    }
-  }
-
   void visit(const slice_buffer* op) override {
     visit_buffer_mutator(op, [=](alias_info& alias) {
       for (std::size_t d = 0; d < op->at.size(); ++d) {
@@ -864,7 +869,7 @@ public:
     for (std::size_t i = 0; i < subs.size(); ++i) {
       subs[i].bounds = op->bounds[i] & buffer_bounds(op->src, i);
     }
-    substitute_crop_into_allocs(op->sym, op->src, subs);
+    substitute_bounds_into_allocs(op->sym, op->src, subs);
   }
 
   void visit(const crop_dim* op) override {
@@ -872,7 +877,7 @@ public:
 
     std::vector<dim_expr> subs(op->dim + 1);
     subs[op->dim].bounds = op->bounds & buffer_bounds(op->src, op->dim);
-    substitute_crop_into_allocs(op->sym, op->src, subs);
+    substitute_bounds_into_allocs(op->sym, op->src, subs);
   }
 
   void visit(const clone_buffer* op) override {
