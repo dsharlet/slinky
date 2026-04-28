@@ -30,6 +30,12 @@ namespace slinky {
 
 namespace {
 
+std::vector<int> iota(int size) {
+  std::vector<int> result(size);
+  std::iota(result.begin(), result.end(), 0);
+  return result;
+}
+
 // A select that simplifies assuming that if t or f are undefined, the value can be anything.
 expr select_or_undef(const expr& c, expr t, expr f) {
   if (t.defined() && f.defined()) {
@@ -160,17 +166,17 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
 
 bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_dim) {
   // We might not have an src dim if we're trying to broadcast.
-  expr src_x = src_d >= 0 ? op->src_x[src_d] : expr();
+  expr src_x = src_d != transpose::new_dim ? op->src_x[src_d] : expr();
   return is_copy(op->src, src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim);
 }
 
 // `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,
 // where it is a broadcast.
 bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
-  src_d = -1;
+  src_d = transpose::new_dim;
   for (int i = 0; i < static_cast<int>(op->src_x.size()); ++i) {
     if (depends_on(op->src_x[i], op->dst_x[dst_d]).any()) {
-      if (src_d == -1) {
+      if (src_d == transpose::new_dim) {
         src_d = i;
       } else {
         // dst_x[dst_d] is used by more than one src, we can't handle it with a copy.
@@ -384,18 +390,16 @@ class copy_aliaser : public stmt_mutator {
       } else if (!target_has_stride) {
         if (!alloc_info.dims[d].stride.defined()) continue;
         int target_d = alias.permutation[d];
-        if (target_d >= 0) {
-          if (target_d < static_cast<int>(target_stride.size())) {
-            expr& target_stride_d = target_stride[target_d];
-            if (target_stride_d.defined() && !prove_true(target_stride_d == alloc_info.dims[d].stride)) {
-              // We tried to set the same dimension to two different strides.
-              return false;
-            }
-            target_stride_d = alloc_info.dims[d].stride;
-          } else if (!prove_true(alloc_info.dims[d].stride == 0)) {
-            // This dimension must have stride 0, or we can't alias an implicit broadcast.
+        if (target_d < static_cast<int>(target_stride.size())) {
+          expr& target_stride_d = target_stride[target_d];
+          if (target_stride_d.defined() && !prove_true(target_stride_d == alloc_info.dims[d].stride)) {
+            // We tried to set the same dimension to two different strides.
             return false;
           }
+          target_stride_d = alloc_info.dims[d].stride;
+        } else if (!prove_true(alloc_info.dims[d].stride == 0)) {
+          // This dimension must have stride 0, or we can't alias an implicit broadcast.
+          return false;
         }
       } else {
         // There are strides on both the allocation and the target, they must be equal.
@@ -480,7 +484,7 @@ public:
       i.stride = expr();
       i.fold_factor = expr();
     }
-    
+
     // We're leaving this scope, we should substitute any uses of this buffer's bounds in other buffers with the values
     // of those bounds.
     substitute_bounds_into_allocs(op->sym, var(), op_dims_bounds);
@@ -521,14 +525,13 @@ public:
               ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
           target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
           alloc_var = target_info->shared_alloc_sym;
-          assert(target_info->dims.size() == alias.at.size());
-          for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
+          for (std::size_t d = 0; d < alias.permutation.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
             // starts.
-            int alias_d = alias.permutation[d];
-            if (alias_d >= 0) {
-              target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
+            int target_d = alias.permutation[d];
+            if (target_d < static_cast<int>(target_info->dims.size())) {
+              target_info->dims[target_d].bounds |= alias.at[target_d] + min_extent(0, alias.dims[d].bounds.extent());
             }
           }
         } else if (!any_stride_defined(target_info->dims) && !alias.is_contiguous_copy) {
@@ -536,19 +539,17 @@ public:
           // The target doesn't have any strides, we might have some strides we assumed we could propagate.
           for (std::size_t d = 0; d < info.dims.size(); ++d) {
             if (!info.dims[d].stride.defined()) continue;
-            int alias_d = alias.permutation[d];
-            if (alias_d >= 0) {
-              if (alias_d >= static_cast<int>(target_info->dims.size())) {
-                assert(prove_true(info.dims[d].stride) == 0);
-              } else if (target_info->dims[alias_d].stride.defined()) {
-                assert(prove_true(info.dims[d].stride == target_info->dims[alias_d].stride));
-              } else if (is_constant(info.dims[d].stride, 0)) {
-                // TODO(dsharlet|vksnk): stride 0 has a special meaning (i.e. that dim is broadcasted), so
-                // it might be incorrect to propagate it to the target buffer in some cases (this is an
-                // actual bug we're hitting). This is a workaround and it's possible there is a better solution.
-              } else {
-                target_info->dims[alias_d].stride = info.dims[d].stride;
-              }
+            int target_d = alias.permutation[d];
+            if (target_d >= static_cast<int>(target_info->dims.size())) {
+              assert(prove_true(info.dims[d].stride) == 0);
+            } else if (target_info->dims[target_d].stride.defined()) {
+              assert(prove_true(info.dims[d].stride == target_info->dims[target_d].stride));
+            } else if (is_constant(info.dims[d].stride, 0)) {
+              // TODO(dsharlet|vksnk): stride 0 has a special meaning (i.e. that dim is broadcasted), so
+              // it might be incorrect to propagate it to the target buffer in some cases (this is an
+              // actual bug we're hitting). This is a workaround and it's possible there is a better solution.
+            } else {
+              target_info->dims[target_d].stride = info.dims[d].stride;
             }
           }
         }
@@ -670,7 +671,7 @@ public:
     alias_info a;
     a.target = op->src;
     a.at = op->src_x;
-    a.permutation.resize(info->dims.size());
+    a.permutation.assign(info->dims.size(), transpose::new_dim);
     a.dims.resize(info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
@@ -723,7 +724,7 @@ public:
     a.target = op->dst;
     a.at.resize(op->dst_x.size());
     a.dims.resize(op->src_x.size());
-    a.permutation.resize(op->dst_x.size());
+    a.permutation.assign(info->dims.size(), transpose::new_dim);
     assert(op->src_x.size() >= info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
@@ -731,7 +732,7 @@ public:
         return;
       }
 
-      if (src_d < 0) {
+      if (src_d == transpose::new_dim) {
         // We can't handle a broadcast here, because we can't ask the producer of our src to produce more dimensions.
         return;
       }
@@ -752,11 +753,11 @@ public:
             buffer_fold_factor(op->dst, dst_d),
         };
         a.at[dst_d] = info->dims[src_d].bounds.min - offset;
+        a.permutation[src_d] = dst_d;
       } else {
         a.dims[src_d] = dim::broadcast();
         a.at[dst_d] = -offset;
       }
-      a.permutation[dst_d] = src_d;
     }
 
     for (const dim_expr& d : a.dims) {
@@ -779,23 +780,40 @@ public:
     alias_copy_src(op);
   }
 
-  void merge_buffer_info(
-      symbol_map<buffer_info>& old_buffers, var sym, var src, function_ref<void(alias_info&)> handler) {
+  void merge_buffer_info(symbol_map<buffer_info>& old_buffers, var sym, var src,
+      function_ref<void(alias_info&)> handler, span<const int> dim_map) {
+    // Build sub_dims to substitute buffer metadata of sym with the corresponding src dimensions.
+    // dim_map remaps dimensions: sym.dim[d] corresponds to src.dim[dim_map[d]].
+    std::vector<dim_expr> sub_dims(dim_map.size());
+    for (std::size_t d = 0; d < dim_map.size(); ++d) {
+      sub_dims[d] = {
+          buffer_bounds(src, dim_map[d]),
+          buffer_stride(src, dim_map[d]),
+          buffer_fold_factor(src, dim_map[d]),
+      };
+    }
+
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       for (auto& a : i->aliases) {
         if (a.target == sym) {
           handler(a);
         }
-        // We need to substitute uses of sym with uses of src in the aliases we added here.
+        // Substitute buffer metadata of sym with the corresponding src dimensions.
         for (dim_expr& d : a.dims) {
-          d.bounds = substitute(d.bounds, sym, src);
-          d.stride = substitute(d.stride, sym, src);
-          d.fold_factor = substitute(d.fold_factor, sym, src);
+          d = substitute_buffer(d, sym, sub_dims, src);
+        }
+        a.elem_size = substitute_buffer(a.elem_size, sym, sub_dims, src);
+        for (expr& at : a.at) {
+          at = substitute_buffer(at, sym, sub_dims, src);
+        }
+        // Substitute remaining non-buffer references to sym.
+        for (dim_expr& d : a.dims) {
+          d = substitute(d, sym, src);
         }
         a.elem_size = substitute(a.elem_size, sym, src);
-        for (expr& i : a.at) {
-          i = substitute(i, sym, src);
+        for (expr& at : a.at) {
+          at = substitute(at, sym, src);
         }
       }
     }
@@ -828,14 +846,13 @@ public:
   }
 
   template <typename T>
-  void visit_buffer_mutator(const T* op, function_ref<void(alias_info&)> handler) {
+  void visit_buffer_mutator(const T* op, function_ref<void(alias_info&)> handler, span<const int> dim_map) {
     // We need to know which alias candidates are added inside this mutator.
     symbol_map<buffer_info> old_buffers(buffers.size());
     std::swap(old_buffers, buffers);
     // Copy the buffer info, but not alias candidates, we'll copy those back later below.
     for (std::size_t i = 0; i < old_buffers.size(); ++i) {
       if (old_buffers[i]) {
-        // TODO: I think slices need to slice this info here, and unslice it upon exiting this mutator.
         buffers[i] = buffer_info(
             old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
         buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
@@ -846,24 +863,52 @@ public:
     stmt_mutator::visit(op);
 
     scoped_trace trace("visit_buffer_mutator");
-    merge_buffer_info(old_buffers, op->sym, op->src, handler);
+    merge_buffer_info(old_buffers, op->sym, op->src, handler, dim_map);
   }
 
   void visit(const slice_buffer* op) override {
-    visit_buffer_mutator(op, [=](alias_info& alias) {
-      for (std::size_t d = 0; d < op->at.size(); ++d) {
-        if (!op->at[d].defined()) continue;
-        alias.at.insert(alias.at.begin() + d, op->at[d]);
-      }
-    });
+    // Build dim_map: sym has fewer dims than src (sliced dims removed).
+    std::size_t src_rank = buffers[op->src] ? buffers[op->src]->dims.size() : 0;
+    std::vector<int> dim_map;
+    for (std::size_t d = 0; d < src_rank; ++d) {
+      if (d < op->at.size() && op->at[d].defined()) continue;
+      dim_map.push_back(d);
+    }
+    visit_buffer_mutator(
+        op,
+        [=](alias_info& alias) {
+          for (std::size_t d = 0; d < op->at.size(); ++d) {
+            if (!op->at[d].defined()) continue;
+            alias.at.insert(alias.at.begin() + d, op->at[d]);
+            for (int& p : alias.permutation) {
+              if (p >= static_cast<int>(d)) ++p;
+            }
+          }
+        },
+        dim_map);
   }
 
   void visit(const slice_dim* op) override {
-    visit_buffer_mutator(op, [=](alias_info& alias) { alias.at.insert(alias.at.begin() + op->dim, op->at); });
+    // Build dim_map: sym.dim[d] = src.dim[d < op->dim ? d : d + 1].
+    std::size_t src_rank = buffers[op->src] ? buffers[op->src]->dims.size() : 0;
+    std::vector<int> dim_map(src_rank > 0 ? src_rank - 1 : 0);
+    for (int d = 0; d < static_cast<int>(dim_map.size()); ++d) {
+      dim_map[d] = d < op->dim ? d : d + 1;
+    }
+    visit_buffer_mutator(
+        op,
+        [=](alias_info& alias) {
+          alias.at.insert(alias.at.begin() + op->dim, op->at);
+          for (int& p : alias.permutation) {
+            if (p >= op->dim) ++p;
+          }
+        },
+        dim_map);
   }
 
   void visit(const crop_buffer* op) override {
-    visit_buffer_mutator(op, [](alias_info&) {});
+    std::size_t rank = buffers[op->src] ? buffers[op->src]->dims.size() : 0;
+    visit_buffer_mutator(op, [](alias_info&) {}, iota(rank));
 
     std::vector<dim_expr> subs(op->bounds.size());
     for (std::size_t i = 0; i < subs.size(); ++i) {
@@ -873,7 +918,8 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    visit_buffer_mutator(op, [](alias_info&) {});
+    std::size_t rank = buffers[op->src] ? buffers[op->src]->dims.size() : 0;
+    visit_buffer_mutator(op, [](alias_info&) {}, iota(rank));
 
     std::vector<dim_expr> subs(op->dim + 1);
     subs[op->dim].bounds = op->bounds & buffer_bounds(op->src, op->dim);
@@ -881,12 +927,29 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    visit_buffer_mutator(op, [](alias_info&) {});
+    std::size_t rank = buffers[op->src] ? buffers[op->src]->dims.size() : 0;
+    visit_buffer_mutator(op, [](alias_info&) {}, iota(rank));
   }
 
-  void visit(const transpose*) override {
-    // TODO: We should be able to handle this.
-    SLINKY_UNREACHABLE << "transpose not handled by buffer_aliaser";
+  void visit(const transpose* op) override {
+    // op->dims maps new -> old: sym.dim[i] = src.dim[op->dims[i]].
+    visit_buffer_mutator(
+        op,
+        [=](alias_info& alias) {
+          // Reorder at from sym's dim order to src's dim order.
+          std::vector<expr> new_at(op->dims.size());
+          for (std::size_t i = 0; i < op->dims.size() && i < alias.at.size(); ++i) {
+            new_at[op->dims[i]] = std::move(alias.at[i]);
+          }
+          alias.at = std::move(new_at);
+          // Update permutation: sym's dim p maps to src's dim op->dims[p].
+          for (int& p : alias.permutation) {
+            if (p < static_cast<int>(op->dims.size())) {
+              p = op->dims[p];
+            }
+          }
+        },
+        op->dims);
   }
 };
 

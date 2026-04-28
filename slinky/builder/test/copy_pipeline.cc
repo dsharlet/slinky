@@ -1114,4 +1114,68 @@ TEST(copy_pipeline, padded_stencil) {
   }
 }
 
+// Test aliasing a transposed copy with padding. When padding is present, alias_copy_src
+// sets assume_in_bounds=false, which exercises the growing-target-bounds path.
+class padded_transposed_copy : public testing::TestWithParam<std::tuple<int, int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(permutations, padded_transposed_copy,
+    testing::Combine(iota3, iota3, iota3), test_params_to_string<padded_transposed_copy::ParamType>);
+
+TEST_P(padded_transposed_copy, pipeline) {
+  std::vector<int> permutation = {std::get<0>(GetParam()), std::get<1>(GetParam()), std::get<2>(GetParam())};
+
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
+  auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(short));
+  auto padded = buffer_expr::make(ctx, "padded", 3, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+  test_context eval_ctx;
+
+  func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
+  func pad_copy = func::make_copy(
+      {intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)}), in->bounds()},
+      {padded, {x, y, z}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)}, eval_ctx.copy);
+  func copy_out = func::make(opaque_copy<short>, {{padded, {point(x), point(y), point(z)}}}, {{out, {x, y, z}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+  buffer<short, 3> in_buf(permute<index_t>(permutation, {W, H, D}));
+  init_random(in_buf);
+
+  buffer<short, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        if (in_buf.contains(permute<index_t>(permutation, {x, y, z}))) {
+          ASSERT_EQ(out_buf(x, y, z), in_buf(permute<index_t>(permutation, {x, y, z})) + 1);
+        } else {
+          ASSERT_EQ(out_buf(x, y, z), 0);
+        }
+      }
+    }
+  }
+
+  if (is_permutation(permutation)) {
+    // intm is aliased to padded, but padded still needs an allocation.
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  } else {
+    // Not a valid permutation, so the copy can't be aliased. Both intm and padded are allocated.
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+  }
+}
+
 }  // namespace slinky
