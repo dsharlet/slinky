@@ -882,6 +882,11 @@ interval_expr substitute(const interval_expr& x, var target, const expr& replace
   if (is_variable(replacement, target)) return x;
   return var_substitutor(target, replacement).mutate(x);
 }
+dim_expr substitute(const dim_expr& x, var target, const expr& replacement) {
+  if (is_variable(replacement, target)) return x;
+  var_substitutor s(target, replacement);
+  return {s.mutate(x.bounds), s.mutate(x.stride), s.mutate(x.fold_factor)};
+}
 stmt substitute(const stmt& s, var target, const expr& replacement) {
   if (is_variable(replacement, target)) return s;
   scoped_trace trace("substitute");
@@ -900,6 +905,10 @@ interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::v
 interval_expr substitute_buffer(
     const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims, var def) {
   return buffer_substitutor(buffer, elem_size, dims, def).mutate(e);
+}
+dim_expr substitute_buffer(const dim_expr& e, var buffer, const std::vector<dim_expr>& dims, var def) {
+  buffer_substitutor s(buffer, expr(), dims, def);
+  return {s.mutate(e.bounds), s.mutate(e.stride), s.mutate(e.fold_factor)};
 }
 
 std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds) {
