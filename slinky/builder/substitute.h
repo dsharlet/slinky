@@ -73,6 +73,7 @@ public:
 // Replace the var `target` with a `replacement` expr. Respects shadowing and implicit buffer metadata.
 expr substitute(const expr& e, var target, const expr& replacement);
 interval_expr substitute(const interval_expr& x, var target, const expr& replacement);
+dim_expr substitute(const dim_expr& x, var target, const expr& replacement);
 stmt substitute(const stmt& s, var target, const expr& replacement);
 
 // Substitute `elem_size` in for buffer_elem_size(buffer) and the other buffer metadata in `dims` for per-dimension
@@ -85,6 +86,7 @@ expr substitute_buffer(
 interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::vector<dim_expr>& dims, var def = var());
 interval_expr substitute_buffer(
     const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims, var def = var());
+dim_expr substitute_buffer(const dim_expr& e, var buffer, const std::vector<dim_expr>& dims, var def = var());
 
 // Helpers to make dims for use with `substitute_buffer` for bounds.
 std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds);
