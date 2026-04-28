@@ -13,8 +13,8 @@ template <typename Ret, typename... Args>
 class function_ref<Ret(Args...)> {
   // Wrap the function object in something we can definitely call.
   template <typename F>
-  static Ret get_impl(const F* fn, Args... args) {
-    return (*fn)(args...);
+  static Ret get_impl(const void* fn, Args... args) {
+    return (*static_cast<const F*>(fn))(args...);
   }
 
   typedef Ret (*impl_fn)(const void*, Args...);
@@ -25,7 +25,7 @@ public:
   function_ref() : impl_(nullptr), obj_(nullptr) {}
   function_ref(std::nullptr_t) : function_ref() {}
   template <typename F>
-  function_ref(const F& f) : impl_(reinterpret_cast<impl_fn>(get_impl<F>)), obj_(&f) {}
+  function_ref(const F& f) : impl_(get_impl<F>), obj_(&f) {}
 
   operator bool() const { return impl_ != nullptr; }
 
