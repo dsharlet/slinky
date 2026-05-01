@@ -176,9 +176,19 @@ public:
     expr overlap;
 
     // Unique ID of the loop this fold is for.
-    int loop_id;
+    int loop_id = -1;
   };
   symbol_map<std::vector<dim_fold_info>> fold_factors;
+
+  static std::vector<dim_fold_info> get_dim_fold_info(const std::vector<dim_expr>& dims) {
+    std::vector<dim_fold_info> info(dims.size(), dim_fold_info());
+    for (std::size_t d = 0; d < dims.size(); ++d) {
+      if (is_finite(dims[d].fold_factor)) {
+        info[d].factor = dims[d].fold_factor;
+      }
+    }
+    return info;
+  }
 
   // Counter for the number of loops we've seen.
   int loop_counter = 0;
@@ -227,8 +237,7 @@ public:
 
     loop_info() = default;
 
-    loop_info(node_context& ctx, var sym, int loop_id, expr orig_min, interval_expr bounds, expr step,
-        expr max_workers)
+    loop_info(node_context& ctx, var sym, int loop_id, expr orig_min, interval_expr bounds, expr step, expr max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"),
           loop_id(loop_id) {}
@@ -291,9 +300,8 @@ public:
       bounds.push_back(d.bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
-    // Initialize the fold factors to infinity.
-    auto set_fold_factors =
-        set_value_in_scope(fold_factors, op->sym, std::vector<dim_fold_info>(op->dims.size(), dim_fold_info()));
+    // Initialize the fold factors.
+    auto set_fold_factors = set_value_in_scope(fold_factors, op->sym, get_dim_fold_info(op->dims));
     stmt body = mutate(op->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -459,9 +467,10 @@ public:
     }
 
     for (var output : outputs) {
+      if (!fold_factors[output]) continue;
+
       for (loop_info& loop : loops) {
-        if (!fold_factors[output]) continue;
-        loop.add_synchronization();
+        if (!loop.sym.defined()) continue;
 
         expr loop_var = variable::make(loop.sym);
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
@@ -475,6 +484,7 @@ public:
             continue;
           }
 
+          loop.add_synchronization();
           if (!depends_on(fold_factor, loop.sym).any()) {
             // We need an extra fold per worker when parallelizing the loop.
             // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
