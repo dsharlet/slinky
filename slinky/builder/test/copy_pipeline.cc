@@ -1178,4 +1178,44 @@ TEST_P(padded_transposed_copy, pipeline) {
   }
 }
 
+TEST(broadcast_new_dim, pipeline) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+  auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(short));
+  auto sliced = buffer_expr::make(ctx, "sliced", 2, sizeof(short));
+
+  intm->dim(2) = dim::broadcast();
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+  test_context eval_ctx;
+
+  func add = func::make(add_1<short>, {{{in, {point(x), point(y)}}}}, {{{intm, {x, y, z}}}});
+  func slice = func::make_copy({intm, {point(x), point(y)}}, {sliced, {x, y}}, eval_ctx.copy);
+  func copy_out = func::make(opaque_copy<short>, {{sliced, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+  buffer<short, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  buffer<short, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y) + 1);
+    }
+  }
+}
+
 }  // namespace slinky

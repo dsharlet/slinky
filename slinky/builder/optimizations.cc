@@ -723,9 +723,8 @@ public:
     alias_info a;
     a.target = op->dst;
     a.at.resize(op->dst_x.size());
-    a.dims.resize(op->src_x.size());
+    a.dims.resize(info->dims.size());
     a.permutation.assign(info->dims.size(), transpose::new_dim);
-    assert(op->src_x.size() >= info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
       if (!is_copy_dst_dim(op, dst_d, src_d)) {
@@ -755,7 +754,6 @@ public:
         a.at[dst_d] = info->dims[src_d].bounds.min - offset;
         a.permutation[src_d] = dst_d;
       } else {
-        a.dims[src_d] = dim::broadcast();
         a.at[dst_d] = -offset;
       }
     }
