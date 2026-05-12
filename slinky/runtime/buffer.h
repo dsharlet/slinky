@@ -1015,13 +1015,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
 // `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
-  if (buf.rank == 0) {
-    // Skip the overhead of our machinery for rank 0 buffers.
-    f(reinterpret_cast<typename Buf::pointer>(buf.raw_buffer::base),
-        reinterpret_cast<typename Bufs::pointer>(bufs.raw_buffer::base)...);
-    return;
-  }
-
   static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
