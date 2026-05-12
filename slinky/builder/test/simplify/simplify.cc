@@ -909,6 +909,10 @@ TEST(simplify, crop) {
       simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, crop_buffer::make(b2, b1, {{}, {z, w}, {u, v}}, body))),
       matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
 
+  // The inner crop uses dimensions from the original buffer, and the crop bounds.
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 1, buffer_bounds(b1, 1), body))),
+      matches(crop_dim::make(b1, b0, 0, {x, y}, crop_buffer::make(b2, b0, {{x, y}, buffer_bounds(b1, 1)}, body))));
+
   // Nested crops of the same buffer.
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b0, 0, {x, y}, dummy_call({}, {b1, b2})))),
       matches(crop_dim::make(b1, b0, 0, {x, y}, dummy_call({}, {b1, b1}))));

@@ -2037,7 +2037,7 @@ public:
         // Substitute the outer crop bounds into this crop's bounds.
         auto c_dims = make_dims_from_bounds(c->bounds);
         for (interval_expr& i : op_bounds) {
-          i = substitute_buffer(i, op_src, c_dims);
+          i = substitute_buffer(i, op_src, c_dims, c->sym);
         }
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
@@ -2049,7 +2049,7 @@ public:
         // Substitute the outer crop bounds into this crop's bounds.
         auto c_dims = make_dims_from_bounds(c->dim, c->bounds);
         for (interval_expr& i : op_bounds) {
-          i = substitute_buffer(i, op_src, c_dims);
+          i = substitute_buffer(i, op_src, c_dims, c->sym);
         }
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max<int>(op_bounds.size(), c->dim + 1));
