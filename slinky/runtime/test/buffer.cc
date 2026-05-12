@@ -327,6 +327,17 @@ TEST(buffer, copy_broadcast) {
   }
 }
 
+TEST(buffer, copy_to_broadcast) {
+  buffer<int, 1> src;
+  src.mutable_dim(0) = dim(-2, 2, sizeof(int));
+  int data[] = {0, 1, 2, 3, 4};
+  src.raw_buffer::base = data;
+
+  scalar<int> dst;
+  copy(src, dst);
+  ASSERT_EQ(dst(), 2);
+}
+
 TEST(buffer, pad_scalar) {
   scalar<int> dst(1);
   scalar<int> padding(2);
