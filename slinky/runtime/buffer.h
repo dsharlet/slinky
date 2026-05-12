@@ -473,6 +473,9 @@ public:
     rank = 0;
     dims = nullptr;
   }
+
+  T& operator()() { return *reinterpret_cast<T*>(base); }
+  const T& operator()() const { return *reinterpret_cast<T*>(base); }
 };
 
 namespace internal {
