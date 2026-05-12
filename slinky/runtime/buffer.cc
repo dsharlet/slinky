@@ -261,56 +261,52 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
   assert(dst.base || dst.elem_count() == 0);
   index_t elem_size = dst.elem_size;
 
-  if (dst.rank == 0) {
-    memcpy(dst.base, src.base, elem_size);
+  const slinky::dim& dst_dim0 = dst.dim(0);
+  const slinky::dim& src_dim0 = src.dim(0);
+
+  if (dst_dim0.empty()) {
+    // Empty destination, nothing to do.
+  } else if (dst_dim0.fold_factor() > 0 || src_dim0.fold_factor() > 0 || dst_dim0.stride() != elem_size ||
+             (src_dim0.stride() != 0 && src_dim0.stride() != elem_size)) {
+    // There is some complication to the innermost dimension's copy.
+    for_each_contiguous_slice(
+        dst, [elem_size](index_t extent, void* dst, const void* src) { memcpy(dst, src, extent * elem_size); }, src);
   } else {
-    const slinky::dim& dst_dim0 = dst.dim(0);
-    const slinky::dim& src_dim0 = src.dim(0);
+    slice_dim0(dst);
+    slice_dim0(src);
 
-    if (dst_dim0.empty()) {
-      // Empty destination, nothing to do.
-    } else if (dst_dim0.fold_factor() > 0 || src_dim0.fold_factor() > 0 ||
-               dst_dim0.stride() != elem_size || (src_dim0.stride() != 0 && src_dim0.stride() != elem_size)) {
-      // There is some complication to the innermost dimension's copy.
-      for_each_contiguous_slice(
-          dst, [elem_size](index_t extent, void* dst, const void* src) { memcpy(dst, src, extent * elem_size); }, src);
+    const index_t dst_size = dst_dim0.extent() * elem_size;
+
+    if (src_dim0.stride() == 0) {
+      // The inner dimension is a fill call.
+      fill_value_buffer buffer;
+      const void* buffer_value;
+      index_t buffer_elem_size;
+      const void* cached_src = nullptr;
+      for_each_element(
+          [&](void* dst, const void* src) {
+            if (cached_src != src) {
+              cached_src = src;
+              buffer_elem_size = elem_size;
+              buffer_value = src;
+              optimize_fill_value(buffer_value, buffer_elem_size, dst_size, buffer);
+            }
+            fill(dst, buffer_value, buffer_elem_size, dst_size);
+          },
+          dst, src);
     } else {
-      slice_dim0(dst);
-      slice_dim0(src);
+      // The inner dimension is a memcpy.
+      assert(dst_dim0.is_point() || src_dim0.stride() == elem_size);
+      assert(src_dim0.begin() <= dst_dim0.begin());
+      assert(src_dim0.end() >= dst_dim0.end());
 
-      const index_t dst_size = dst_dim0.extent() * elem_size;
-
-      if (src_dim0.stride() == 0) {
-        // The inner dimension is a fill call.
-        fill_value_buffer buffer;
-        const void* buffer_value;
-        index_t buffer_elem_size;
-        const void* cached_src = nullptr;
-        for_each_element(
-            [&](void* dst, const void* src) {
-              if (cached_src != src) {
-                cached_src = src;
-                buffer_elem_size = elem_size;
-                buffer_value = src;
-                optimize_fill_value(buffer_value, buffer_elem_size, dst_size, buffer);
-              }
-              fill(dst, buffer_value, buffer_elem_size, dst_size);
-            },
-            dst, src);
-      } else {
-        // The inner dimension is a memcpy.
-        assert(src_dim0.stride() == elem_size);
-        assert(src_dim0.begin() <= dst_dim0.begin());
-        assert(src_dim0.end() >= dst_dim0.end());
-
-        void* src_base = src.base;
-        src.base = offset_bytes(src.base, src_dim0.flat_offset_bytes(dst_dim0.min()));
-        for_each_element([=](void* dst, const void* src) { memcpy(dst, src, dst_size); }, dst, src);
-        src.base = src_base;
-      }
-      unslice_dim0(dst, dst_dim0);
-      unslice_dim0(src, src_dim0);
+      void* src_base = src.base;
+      src.base = offset_bytes(src.base, src_dim0.flat_offset_bytes(dst_dim0.min()));
+      for_each_element([=](void* dst, const void* src) { memcpy(dst, src, dst_size); }, dst, src);
+      src.base = src_base;
     }
+    unslice_dim0(dst, dst_dim0);
+    unslice_dim0(src, src_dim0);
   }
 }
 
@@ -356,11 +352,6 @@ void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
 SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad) {
   assert(dst.elem_size == src.elem_size);
   assert(dst.base || dst.elem_count() == 0);
-  if (dst.rank == 0) {
-    assert(src.base || pad.base);
-    memcpy(dst.base, !src.base && pad.base ? pad.base : src.base, dst.elem_size);
-    return;
-  }
 
   // Make (shallow) copies of the buffers, so we can optimize the dimensions.
   raw_buffer dst_opt = dst;
@@ -703,21 +694,23 @@ template <bool SkipContiguous, std::size_t BufsSize, typename F>
 SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE void for_each_impl(span<const raw_buffer*, BufsSize> bufs, F f) {
   const raw_buffer& buf = *bufs[0];
 
-  auto* loop = reinterpret_cast<for_each_loop<BufsSize>*>(SLINKY_ALLOCA(char, size_of_plan<F>(bufs.size(), buf.rank)));
-
+  int rank = buf.rank;
   void** bases = SLINKY_ALLOCA(void*, bufs.size());
   bases[0] = buf.base;
   for (std::size_t n = 1; n < bufs.size(); ++n) {
     bases[n] = bufs[n]->base;
+    rank = std::max<int>(rank, bufs[n]->rank);
   }
+
+  auto* loop = reinterpret_cast<for_each_loop<BufsSize>*>(SLINKY_ALLOCA(char, size_of_plan<F>(bufs.size(), rank)));
 
   for_each_loop_impl<BufsSize> inner_impl;
   for_each_loop<BufsSize>* outer_loop = loop;
 
   index_t slice_extent = 1;
   index_t extent = 1;
-  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d >= 0; --d) {
-    const dim& buf_dim = buf.dims[d];
+  for (int d = rank - 1; d >= 0; --d) {
+    const dim& buf_dim = buf.dim(d);
 
     if (buf_dim.min() == buf_dim.max()) {
       // extent 1, we don't need any of the logic here, skip to below.

@@ -862,9 +862,15 @@ public:
     case buffer_field::max:
     case buffer_field::stride:
     case buffer_field::fold_factor: {
-      expr sub = dim < static_cast<index_t>(dims.size()) ? dims[dim].get_field(field) : expr();
-      if (sub.defined()) return sub;
-      break;
+      if (dim < static_cast<index_t>(dims.size())) {
+        expr sub = dims[dim].get_field(field);
+        if (sub.defined() || !def.defined()) return sub;
+        break;
+      } else if (def.defined()) {
+        break;
+      } else {
+        return 0;
+      }
     }
     default: SLINKY_UNREACHABLE << "got scalar var instead of buffer";
     }
