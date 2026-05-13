@@ -1067,6 +1067,17 @@ TEST(simplify, transpose) {
       matches(transpose::make(b2, b0, {2, 3}, dummy_call({}, {b2}))));
 
   ASSERT_THAT(
+      simplify(transpose::make(b1, b0, {2, 3},
+          transpose::make(b2, b1, {0, transpose::new_dim, 1}, check::make(buffer_min(b2, 2) == buffer_min(b0, 3))))),
+      matches(
+          transpose::make(b2, b0, {2, transpose::new_dim, 3}, check::make(buffer_min(b2, 2) == buffer_min(b0, 3)))));
+
+  // Make sure that an intermediate transpose that drops dimensions is not skipped.
+  ASSERT_THAT(simplify(transpose::make(b1, b0, {2, 1, 0},
+                  transpose::make(b2, b1, {}, transpose::make(b3, b2, {0, 1}, dummy_call({}, {b3}))))),
+      matches(transpose::make(b3, b0, {transpose::new_dim, transpose::new_dim}, dummy_call({}, {b3}))));
+
+  ASSERT_THAT(
       simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))),
       matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))));
 
