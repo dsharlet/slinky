@@ -2313,13 +2313,13 @@ public:
       sym_info.elem_size = (*src_info)->elem_size;
       // This is like `permute`, but we can't guarantee that we know all the dimensions of src_info (it could be a
       // buffer external to the pipeline).
-      sym_info.dims.resize(op->dims.size());
+      sym_info.dims.resize(dims.size());
       sym_info.rank = sym_info.dims.size();
-      for (size_t i = 0; i < op->dims.size(); ++i) {
+      for (size_t i = 0; i < dims.size(); ++i) {
         if (op->dims[i] < static_cast<int>((*src_info)->dims.size())) {
-          sym_info.dims[i] = (*src_info)->dims[op->dims[i]];
+          sym_info.dims[i] = (*src_info)->dims[dims[i]];
         } else {
-          sym_info.dims[i] = buffer_dim(op->src, op->dims[i]);
+          sym_info.dims[i] = buffer_dim(src, dims[i]);
         }
       }
     }
