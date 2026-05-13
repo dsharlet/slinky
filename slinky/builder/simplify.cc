@@ -2316,7 +2316,7 @@ public:
       sym_info.dims.resize(dims.size());
       sym_info.rank = sym_info.dims.size();
       for (size_t i = 0; i < dims.size(); ++i) {
-        if (op->dims[i] < static_cast<int>((*src_info)->dims.size())) {
+        if (dims[i] < static_cast<int>((*src_info)->dims.size())) {
           sym_info.dims[i] = (*src_info)->dims[dims[i]];
         } else {
           sym_info.dims[i] = buffer_dim(src, dims[i]);
