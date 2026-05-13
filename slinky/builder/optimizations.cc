@@ -151,8 +151,9 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
 
     // Both branches of this if should be equivalent if the copy is fully in bounds (not padded).
     if (!depends_on(offset, dst).any()) {
-      src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
-      at = buffer_min(src, src_d) + offset * (scale - 1);
+      // The smallest src index >= buffer_min(src, src_d) such that (at - offset) is divisible by scale.
+      at = align_up(buffer_min(src, src_d) - offset, scale) + offset;
+      src_dim.bounds = {(at - offset) / scale, (buffer_max(src, src_d) - offset) / scale};
     } else {
       // This formulation is simpler and would be nice to use all the time, however, it assumes there is no padding on
       // the copy.
