@@ -96,6 +96,48 @@ TEST(trivial_1d, copy) {
   }
 }
 
+class affine_1d : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(stride_offset, affine_1d,
+    testing::Combine(testing::Values(0, 1, 2, 3, 8), testing::Values(0, 5)),
+    test_params_to_string<affine_1d::ParamType>);
+
+TEST_P(affine_1d, copy) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+
+  var x(ctx, "x");
+  test_context eval_ctx;
+
+  const int S = std::get<0>(GetParam());
+  const int DX = std::get<1>(GetParam());
+
+  func copy = func::make_copy({in, {point(x * S + DX)}}, {out, {x}}, eval_ctx.copy);
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 100;
+  buffer<int, 1> in_buf({W});
+  in_buf.allocate();
+  std::iota(&in_buf(0), &in_buf(0) + W, 0);
+
+  buffer<int, 1> out_buf({ceil_div(W, S) - DX});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int i = 0; i < out_buf.dim(0).extent(); ++i) {
+    ASSERT_EQ(out_buf(i), in_buf(i * S + DX));
+  }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+}
+
 TEST(trivial_2d, copy) {
   // Make the pipeline
   node_context ctx;
