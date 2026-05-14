@@ -46,6 +46,55 @@ TEST(contiguous_copy, pipeline) {
   ASSERT_EQ(out_buf(), in_buf(0) + 1);
 }
 
+class affine_1d : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(stride_offset, affine_1d, testing::Combine(testing::Values(1, 2, 3, 8), testing::Values(0, 5)),
+    test_params_to_string<affine_1d::ParamType>);
+
+TEST_P(affine_1d, pipeline) {
+  node_context ctx;
+
+  const int S = std::get<0>(GetParam());
+  const int DX = std::get<1>(GetParam());
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto flat = buffer_expr::make(ctx, "flat", 1, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func producer = func::make(add_1<int>, {{in, {point(x)}}}, {{flat, {x}}});
+  func unflatten = func::make_copy({flat, {point(x + y * S + DX)}}, {intm, {x, y}});
+  func consumer = func::make(add_1<int>, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  consumer.loops({{y, 2}});
+  unflatten.compute_at({&consumer, y});
+  intm->store_at({&consumer, y});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 6;
+  buffer<int, 1> in_buf({(W - 1) + (H - 1) * S + DX + 1});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  test_context eval_ctx;
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int yi = 0; yi < H; ++yi) {
+    for (int xi = 0; xi < W; ++xi) {
+      ASSERT_EQ(out_buf(xi, yi), in_buf(xi + yi * S + DX) + 2);
+    }
+  }
+}
+
 TEST(flip_y, pipeline) {
   // Make the pipeline
   node_context ctx;
@@ -1078,8 +1127,8 @@ TEST(copy_pipeline, padded_stencil) {
 
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{added, {x, y}}});
 
-  func pad = func::make_copy(
-      {added, {point(x), point(y)}, in->bounds()}, {padded, {x, y}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)});
+  func pad = func::make_copy({added, {point(x), point(y)}, in->bounds()}, {padded, {x, y}},
+      {buffer_expr::make_scalar<short>(ctx, "padding", 0)});
 
   func stencil_copy = func::make_copy({padded, {point(x), point(y + k - 1)}}, {stencil, {x, y, k}});
 
@@ -1118,8 +1167,8 @@ TEST(copy_pipeline, padded_stencil) {
 // sets assume_in_bounds=false, which exercises the growing-target-bounds path.
 class padded_transposed_copy : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(permutations, padded_transposed_copy,
-    testing::Combine(iota3, iota3, iota3), test_params_to_string<padded_transposed_copy::ParamType>);
+INSTANTIATE_TEST_SUITE_P(permutations, padded_transposed_copy, testing::Combine(iota3, iota3, iota3),
+    test_params_to_string<padded_transposed_copy::ParamType>);
 
 TEST_P(padded_transposed_copy, pipeline) {
   std::vector<int> permutation = {std::get<0>(GetParam()), std::get<1>(GetParam()), std::get<2>(GetParam())};
@@ -1137,9 +1186,9 @@ TEST_P(padded_transposed_copy, pipeline) {
   test_context eval_ctx;
 
   func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
-  func pad_copy = func::make_copy(
-      {intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)}), in->bounds()},
-      {padded, {x, y, z}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)}, eval_ctx.copy);
+  func pad_copy =
+      func::make_copy({intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)}), in->bounds()},
+          {padded, {x, y, z}}, {buffer_expr::make_scalar<short>(ctx, "padding", 0)}, eval_ctx.copy);
   func copy_out = func::make(opaque_copy<short>, {{padded, {point(x), point(y), point(z)}}}, {{out, {x, y, z}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
