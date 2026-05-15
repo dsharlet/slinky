@@ -910,4 +910,67 @@ TEST(padded_reshape, cannot_alias_pad) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), H);
 }
 
+// Very similar to the above, but with a stencil copy consuming the pad op. 
+TEST(padded_reshape, cannot_alias_padded_stencil) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(short));
+
+  auto memcpied = buffer_expr::make(ctx, "memcpied", 1, sizeof(short));
+  auto padded = buffer_expr::make(ctx, "padded", 1, sizeof(short));
+  auto stencil = buffer_expr::make(ctx, "stencil", 2, sizeof(short));
+  auto zero = buffer_expr::make_scalar<short>(ctx, "zero", 0);
+
+  memcpied->dim(0).bounds = in->dim(0).bounds;
+
+  var y(ctx, "y");
+  var k(ctx, "k");
+
+  call_stmt::attributes attrs;
+  attrs.name = "memcpy";
+
+  func memcpy_in = func::make(opaque_copy<short>, {{in, {point(y)}}}, {{memcpied, {y}}}, attrs);
+  func pad = func::make_copy({memcpied, {point(y)}, in->bounds()}, {padded, {y}}, {zero});
+  func stencil_copy = func::make_copy({padded, {point(y + k - 1)}}, {stencil, {y, k}});
+  func reduce = func::make(
+      [](const buffer<const short>& in, const buffer<short>& out) { return sum<short>(in, out, {{1, 0, 2}}); },
+      {{stencil, {point(y), bounds(0, 2)}}}, {{out, {y}}});
+
+  memcpy_in.compute_root();
+  reduce.loops({{y, 1}});
+  stencil_copy.compute_at({&reduce, y});
+  pad.compute_at({&reduce, y});
+  padded->store_at({&reduce, y});
+  stencil->store_at({&reduce, y});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int H = 30;
+  buffer<short, 2> in_buf({H});
+  buffer<short, 2> out_buf({H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    short correct = 0;
+    for (int dk = 0; dk <= 2; ++dk) {
+      int sy = y + dk - 1;
+      if (0 <= sy && sy < H) {
+        correct += in_buf(sy);
+      }
+    }
+    ASSERT_EQ(correct, out_buf(y));
+  }
+
+  // We should have one allocation for the padded reshape
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+}
+
 }  // namespace slinky

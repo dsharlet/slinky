@@ -332,7 +332,10 @@ class copy_aliaser : public stmt_mutator {
 
     if (alias.is_contiguous_copy) {
       assert(alias.assume_in_bounds);
-      // We just assume flat copies are OK.
+      // Don't alias if the allocation was grown by another alias, a contiguous copy is likely incorrect.
+      if (alloc_info.shared_alloc_sym.defined()) {
+        return false;
+      }
       return true;
     }
     const bool target_has_stride = any_stride_defined(target_info.dims);
