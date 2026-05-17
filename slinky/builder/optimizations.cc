@@ -545,9 +545,10 @@ public:
             if (!info.dims[d].stride.defined()) continue;
             int target_d = alias.permutation[d];
             if (target_d >= static_cast<int>(target_info->dims.size())) {
-              assert(prove_true(info.dims[d].stride) == 0);
+              assert(prove_true(info.dims[d].stride == 0 || info.dims[d].bounds.is_point()));
             } else if (target_info->dims[target_d].stride.defined()) {
-              assert(prove_true(info.dims[d].stride == target_info->dims[target_d].stride));
+              assert(prove_true(
+                  info.dims[d].stride == target_info->dims[target_d].stride || info.dims[d].bounds.is_point()));
             } else if (is_constant(info.dims[d].stride, 0)) {
               // TODO(dsharlet|vksnk): stride 0 has a special meaning (i.e. that dim is broadcasted), so
               // it might be incorrect to propagate it to the target buffer in some cases (this is an
