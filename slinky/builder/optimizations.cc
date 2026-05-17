@@ -358,7 +358,10 @@ class copy_aliaser : public stmt_mutator {
       i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
     }
 
-    if (!alias.assume_in_bounds) {
+    // If the allocation was grown to accommodate another alias, we can't trust assume_in_bounds
+    // and need to re-check whether the (possibly grown) allocation fits within the target.
+    bool assume_in_bounds = alias.assume_in_bounds && !alloc_info.shared_alloc_sym.defined();
+    if (!assume_in_bounds) {
       bool in_bounds = true;
       for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
         const dim_expr& alias_dim = alias_dims[d];
