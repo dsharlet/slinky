@@ -1632,16 +1632,11 @@ public:
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
   bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
-    if (!is_buffer_meta(d.bounds.min, src.bounds.min, sym, buffer_field::min, dim)) return false;
-    if (!is_buffer_meta(d.bounds.max, src.bounds.max, sym, buffer_field::max, dim)) return false;
-
-    if (prove_true(src.bounds.min == src.bounds.max)) {
-      // The extent is 1, the stride and fold factor don't matter.
-      return true;
-    } else {
-      return is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim, slinky::dim::auto_stride) &&
-             is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim, slinky::dim::unfolded);
-    }
+    return 
+      is_buffer_meta(d.bounds.min, src.bounds.min, sym, buffer_field::min, dim) &&
+      is_buffer_meta(d.bounds.max, src.bounds.max, sym, buffer_field::max, dim) &&
+      is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim, slinky::dim::auto_stride) &&
+      is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim, slinky::dim::unfolded);
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
