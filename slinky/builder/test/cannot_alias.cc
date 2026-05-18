@@ -910,34 +910,44 @@ TEST(padded_reshape, cannot_alias_pad) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), H);
 }
 
-// Very similar to the above, but with a stencil copy consuming the pad op. 
-TEST(padded_reshape, cannot_alias_padded_stencil) {
+// Very similar to the above, but with a stencil copy consuming the pad op, and the first copy can be either a reshape
+// or copy.
+class padded_stencil : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(copy_type, padded_stencil, testing::Bool());
+
+TEST_P(padded_stencil, cannot_alias) {
+  const bool contiguous = GetParam();
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in", 1, sizeof(short));
   auto out = buffer_expr::make(ctx, "out", 1, sizeof(short));
 
-  auto memcpied = buffer_expr::make(ctx, "memcpied", 1, sizeof(short));
+  auto copied = buffer_expr::make(ctx, "copied", 1, sizeof(short));
   auto padded = buffer_expr::make(ctx, "padded", 1, sizeof(short));
   auto stencil = buffer_expr::make(ctx, "stencil", 2, sizeof(short));
   auto zero = buffer_expr::make_scalar<short>(ctx, "zero", 0);
 
-  memcpied->dim(0).bounds = in->dim(0).bounds;
+  copied->dim(0).bounds = in->dim(0).bounds;
 
   var y(ctx, "y");
   var k(ctx, "k");
 
-  call_stmt::attributes attrs;
-  attrs.name = "memcpy";
-
-  func memcpy_in = func::make(opaque_copy<short>, {{in, {point(y)}}}, {{memcpied, {y}}}, attrs);
-  func pad = func::make_copy({memcpied, {point(y)}, in->bounds()}, {padded, {y}}, {zero});
+  func copy_in;
+  if (contiguous) {
+    call_stmt::attributes attrs;
+    attrs.name = "memcpy";
+    copy_in = func::make(opaque_copy<short>, {{in, {point(y)}}}, {{copied, {y}}}, attrs);
+  } else {
+    copy_in = func::make_copy({in, {point(y)}}, {copied, {y}});
+  }
+  func pad = func::make_copy({copied, {point(y)}, in->bounds()}, {padded, {y}}, {zero});
   func stencil_copy = func::make_copy({padded, {point(y + k - 1)}}, {stencil, {y, k}});
   func reduce = func::make(
       [](const buffer<const short>& in, const buffer<short>& out) { return sum<short>(in, out, {{1, 0, 2}}); },
       {{stencil, {point(y), bounds(0, 2)}}}, {{out, {y}}});
 
-  memcpy_in.compute_root();
+  copy_in.compute_root();
   reduce.loops({{y, 1}});
   stencil_copy.compute_at({&reduce, y});
   pad.compute_at({&reduce, y});
@@ -947,8 +957,8 @@ TEST(padded_reshape, cannot_alias_padded_stencil) {
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   const int H = 30;
-  buffer<short, 2> in_buf({H});
-  buffer<short, 2> out_buf({H});
+  buffer<short, 1> in_buf({H});
+  buffer<short, 1> out_buf({H});
 
   init_random(in_buf);
   out_buf.allocate();
@@ -969,7 +979,7 @@ TEST(padded_reshape, cannot_alias_padded_stencil) {
     ASSERT_EQ(correct, out_buf(y));
   }
 
-  // We should have one allocation for the padded reshape
+  // copied cannot alias in (grown allocation), so it gets its own allocation.
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 }
 
