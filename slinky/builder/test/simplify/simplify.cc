@@ -1058,6 +1058,13 @@ TEST(simplify, make_buffer) {
                   make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
                       dummy_call({}, {b1})))),
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, dummy_call({}, {b0}))));
+
+  // Dims with min=max=0 but different strides (explicit 0 vs auto_stride) must not be canonicalized to the same dim.
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 0}, 0}, {{0, 0}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
+                      {{{0, 0}, buffer_stride(b0, 1), {}}, {{0, 0}, buffer_stride(b0, 0)}}, dummy_call({}, {b1})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 0}, 0}, {{0, 0}, {}}}, transpose::make(b1, b0, {1}, dummy_call({}, {b1})))));
 }
 
 TEST(simplify, transpose) {
