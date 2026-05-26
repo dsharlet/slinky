@@ -295,6 +295,14 @@ public:
     return 1;
   }
 
+  index_t eval_validate_buffer(const call* op) {
+    assert(op->args.size() == 1);
+    var sym = *as_variable(op->args[0]);
+    const raw_buffer* buf = context.lookup_buffer(sym);
+    if (!buf) return 0;
+    return validate_buffer(*buf) ? 1 : 0;
+  }
+
   index_t eval_wait_for(const call* op) {
     assert(op->args.size() >= 1);
     for (const expr& i : op->args) {
@@ -337,6 +345,7 @@ public:
     case intrinsic::trace_end: return eval_trace_end(op);
 
     case intrinsic::free: return eval_free(op);
+    case intrinsic::validate_buffer: return eval_validate_buffer(op);
 
     default: SLINKY_UNREACHABLE << "unknown intrinsic: " << to_string(op->intrinsic);
     }
@@ -613,6 +622,14 @@ public:
       }
     }
 
+    if (!buffer.base && buffer.elem_count() > 0) {
+      std::cerr << "allocate of " << op->sym << " failed." << std::endl;
+      if (buffer.allocation) {
+        context.config->free(op->sym, &buffer, buffer.allocation);
+      }
+      return -1;
+    }
+
     index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
 
     if (buffer.allocation) {
@@ -645,6 +662,11 @@ public:
     }
 
     remove_trailing_broadcasts(buffer);
+
+    if (!validate_buffer(buffer)) {
+      std::cerr << "make_buffer of " << op->sym << " failed." << std::endl;
+      return -1;
+    }
 
     return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
   }

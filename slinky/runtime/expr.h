@@ -120,6 +120,9 @@ enum class intrinsic {
 
   // Free a buffer.
   free,
+
+  // Validate a buffer.
+  validate_buffer,
 };
 
 enum class buffer_field : unsigned {
@@ -696,6 +699,7 @@ expr buffer_max(var buf, int dim);
 expr buffer_extent(var buf, int dim);
 expr buffer_stride(var buf, int dim);
 expr buffer_fold_factor(var buf, int dim);
+expr validate_buffer(var buf);
 
 interval_expr buffer_bounds(var buf, int dim);
 dim_expr buffer_dim(var buf, int dim);

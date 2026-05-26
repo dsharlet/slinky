@@ -48,6 +48,7 @@ const char* to_string(intrinsic fn) {
   case intrinsic::trace_begin: return "trace_begin";
   case intrinsic::trace_end: return "trace_end";
   case intrinsic::free: return "free";
+  case intrinsic::validate_buffer: return "validate_buffer";
 
   default: return "<invalid intrinsic>";
   }

@@ -1445,6 +1445,7 @@ void check_buffer(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
   checks.push_back(check::make(expr(b->sym()) != 0));
   checks.push_back(check::make(buffer_rank(b->sym()) == rank));
+  checks.push_back(check::make(validate_buffer(b->sym())));
 }
 
 void check_buffer_constraints(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {

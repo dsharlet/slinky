@@ -710,6 +710,7 @@ expr buffer_max(var buf, int dim) { return variable::make(buf, buffer_field::max
 expr buffer_extent(var buf, int dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
 expr buffer_stride(var buf, int dim) { return variable::make(buf, buffer_field::stride, dim); }
 expr buffer_fold_factor(var buf, int dim) { return variable::make(buf, buffer_field::fold_factor, dim); }
+expr validate_buffer(var buf) { return call::make(intrinsic::validate_buffer, {buf}); }
 
 interval_expr buffer_bounds(var buf, int dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
 dim_expr buffer_dim(var buf, int dim) {

@@ -736,6 +736,10 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad = 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
 void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
 
+// Returns true if the buffer's dimensions and pointer arithmetic do not
+// overflow.
+bool validate_buffer(const raw_buffer& buf);
+
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (inner.empty()) return false;
