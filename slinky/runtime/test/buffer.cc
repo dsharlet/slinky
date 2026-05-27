@@ -1308,4 +1308,47 @@ TEST(optimize_dims, extent_1) {
   ASSERT_EQ(b.dim(1).stride(), 12);
 }
 
+TEST(buffer, init_strides_overflow_multiplication) {
+  buffer<int, 2> buf;
+  buf.elem_size = sizeof(int);
+
+  buf.mutable_dim(0).set_min_extent(0, 10);
+  buf.mutable_dim(0).set_stride(sizeof(int));
+
+  index_t max_val = std::numeric_limits<index_t>::max();
+  buf.mutable_dim(1).set_min_extent(0, 2);
+  buf.mutable_dim(1).set_stride(max_val - 5);
+
+  std::size_t size = buf.init_strides();
+  ASSERT_EQ(size, 0);
+}
+
+TEST(buffer, init_strides_overflow_accumulation) {
+  buffer<int, 2> buf;
+  buf.elem_size = sizeof(int);
+
+  index_t max_val = std::numeric_limits<index_t>::max();
+  // Each footprint is max_val * 2/3 (fits in index_t), but their sum will exceed max_val!
+  index_t safe_large_stride = max_val / 3 * 2;
+
+  buf.mutable_dim(0).set_min_extent(0, 2);
+  buf.mutable_dim(0).set_stride(safe_large_stride);
+
+  buf.mutable_dim(1).set_min_extent(0, 2);
+  buf.mutable_dim(1).set_stride(safe_large_stride);
+
+  std::size_t size = buf.init_strides();
+  ASSERT_EQ(size, 0);
+}
+
+TEST(buffer, init_strides_overflow_rank0_alignment) {
+  buffer<int, 0> buf;
+  // Set a huge elem_size close to max_size_t, so even alignment 16 will overflow it!
+  buf.elem_size = std::numeric_limits<std::size_t>::max() - 10;
+
+  // Alignment 16 (valid power of 2)
+  std::size_t size = buf.init_strides(16);
+  ASSERT_EQ(size, 0);
+}
+
 }  // namespace slinky
