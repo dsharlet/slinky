@@ -599,8 +599,8 @@ public:
     if (op->storage == memory_type::heap) {
       buffer.allocation = context.config->allocate(op->sym, &buffer);
     } else {
-      std::optional<std::size_t> size = buffer.init_strides(
-          context.config->stride_alignment);
+      std::optional<std::size_t> size =
+          buffer.init_strides(context.config->stride_alignment);
       if (!size) {
         return -1;
       }

@@ -1,3 +1,5 @@
+#include "slinky/runtime/buffer.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -9,7 +11,6 @@
 #include <optional>
 
 #include "slinky/base/test/seeded_test.h"
-#include "slinky/runtime/buffer.h"
 
 namespace slinky {
 

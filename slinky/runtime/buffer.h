@@ -223,7 +223,7 @@ protected:
 
   std::optional<std::size_t> init_strides_impl(index_t alignment);
 
-public:
+ public:
   using element = void;
   using pointer = void*;
 
@@ -424,8 +424,8 @@ public:
   std::optional<std::size_t> init_strides(index_t alignment = 1) {
     if (rank == 0) {
       std::size_t final_sum;
-      if (add_with_overflow(
-              elem_size, static_cast<std::size_t>(alignment - 1), final_sum)) {
+      if (add_with_overflow(elem_size, static_cast<std::size_t>(alignment - 1),
+                            final_sum)) {
         return std::nullopt;
       }
       return final_sum & ~static_cast<std::size_t>(alignment - 1);
@@ -736,8 +736,6 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad = 
 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
 void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
-
-
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
