@@ -308,7 +308,7 @@ class copy_aliaser : public stmt_mutator {
 
     // If we decided to alias this buffer, we might have grown the bounds. If so, we need to make a new allocation with
     // this symbol, but make a crop of it for the original bounds.
-    var shared_alloc_sym;
+    std::vector<var> shared_alloc_syms;
 
     buffer_info(std::vector<dim_expr> dims, expr elem_size, bool is_input = false, bool is_output = false)
         : dims(std::move(dims)), elem_size(std::move(elem_size)), is_input(is_input), is_output(is_output) {}
@@ -333,7 +333,7 @@ class copy_aliaser : public stmt_mutator {
     if (alias.is_contiguous_copy) {
       assert(alias.assume_in_bounds);
       // Don't alias if the allocation was grown by another alias, a contiguous copy is likely incorrect.
-      if (alloc_info.shared_alloc_sym.defined()) {
+      if (!alloc_info.shared_alloc_syms.empty()) {
         return false;
       }
       return true;
@@ -360,7 +360,7 @@ class copy_aliaser : public stmt_mutator {
 
     // If the allocation was grown to accommodate another alias, we can't trust assume_in_bounds
     // and need to re-check whether the (possibly grown) allocation fits within the target.
-    bool assume_in_bounds = alias.assume_in_bounds && !alloc_info.shared_alloc_sym.defined();
+    bool assume_in_bounds = alias.assume_in_bounds && alloc_info.shared_alloc_syms.empty();
     if (!assume_in_bounds) {
       bool in_bounds = true;
       for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
@@ -478,7 +478,7 @@ public:
 
     scoped_trace trace("visit(const allocate*)");
     buffer_info info = std::move(*buffers[op->sym]);
-    var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
+    var sym = !info.shared_alloc_syms.empty() ? info.shared_alloc_syms.back() : op->sym;
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
     for (std::optional<buffer_info>& i : buffers) {
@@ -528,10 +528,10 @@ public:
           assert(!target_info->is_output);
           assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
-          std::string old_name =
-              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
-          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
-          alloc_var = target_info->shared_alloc_sym;
+          var old_sym = !target_info->shared_alloc_syms.empty() ? target_info->shared_alloc_syms.back() : target_var;
+          std::string old_name = ctx.name(old_sym);
+          alloc_var = ctx.insert_unique(old_name + "/" + ctx.name(sym));
+          target_info->shared_alloc_syms.push_back(alloc_var);
           for (std::size_t d = 0; d < alias.permutation.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
@@ -587,10 +587,14 @@ public:
       }
     }
     if (!body.same_as(op->body)) {
-      if (info.shared_alloc_sym.defined()) {
+      if (!info.shared_alloc_syms.empty()) {
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
-        body = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
+        const std::vector<var>& syms = info.shared_alloc_syms;
+        body = crop_buffer::make(op->sym, syms.back(), dims_bounds(op->dims), std::move(body));
+        for (std::size_t i = 0; i + 1 < syms.size(); ++i) {
+          body = clone_buffer::make(syms[i], syms[i + 1], std::move(body));
+        }
       }
       stmt result = allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
@@ -837,9 +841,10 @@ public:
         old_info->elem_size = std::move(info->elem_size);
         old_info->producers += info->producers;
       }
-      if (info->shared_alloc_sym.defined()) {
-        assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
-        old_info->shared_alloc_sym = info->shared_alloc_sym;
+      if (!info->shared_alloc_syms.empty()) {
+        assert(old_info->shared_alloc_syms.empty() ||
+               old_info->shared_alloc_syms.back() == info->shared_alloc_syms.back());
+        old_info->shared_alloc_syms = std::move(info->shared_alloc_syms);
       }
       for (alias_info& a : info->aliases) {
         if (a.target == sym) {
@@ -861,7 +866,7 @@ public:
       if (old_buffers[i]) {
         buffers[i] = buffer_info(
             old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
-        buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
+        buffers[i]->shared_alloc_syms = old_buffers[i]->shared_alloc_syms;
       }
     }
 
