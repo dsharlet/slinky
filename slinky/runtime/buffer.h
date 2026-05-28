@@ -424,7 +424,8 @@ public:
   std::optional<std::size_t> init_strides(index_t alignment = 1) {
     if (rank == 0) {
       std::size_t final_sum;
-      if (add_with_overflow(elem_size, static_cast<std::size_t>(alignment - 1), final_sum)) {
+      if (add_with_overflow(
+              elem_size, static_cast<std::size_t>(alignment - 1), final_sum)) {
         return std::nullopt;
       }
       return final_sum & ~static_cast<std::size_t>(alignment - 1);
