@@ -102,7 +102,10 @@ struct init_stride_dim {
   bool operator<(const init_stride_dim& r) const { return dim_stride < r.dim_stride; }
 };
 
-SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims, bool& overflow) {
+SLINKY_INLINE bool is_stride_ok(index_t stride, 
+                                index_t extent, 
+                                span<const init_stride_dim> dims, 
+                                bool& overflow) {
   index_t dim_stride;
   if (mul_with_overflow(stride, extent, dim_stride)) {
     overflow = true;
@@ -188,10 +191,12 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
     // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
     for (const init_stride_dim& dim_j : known_dims) {
       index_t padded_candidate = 0;
-      overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
+      overflow = overflow || add_with_overflow(
+          dim_j.dim_stride, alignment - 1, padded_candidate);
       index_t candidate = padded_candidate & ~(alignment - 1);
 
-      if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
+      if (&dim_j == &known_dims.back() || is_stride_ok(
+              candidate, alloc_extent_i, known_dims, overflow)) {
         dim_i.set_stride(candidate);
         learn_dim(candidate, alloc_extent_i);
         // The dims are sorted, so no subsequent candidate will be better.
@@ -202,9 +207,11 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   }
 
   index_t unaligned_size = 0;
-  overflow = overflow || add_with_overflow(flat_max, static_cast<index_t>(elem_size), unaligned_size);
+  overflow = overflow || add_with_overflow(
+      flat_max, static_cast<index_t>(elem_size), unaligned_size);
   index_t padded_size = 0;
-  overflow = overflow || add_with_overflow(unaligned_size, alignment - 1, padded_size);
+  overflow = overflow || add_with_overflow(
+      unaligned_size, alignment - 1, padded_size);
   index_t final_size = padded_size & ~(alignment - 1);
 
   if (overflow || final_size < 0) {
@@ -444,8 +451,6 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
   // Implement the padding in all but the first dimension.
   pad_impl(src, dst_opt, pad_opt);
 }
-
-
 
 namespace internal {
 
