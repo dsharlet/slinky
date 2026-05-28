@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
+#include <optional>
 
 #include "slinky/base/test/seeded_test.h"
 #include "slinky/runtime/buffer.h"
@@ -1319,8 +1320,8 @@ TEST(buffer, init_strides_overflow_multiplication) {
   buf.mutable_dim(1).set_min_extent(0, 2);
   buf.mutable_dim(1).set_stride(max_val - 5);
 
-  std::size_t size = buf.init_strides();
-  ASSERT_EQ(size, 0);
+  std::optional<std::size_t> size = buf.init_strides();
+  ASSERT_EQ(size, std::nullopt);
 }
 
 TEST(buffer, init_strides_overflow_accumulation) {
@@ -1336,16 +1337,16 @@ TEST(buffer, init_strides_overflow_accumulation) {
   buf.mutable_dim(1).set_min_extent(0, 2);
   buf.mutable_dim(1).set_stride(safe_large_stride);
 
-  std::size_t size = buf.init_strides();
-  ASSERT_EQ(size, 0);
+  std::optional<std::size_t> size = buf.init_strides();
+  ASSERT_EQ(size, std::nullopt);
 }
 
 TEST(buffer, init_strides_overflow_rank0_alignment) {
   buffer<int, 0> buf;
   buf.elem_size = std::numeric_limits<std::size_t>::max() - 10;
 
-  std::size_t size = buf.init_strides(16);
-  ASSERT_EQ(size, 0);
+  std::optional<std::size_t> size = buf.init_strides(16);
+  ASSERT_EQ(size, std::nullopt);
 }
 
 }  // namespace slinky

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <optional>
 
 #include "slinky/base/arithmetic.h"
 #include "slinky/base/util.h"
@@ -121,7 +122,7 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_
 
 }  // namespace
 
-std::size_t raw_buffer::init_strides_impl(index_t alignment) {
+std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   init_stride_dim* dims_end = dims;
@@ -207,15 +208,15 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
   index_t final_size = padded_size & ~(alignment - 1);
 
   if (overflow || final_size < 0) {
-    return 0;
+    return std::nullopt;
   }
   return static_cast<std::size_t>(final_size);
 }
 
 void* raw_buffer::allocate(index_t base_alignment, index_t stride_alignment) {
-  std::size_t size = init_strides(stride_alignment);
-  if (size == 0) return nullptr;
-  void* allocation = malloc(size + base_alignment - 1);
+  std::optional<std::size_t> size = init_strides(stride_alignment);
+  if (!size) return nullptr;
+  void* allocation = malloc(*size + base_alignment - 1);
   base = align_up(allocation, base_alignment);
   return allocation;
 }
