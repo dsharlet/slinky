@@ -590,13 +590,10 @@ public:
       if (!info.shared_alloc_syms.empty()) {
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
-        body = crop_buffer::make(op->sym, info.shared_alloc_syms.back(), dims_bounds(op->dims), std::move(body));
-        if (info.shared_alloc_syms.size() > 1) {
-          for (std::size_t i = 0; i < info.shared_alloc_syms.size() - 1; ++i) {
-            var next = info.shared_alloc_syms[i + 1];
-            body = make_buffer::make(
-                info.shared_alloc_syms[i], buffer_at(next), op->elem_size, info.dims, std::move(body));
-          }
+        const std::vector<var>& syms = info.shared_alloc_syms;
+        body = crop_buffer::make(op->sym, syms.back(), dims_bounds(op->dims), std::move(body));
+        for (std::size_t i = 0; i + 1 < syms.size(); ++i) {
+          body = clone_buffer::make(syms[i], syms[i + 1], std::move(body));
         }
       }
       stmt result = allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body));
