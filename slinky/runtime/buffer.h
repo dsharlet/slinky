@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 #include "slinky/base/arithmetic.h"
@@ -220,7 +221,7 @@ protected:
     translate_impl(dims + 1, offsets...);
   }
 
-  std::size_t init_strides_impl(index_t alignment);
+  std::optional<std::size_t> init_strides_impl(index_t alignment);
 
 public:
   using element = void;
@@ -420,9 +421,13 @@ public:
 
   // If any strides are `auto_stride`, replace them with automatically determined strides.
   // `alignment` must be a power of 2.
-  std::size_t init_strides(index_t alignment = 1) {
+  std::optional<std::size_t> init_strides(index_t alignment = 1) {
     if (rank == 0) {
-      return (elem_size + alignment - 1) & ~(alignment - 1);
+      std::size_t final_sum;
+      if (add_with_overflow(elem_size, static_cast<std::size_t>(alignment - 1), final_sum)) {
+        return std::nullopt;
+      }
+      return final_sum & ~static_cast<std::size_t>(alignment - 1);
     } else {
       return init_strides_impl(alignment);
     }

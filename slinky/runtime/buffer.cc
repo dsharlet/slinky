@@ -7,7 +7,9 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <optional>
 
+#include "slinky/base/arithmetic.h"
 #include "slinky/base/util.h"
 
 namespace slinky {
@@ -92,15 +94,20 @@ namespace {
 // any other dimension's memory.
 struct init_stride_dim {
   index_t stride;
-  index_t dim_stride;  // stride * extent
+  index_t dim_stride;
 
-  init_stride_dim(index_t stride, index_t extent) : stride(stride), dim_stride(stride * extent) {}
+  init_stride_dim() : stride(0), dim_stride(0) {}
+  init_stride_dim(index_t stride, index_t dim_stride) : stride(stride), dim_stride(dim_stride) {}
 
   bool operator<(const init_stride_dim& r) const { return dim_stride < r.dim_stride; }
 };
 
-SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims) {
-  const index_t dim_stride = stride * extent;
+SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims, bool& overflow) {
+  index_t dim_stride;
+  if (mul_with_overflow(stride, extent, dim_stride)) {
+    overflow = true;
+    return false;
+  }
   for (const init_stride_dim& d : dims) {
     if (d.stride >= dim_stride) {
       // The dim is completely outside the proposed stride.
@@ -115,17 +122,27 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_
 
 }  // namespace
 
-std::size_t raw_buffer::init_strides_impl(index_t alignment) {
+std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   init_stride_dim* dims_end = dims;
   // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
-  std::size_t flat_max = 0;
-  auto learn_dim = [&](const init_stride_dim& d) {
+  index_t flat_max = 0;
+  bool overflow = false;
+
+  auto learn_dim = [&](index_t stride, index_t extent) {
+    index_t dim_stride = 0;
+    overflow = overflow || mul_with_overflow(stride, extent, dim_stride);
+
+    init_stride_dim d(stride, dim_stride);
     init_stride_dim* at = std::lower_bound(dims, dims_end, d);
     internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
     *at = d;
-    flat_max += d.dim_stride - d.stride;
+
+    index_t diff;
+    overflow = overflow || sub_with_overflow(d.dim_stride, d.stride, diff);
+    overflow = overflow || add_with_overflow(flat_max, diff, flat_max);
+
     ++dims_end;
   };
 
@@ -140,7 +157,12 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
       // The buffer is empty or has extent 1, we don't care about the stride.
       if (dim_i.stride() == dim::auto_stride) dim_i.set_stride(elem_size);
     } else if (dim_i.stride() != dim::auto_stride) {
-      learn_dim(init_stride_dim(std::abs(dim_i.stride()), alloc_extent_i));
+      index_t stride_val = dim_i.stride();
+      if (stride_val == std::numeric_limits<index_t>::min()) {
+        overflow = true;
+        stride_val = 0;
+      }
+      learn_dim(std::abs(stride_val), alloc_extent_i);
     } else {
       // Track the range of dimensions we need to find the stride of.
       unknown_begin = std::min(unknown_begin, i);
@@ -156,19 +178,22 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
     assert(alloc_extent_i > 1);
 
     span<const init_stride_dim> known_dims{dims, dims_end};
-    if (is_stride_ok(elem_size, alloc_extent_i, known_dims)) {
+    if (is_stride_ok(elem_size, alloc_extent_i, known_dims, overflow)) {
       // This dimension can have stride elem_size, no other stride could be better.
       dim_i.set_stride(elem_size);
-      learn_dim(init_stride_dim(elem_size, alloc_extent_i));
+      learn_dim(elem_size, alloc_extent_i);
       continue;
     }
 
     // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
     for (const init_stride_dim& dim_j : known_dims) {
-      const index_t candidate = (dim_j.dim_stride + (alignment - 1)) & ~(alignment - 1);
-      if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims)) {
+      index_t padded_candidate = 0;
+      overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
+      index_t candidate = padded_candidate & ~(alignment - 1);
+
+      if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
         dim_i.set_stride(candidate);
-        learn_dim(init_stride_dim(candidate, alloc_extent_i));
+        learn_dim(candidate, alloc_extent_i);
         // The dims are sorted, so no subsequent candidate will be better.
         break;
       }
@@ -176,12 +201,22 @@ std::size_t raw_buffer::init_strides_impl(index_t alignment) {
     assert(dim_i.stride() != dim::auto_stride);
   }
 
-  return (flat_max + elem_size + (alignment - 1)) & ~(alignment - 1);
+  index_t unaligned_size = 0;
+  overflow = overflow || add_with_overflow(flat_max, static_cast<index_t>(elem_size), unaligned_size);
+  index_t padded_size = 0;
+  overflow = overflow || add_with_overflow(unaligned_size, alignment - 1, padded_size);
+  index_t final_size = padded_size & ~(alignment - 1);
+
+  if (overflow || final_size < 0) {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(final_size);
 }
 
 void* raw_buffer::allocate(index_t base_alignment, index_t stride_alignment) {
-  std::size_t size = init_strides(stride_alignment);
-  void* allocation = malloc(size + base_alignment - 1);
+  std::optional<std::size_t> size = init_strides(stride_alignment);
+  if (!size) return nullptr;
+  void* allocation = malloc(*size + base_alignment - 1);
   base = align_up(allocation, base_alignment);
   return allocation;
 }

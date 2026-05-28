@@ -1,3 +1,5 @@
+#include "slinky/runtime/buffer.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -6,9 +8,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
+#include <optional>
 
 #include "slinky/base/test/seeded_test.h"
-#include "slinky/runtime/buffer.h"
 
 namespace slinky {
 
@@ -1306,6 +1308,46 @@ TEST(optimize_dims, extent_1) {
   ASSERT_EQ(a.dim(1).stride(), 8);
   ASSERT_EQ(b.dim(1).extent(), 3);
   ASSERT_EQ(b.dim(1).stride(), 12);
+}
+
+TEST(buffer, init_strides_overflow_multiplication) {
+  buffer<int, 2> buf;
+  buf.elem_size = sizeof(int);
+
+  buf.mutable_dim(0).set_min_extent(0, 10);
+  buf.mutable_dim(0).set_stride(sizeof(int));
+
+  index_t max_val = std::numeric_limits<index_t>::max();
+  buf.mutable_dim(1).set_min_extent(0, 2);
+  buf.mutable_dim(1).set_stride(max_val - 5);
+
+  std::optional<std::size_t> size = buf.init_strides();
+  ASSERT_EQ(size, std::nullopt);
+}
+
+TEST(buffer, init_strides_overflow_accumulation) {
+  buffer<int, 2> buf;
+  buf.elem_size = sizeof(int);
+
+  index_t max_val = std::numeric_limits<index_t>::max();
+  index_t safe_large_stride = max_val / 3 * 2;
+
+  buf.mutable_dim(0).set_min_extent(0, 2);
+  buf.mutable_dim(0).set_stride(safe_large_stride);
+
+  buf.mutable_dim(1).set_min_extent(0, 2);
+  buf.mutable_dim(1).set_stride(safe_large_stride);
+
+  std::optional<std::size_t> size = buf.init_strides();
+  ASSERT_EQ(size, std::nullopt);
+}
+
+TEST(buffer, init_strides_overflow_rank0_alignment) {
+  buffer<int, 0> buf;
+  buf.elem_size = std::numeric_limits<std::size_t>::max() - 10;
+
+  std::optional<std::size_t> size = buf.init_strides(16);
+  ASSERT_EQ(size, std::nullopt);
 }
 
 }  // namespace slinky
