@@ -309,6 +309,7 @@ class copy_aliaser : public stmt_mutator {
     // If we decided to alias this buffer, we might have grown the bounds. If so, we need to make a new allocation with
     // this symbol, but make a crop of it for the original bounds.
     var shared_alloc_sym;
+    std::vector<var> intermediate_syms;
 
     buffer_info(std::vector<dim_expr> dims, expr elem_size, bool is_input = false, bool is_output = false)
         : dims(std::move(dims)), elem_size(std::move(elem_size)), is_input(is_input), is_output(is_output) {}
@@ -528,8 +529,11 @@ public:
           assert(!target_info->is_output);
           assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
-          std::string old_name =
-              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
+          var old_sym = target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var;
+          if (old_sym != target_var) {
+            target_info->intermediate_syms.push_back(old_sym);
+          }
+          std::string old_name = ctx.name(old_sym);
           target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
           alloc_var = target_info->shared_alloc_sym;
           for (std::size_t d = 0; d < alias.permutation.size(); ++d) {
@@ -591,6 +595,13 @@ public:
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
         body = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
+        const std::vector<var>& chain = info.intermediate_syms;
+        if (!chain.empty()) {
+          for (std::size_t i = 0; i < chain.size(); ++i) {
+            var next = i + 1 < chain.size() ? chain[i + 1] : info.shared_alloc_sym;
+            body = make_buffer::make(chain[i], buffer_at(next), op->elem_size, info.dims, std::move(body));
+          }
+        }
       }
       stmt result = allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
@@ -841,6 +852,9 @@ public:
         assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
         old_info->shared_alloc_sym = info->shared_alloc_sym;
       }
+      if (!info->intermediate_syms.empty()) {
+        old_info->intermediate_syms = std::move(info->intermediate_syms);
+      }
       for (alias_info& a : info->aliases) {
         if (a.target == sym) {
           a.target = src;
@@ -862,6 +876,7 @@ public:
         buffers[i] = buffer_info(
             old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
         buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
+        buffers[i]->intermediate_syms = old_buffers[i]->intermediate_syms;
       }
     }
 

@@ -1267,4 +1267,54 @@ TEST(broadcast_new_dim, pipeline) {
   }
 }
 
+TEST(multiple_shared_aliases, pipeline) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 1, sizeof(int));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+
+  var x(ctx, "x");
+  test_context eval_ctx;
+
+  func producer = func::make(add_1<int>, {{in, {point(x)}}}, {{intm, {x}}});
+  producer.loops({{x, 1}});
+
+  // We need padding to force bounds expansion and alias sharing.
+  auto pad_val = buffer_expr::make_scalar<int>(ctx, "pad", 0);
+
+  // intm1 = copy(intm) with shift -6, pad outside [0, 1] of intm
+  func copy1 = func::make_copy({intm, {point(x - 6)}, {bounds(0, 1)}}, {intm1, {x}}, {pad_val}, eval_ctx.copy);
+
+  // intm2 = copy(intm) with shift -4, pad outside [0, 1] of intm
+  func copy2 = func::make_copy({intm, {point(x - 4)}, {bounds(0, 1)}}, {intm2, {x}}, {pad_val}, eval_ctx.copy);
+
+  func consumer = func::make(subtract<int>, {{intm1, {point(x)}}, {intm2, {point(x)}}}, {{out, {x}}});
+  consumer.loops({{x, 1}});
+
+  copy1.compute_at({&consumer, x});
+  copy2.compute_at({&consumer, x});
+  intm1->store_at({&consumer, x});
+  intm2->store_at({&consumer, x});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  buffer<int, 1> in_buf({2});
+  init_random(in_buf);
+  buffer<int, 1> out_buf({12});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int i = 0; i < 12; ++i) {
+    int val1 = (i - 6 >= 0 && i - 6 <= 1) ? in_buf(i - 6) + 1 : 0;
+    int val2 = (i - 4 >= 0 && i - 4 <= 1) ? in_buf(i - 4) + 1 : 0;
+    ASSERT_EQ(out_buf(i), val1 - val2);
+  }
+}
+
 }  // namespace slinky
