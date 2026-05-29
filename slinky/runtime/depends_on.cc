@@ -438,7 +438,8 @@ public:
     case intrinsic::indeterminate:
     case intrinsic::and_then:
     case intrinsic::or_else:
-    case intrinsic::buffer_at: break;
+    case intrinsic::buffer_at:
+    case intrinsic::validate_buffer: break;
     };
 
     recursive_node_visitor::visit(op);

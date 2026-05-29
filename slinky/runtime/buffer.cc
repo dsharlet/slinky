@@ -25,18 +25,55 @@ index_t alloc_extent(const dim& dim) {
   }
 }
 
-std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
-  index_t flat_min = 0;
-  index_t flat_max = 0;
+bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min, index_t& flat_max) {
+  flat_min = 0;
+  flat_max = 0;
+  bool overflow = false;
+
   for (std::size_t i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
     index_t extent = alloc_extent(dims[i]);
     assert(extent >= 0);
-    if (extent == 0) return 0;
-    flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
-    flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
+    if (extent == 0) {
+      flat_min = 0;
+      flat_max = 0;
+      return true;
+    }
+
+    index_t stride = dims[i].stride();
+    overflow |= (stride == dim::auto_stride && extent > 1);
+
+    index_t extent_minus_1;
+    index_t term_min;
+    index_t term_max;
+    overflow = overflow || sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1);
+    overflow = overflow || mul_with_overflow(extent_minus_1, std::min<index_t>(0, stride), term_min);
+    overflow = overflow || add_with_overflow(flat_min, term_min, flat_min);
+    overflow = overflow || mul_with_overflow(extent_minus_1, std::max<index_t>(0, stride), term_max);
+    overflow = overflow || add_with_overflow(flat_max, term_max, flat_max);
   }
-  return flat_max - flat_min + elem_size;
+  return !overflow;
+}
+
+std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
+  for (std::size_t i = 0; i < rank; ++i) {
+    if (alloc_extent(dims[i]) == 0) return 0;
+  }
+
+  index_t flat_min = 0;
+  index_t flat_max = 0;
+  if (!calculate_flat_bounds(rank, dims, flat_min, flat_max)) {
+    return 0;
+  }
+
+  index_t span;
+  if (sub_with_overflow(flat_max, flat_min, span)) return 0;
+  assert(span >= 0);
+  std::size_t size;
+  if (add_with_overflow(static_cast<std::size_t>(span), elem_size, size)) {
+    return 0;
+  }
+  return size;
 }
 
 }  // namespace
@@ -443,6 +480,31 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
 
   // Implement the padding in all but the first dimension.
   pad_impl(src, dst_opt, pad_opt);
+}
+
+bool validate_buffer(const raw_buffer& buf) {
+  index_t flat_min = 0;
+  index_t flat_max = 0;
+  if (!calculate_flat_bounds(buf.rank, buf.dims, flat_min, flat_max)) {
+    return false;
+  }
+  if (!buf.base) return true;
+  uintptr_t base_val = reinterpret_cast<uintptr_t>(buf.base);
+
+  // Check the minimum address.
+  assert(flat_min <= 0);
+  uintptr_t flat_min_abs = -static_cast<uintptr_t>(flat_min);
+  if (base_val < flat_min_abs) return false;
+
+  // Check the maximum address.
+  uintptr_t elem_size_u = static_cast<uintptr_t>(buf.elem_size);
+  uintptr_t flat_max_u = static_cast<uintptr_t>(flat_max);
+  uintptr_t max_offset;
+  if (add_with_overflow(flat_max_u, elem_size_u, max_offset)) return false;
+  uintptr_t high_address;
+  if (add_with_overflow(base_val, max_offset, high_address)) return false;
+
+  return true;
 }
 
 namespace internal {

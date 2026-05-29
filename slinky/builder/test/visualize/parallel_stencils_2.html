@@ -351,10 +351,13 @@ let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold
 function pipeline(in1, in2, out) {
   check(in1);
   check((buffer_rank(in1) == 2));
+  check(validate_buffer(in1));
   check(in2);
   check((buffer_rank(in2) == 2));
+  check(validate_buffer(in2));
   check(out);
   check((buffer_rank(out) == 2));
+  check(validate_buffer(out));
   check((buffer_elem_size(in1) == 2));
   check((buffer_elem_size(in2) == 2));
   check((buffer_elem_size(out) == 2));

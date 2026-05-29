@@ -1350,4 +1350,57 @@ TEST(buffer, init_strides_overflow_rank0_alignment) {
   ASSERT_EQ(size, std::nullopt);
 }
 
+TEST(buffer, empty_dimension_bounds) {
+  buffer<int, 2> buf;
+  buf.elem_size = sizeof(int);
+
+  // Dimension 0 is safe
+  buf.mutable_dim(0).set_min_extent(0, 10);
+  buf.mutable_dim(0).set_stride(sizeof(int));
+
+  // Dimension 1 is empty (extent 0) but has a huge/overflowing stride!
+  index_t max_val = std::numeric_limits<index_t>::max();
+  buf.mutable_dim(1).set_min_extent(0, 0);
+  buf.mutable_dim(1).set_stride(max_val - 1);
+
+  // Validate the buffer (base is null, so it only checks bounds)
+  // Since it has an empty dimension, it should reset bounds to [0, 0] and
+  // return true (success)!
+  ASSERT_TRUE(validate_buffer(buf));
+
+  // Let's verify the size is indeed 0
+  ASSERT_EQ(buf.size_bytes(), 0);
+}
+
+TEST(buffer, validation_rank0) {
+  buffer<int, 0> buf;
+  buf.allocate();
+  ASSERT_TRUE(validate_buffer(buf));
+}
+
+TEST(buffer, validation_negative_strides_safe) {
+  buffer<int, 1> buf;
+  buf.elem_size = sizeof(int);
+  buf.mutable_dim(0).set_min_extent(0, 10);
+  buf.mutable_dim(0).set_stride(-static_cast<index_t>(sizeof(int)));
+
+  // Set a safe base pointer that can accommodate -36 bytes offset
+  buf.raw_buffer::base = reinterpret_cast<void*>(100);
+
+  ASSERT_TRUE(validate_buffer(buf));
+}
+
+TEST(buffer, validation_negative_strides_underflow) {
+  buffer<int, 1> buf;
+  buf.elem_size = sizeof(int);
+  buf.mutable_dim(0).set_min_extent(0, 10);
+  buf.mutable_dim(0).set_stride(-static_cast<index_t>(sizeof(int)));
+
+  // Set an unsafe base pointer (only 20 bytes, but we need 36 bytes for
+  // negative offsets!)
+  buf.raw_buffer::base = reinterpret_cast<void*>(20);
+
+  ASSERT_FALSE(validate_buffer(buf));
+}
+
 }  // namespace slinky
