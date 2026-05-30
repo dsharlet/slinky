@@ -778,7 +778,7 @@ class constrained_stencil : public testing::TestWithParam<int> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_split, constrained_stencil, testing::Values(1, 5));
 
-TEST_P(constrained_stencil, may_alias) {
+TEST_P(constrained_stencil, cannot_alias) {
   const int S = GetParam();
   const int D = 1;
   const int K = 5;
@@ -795,7 +795,7 @@ TEST_P(constrained_stencil, may_alias) {
   auto stencil = buffer_expr::make(ctx, "stencil", 2, sizeof(short));
 
   stencil->dim(0).stride = sizeof(short);
-  stencil->dim(1).stride = sizeof(short) * S;
+  stencil->dim(1).stride = sizeof(short) * K;
 
   var x(ctx, "x");
   var dx(ctx, "dx");
@@ -839,14 +839,9 @@ TEST_P(constrained_stencil, may_alias) {
     }
   }
 
-  if (S == 1) {
-    // When S is 1, both stencil dimensions can be aliased without violating the stride constraint for either dimension.
-    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
-    ASSERT_EQ(eval_ctx.copy_calls, 0);
-  } else {
-    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
-    ASSERT_EQ(eval_ctx.copy_calls, 1);
-  }
+  // We can't alias the copy because the stencil is required to be contiguous.
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST(padded_reshape, cannot_alias_pad) {
