@@ -379,6 +379,22 @@ class copy_aliaser : public stmt_mutator {
       alias.assume_in_bounds = in_bounds;
     }
 
+    // If we plan to propagate strides from the alloc to the target (alloc has strides, target doesn't),
+    // require that alloc and target bounds extents match in all dims (after permutation). Otherwise
+    // the propagated strides may not be valid for target's layout: even if the bounds match for a dim
+    // that has a propagated stride, the un-propagated dims of target could have different extents
+    // that cause overlap with the propagated strides.
+    if (alias.assume_in_bounds && alloc_has_stride && !target_has_stride) {
+      for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
+        const int target_d = alias.permutation[d];
+        if (target_d < 0 || target_d >= static_cast<int>(target_info.dims.size())) continue;
+        if (alloc_dims[d].bounds.is_point() || target_info.dims[target_d].bounds.is_point()) continue;
+        if (!prove_true(alloc_dims[d].bounds.extent() == target_info.dims[target_d].bounds.extent())) {
+          return false;
+        }
+      }
+    }
+
     // If the target doesn't have strides, we can propagate our strides there, but we need to make sure there are no
     // contradictions when we do so. This tracks what we want the strides to be.
     std::vector<expr> target_stride(target_info.dims.size());
