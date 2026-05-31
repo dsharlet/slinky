@@ -222,7 +222,7 @@ public:
 
   // Make a new constant expression.
   expr(std::int64_t x);
-  SLINKY_INLINE expr(std::int32_t x) : expr(static_cast<std::int64_t>(x)) {}
+  SLINKY_INLINE expr(int x) : expr(static_cast<std::int64_t>(x)) {}
   SLINKY_INLINE expr(std::size_t x) : expr(static_cast<std::int64_t>(x)) {}
   expr(var sym);
 
