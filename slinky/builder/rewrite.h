@@ -59,7 +59,7 @@ struct pattern_info {
   static constexpr int matched = T::matched;
 };
 template <>
-struct pattern_info<std::int32_t> {
+struct pattern_info<int> {
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
@@ -79,7 +79,10 @@ struct pattern_info<bool> {
   static constexpr bool is_canonical = true;
   static constexpr int matched = 0;
 };
-#ifdef __EMSCRIPTEN__
+// On Emscripten and Hexagon, `long` is a 32-bit type distinct from both
+// `int` and `std::int64_t` (which is `long long`). On Linux x86-64 the
+// pattern_info<std::int64_t> spec above already covers `long` via typedef.
+#if defined(__EMSCRIPTEN__) || defined(__HEXAGON_ARCH__)
 template <>
 struct pattern_info<long> {
   static constexpr expr_node_type type = expr_node_type::constant;
