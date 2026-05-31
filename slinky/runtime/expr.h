@@ -224,6 +224,19 @@ public:
   expr(std::int64_t x);
   SLINKY_INLINE expr(std::int32_t x) : expr(static_cast<std::int64_t>(x)) {}
   SLINKY_INLINE expr(std::size_t x) : expr(static_cast<std::int64_t>(x)) {}
+#ifdef __HEXAGON_ARCH__
+  // Per-platform integer typedefs (overload resolution operates on the
+  // fundamental types, not the typedef names):
+  //   Linux x86-64:  int32_t = int,  int64_t = long,      size_t = unsigned long
+  //   on Hexagon:    int32_t = long, int64_t = long long, size_t = unsigned int
+  // On Hexagon `int` and `long` are both 32-bit but C++ treats them as
+  // distinct types regardless of size. So for an `int` literal like `0`,
+  // Linux picks `expr(int32_t = int)` as an exact match, but on Hexagon
+  // all three ctors above need a conversion (int -> long / long long /
+  // unsigned int) of equal rank, and the call is ambiguous. This overload
+  // provides the missing exact match.
+  SLINKY_INLINE expr(int x) : expr(static_cast<std::int64_t>(x)) {}
+#endif
   expr(var sym);
 
   // Make an `expr` referencing an existing node.
