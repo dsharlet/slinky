@@ -978,7 +978,13 @@ TEST_P(padded_stencil, cannot_alias) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 }
 
-TEST(cannot_alias, padded_stride_propagation) {
+class stride_propagation : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(constrain_outer, stride_propagation, testing::Bool());
+
+TEST_P(stride_propagation, padded) {
+  const bool constrain_outer = GetParam();
+
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
@@ -987,10 +993,10 @@ TEST(cannot_alias, padded_stride_propagation) {
   auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(int));
   auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(int));
 
-  // Constrain intm1 to its natural strides. If these strides are propagated to intm2 (which is larger),
-  // the resulting strides would be too small for intm2, causing memory overlap.
   intm1->dim(0).stride = sizeof(int);
-  intm1->dim(1).stride = sizeof(int) * in->dim(0).extent();
+  if (constrain_outer) {
+    intm1->dim(1).stride = sizeof(int) * in->dim(0).extent();
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -1030,15 +1036,17 @@ TEST(cannot_alias, padded_stride_propagation) {
     }
   }
 
-  // We should NOT have aliased intm1 to intm2.
-  ASSERT_GE(eval_ctx.heap.allocs.size(), 1);
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), constrain_outer ? 2 : 1);
 }
 
-TEST(cannot_alias, cropped_stride_propagation) {
+TEST_P(stride_propagation, cropped) {
+  const bool constrain_outer = GetParam();
+
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto out_full = buffer_expr::make(ctx, "out_full", 2, sizeof(int));
 
   auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(int));
   auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(int));
@@ -1046,14 +1054,10 @@ TEST(cannot_alias, cropped_stride_propagation) {
   const int W = 8;
   const int H = 8;
 
-  // Force intm1 to be the full size of the input, even though intm2 only consumes a crop of it.
-  intm1->dim(0).bounds = in->dim(0).bounds;
-  intm1->dim(1).bounds = in->dim(1).bounds;
-
-  // intm2 (smaller, a crop of intm1) has explicit strides matching its natural W x H layout.
-  // If these strides are propagated to intm1 (which is larger), the resulting layout would overlap.
   intm2->dim(0).stride = sizeof(int);
-  intm2->dim(1).stride = sizeof(int) * intm2->dim(0).extent();
+  if (constrain_outer) {
+    intm2->dim(1).stride = sizeof(int) * intm2->dim(0).extent();
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -1066,7 +1070,10 @@ TEST(cannot_alias, cropped_stride_propagation) {
 
   func copy_out = func::make_copy({intm2, {point(x), point(y)}}, {out, {x, y}}, eval_ctx.copy);
 
-  pipeline p = build_pipeline(ctx, {in}, {out});
+  // A second consumer of intm1 that requires its full bounds. This requires intm1 to be larger than intm2.
+  func copy_full = func::make_copy({intm1, {point(x), point(y)}}, {out_full, {x, y}}, eval_ctx.copy);
+
+  pipeline p = build_pipeline(ctx, {in}, {out, out_full});
 
   buffer<int, 2> in_buf({W + 2, H + 2});
   init_random(in_buf);
@@ -1074,8 +1081,11 @@ TEST(cannot_alias, cropped_stride_propagation) {
   buffer<int, 2> out_buf({W, H});
   out_buf.allocate();
 
+  buffer<int, 2> out_full_buf({W + 2, H + 2});
+  out_full_buf.allocate();
+
   const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
+  const raw_buffer* outputs[] = {&out_buf, &out_full_buf};
   ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
 
   for (int y = 0; y < H; ++y) {
@@ -1083,6 +1093,13 @@ TEST(cannot_alias, cropped_stride_propagation) {
       ASSERT_EQ(out_buf(x, y), in_buf(x + 1, y + 1) + 1);
     }
   }
+  for (int y = 0; y < H + 2; ++y) {
+    for (int x = 0; x < W + 2; ++x) {
+      ASSERT_EQ(out_full_buf(x, y), in_buf(x, y) + 1);
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), constrain_outer ? 2 : 1);
 }
 
 }  // namespace slinky

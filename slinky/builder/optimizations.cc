@@ -380,17 +380,20 @@ class copy_aliaser : public stmt_mutator {
     }
 
     // If we plan to propagate strides from the alloc to the target (alloc has strides, target doesn't),
-    // require that alloc and target bounds extents match in all dims (after permutation). Otherwise
-    // the propagated strides may not be valid for target's layout: even if the bounds match for a dim
-    // that has a propagated stride, the un-propagated dims of target could have different extents
-    // that cause overlap with the propagated strides.
+    // the propagated strides must be valid for the target's (possibly different) extents.
     if (alias.assume_in_bounds && alloc_has_stride && !target_has_stride) {
-      for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
-        const int target_d = alias.permutation[d];
-        if (target_d < 0 || target_d >= static_cast<int>(target_info.dims.size())) continue;
-        if (alloc_dims[d].bounds.is_point() || target_info.dims[target_d].bounds.is_point()) continue;
-        if (!prove_true(alloc_dims[d].bounds.extent() == target_info.dims[target_d].bounds.extent())) {
-          return false;
+      if (std::all_of(alloc_dims.begin(), alloc_dims.end(), [&](const dim_expr& d) {
+            return !d.stride.defined() || d.bounds.is_point() || prove_true(d.stride == alloc_info.elem_size);
+          })) {
+        // The only defined stride is elem_size, it can be propagated safely.
+      } else {
+        for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
+          const int target_d = alias.permutation[d];
+          if (target_d < 0 || target_d >= static_cast<int>(target_info.dims.size())) continue;
+          if (alloc_dims[d].bounds.is_point() || target_info.dims[target_d].bounds.is_point()) continue;
+          if (!prove_true(alloc_dims[d].bounds.extent() == target_info.dims[target_d].bounds.extent())) {
+            return false;
+          }
         }
       }
     }
