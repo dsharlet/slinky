@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OSS Hexagon cross-toolchain image.
+#
+# Wraps the pre-built LLVM toolchain from
+#   https://github.com/quic/toolchain_for_hexagon/releases
+# (hosted on artifacts.codelinaro.org) so we can cross-compile C/C++ to
+# Hexagon (target: hexagon-unknown-linux-musl) without any proprietary SDK.
+#
+# Configuration: a single TAG arg (a release tag from the repo above).
+#   docker build --build-arg TAG=v22.1.4_ -t hexagon-oss-toolchain .
+#
+# Provides:
+#   - hexagon-unknown-linux-musl-clang{,++}
+#   - musl libc + libc++ for Hexagon
+#   - make / cmake / ninja
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ubuntu:22.04
+
+ARG TAG=v22.1.4_
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Host-side packages:
+#   curl, zstd, tar       — fetch + extract the toolchain tarball
+#   make, cmake, ninja    — build systems we'll use against the toolchain
+#   libc++1, libc++abi1,  — the cross-compiler binaries themselves are
+#   libunwind8              dynamically linked against these host libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl zstd tar \
+        make cmake ninja-build build-essential python3 \
+        libc++1 libc++abi1 libunwind8 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Resolve and download the Linux x86_64 musl-cross artifact for ${TAG} by
+# scraping the GitHub release page for the codelinaro.org download URL.
+RUN set -eux && \
+    page="https://github.com/quic/toolchain_for_hexagon/releases/tag/${TAG}" && \
+    url=$(curl -sL "${page}" \
+          | grep -oE 'https://artifacts\.codelinaro\.org/[^"]*cross-hexagon-unknown-linux-musl\.tar\.zst' \
+          | head -1) && \
+    [ -n "${url}" ] || { echo "ERROR: no musl-cross artifact for tag ${TAG} at ${page}" >&2; exit 1; } && \
+    echo "Downloading: ${url}" && \
+    cd /opt && \
+    curl -fL -o toolchain.tar.zst "${url}" && \
+    tar --use-compress-program=unzstd -xf toolchain.tar.zst && \
+    rm toolchain.tar.zst && \
+    ln -s clang+llvm-*-cross-hexagon-unknown-linux-musl hexagon-toolchain
+
+# Align musl's int32_t / uint32_t typedefs with Qualcomm's proprietary-SDK
+# convention (int32_t = long / uint32_t = unsigned long on Hexagon), while
+# leaving musl's defaults unchanged on non-Hexagon targets. Both are 32-bit
+# per the C standard, but the proprietary SDK picks `long` and we want
+# C++ overload resolution to behave identically across both toolchains.
+RUN sysroot=/opt/hexagon-toolchain/x86_64-linux-gnu/target/hexagon-unknown-linux-musl/usr/include && \
+    perl -i -pe '\
+        s{^typedef signed int      int32_t;$}{#ifdef __HEXAGON_ARCH__\ntypedef signed long     int32_t;\n#else\ntypedef signed int      int32_t;\n#endif}; \
+        s{^typedef unsigned int    uint32_t;$}{#ifdef __HEXAGON_ARCH__\ntypedef unsigned long   uint32_t;\n#else\ntypedef unsigned int    uint32_t;\n#endif}' \
+        "$sysroot/bits/alltypes.h"
+
+ENV PATH=/opt/hexagon-toolchain/x86_64-linux-gnu/bin:${PATH}
+# The cross-compiler driver itself loads libc++.so.1 etc. from the
+# toolchain's own lib/ dir, not /usr/lib.
+ENV LD_LIBRARY_PATH=/opt/hexagon-toolchain/x86_64-linux-gnu/lib
+
+# Sanity check: image is usable iff this prints the clang version line.
+RUN hexagon-unknown-linux-musl-clang++ --version
+
+WORKDIR /work
