@@ -224,6 +224,16 @@ public:
   expr(std::int64_t x);
   SLINKY_INLINE expr(int x) : expr(static_cast<std::int64_t>(x)) {}
   SLINKY_INLINE expr(std::size_t x) : expr(static_cast<std::int64_t>(x)) {}
+#if defined(__EMSCRIPTEN__) || defined(__HEXAGON_ARCH__)
+  // On Emscripten and Hexagon, `long` is a 32-bit type distinct from
+  // both `int` and `std::int64_t` (which is `long long`). Without this
+  // overload, calls like `expr(some_index_t)` (index_t = long on those
+  // platforms) are ambiguous between expr(int) / expr(int64_t) /
+  // expr(size_t). On Linux x86-64 expr(int64_t) already covers `long`
+  // via typedef so no extra overload is needed. Mirrors the
+  // pattern_info<long> specialization in slinky/builder/rewrite.h.
+  SLINKY_INLINE expr(long x) : expr(static_cast<std::int64_t>(x)) {}
+#endif
   expr(var sym);
 
   // Make an `expr` referencing an existing node.
