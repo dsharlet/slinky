@@ -379,6 +379,25 @@ class copy_aliaser : public stmt_mutator {
       alias.assume_in_bounds = in_bounds;
     }
 
+    // If we plan to propagate strides from the alloc to the target (alloc has strides, target doesn't),
+    // the propagated strides must be valid for the target's (possibly different) extents.
+    if (alias.assume_in_bounds && alloc_has_stride && !target_has_stride) {
+      if (std::all_of(alloc_dims.begin(), alloc_dims.end(), [&](const dim_expr& d) {
+            return !d.stride.defined() || d.bounds.is_point() || prove_true(d.stride == alloc_info.elem_size);
+          })) {
+        // The only defined stride is elem_size, it can be propagated safely.
+      } else {
+        for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
+          const int target_d = alias.permutation[d];
+          if (target_d < 0 || target_d >= static_cast<int>(target_info.dims.size())) continue;
+          if (alloc_dims[d].bounds.is_point() || target_info.dims[target_d].bounds.is_point()) continue;
+          if (!prove_true(alloc_dims[d].bounds.extent() == target_info.dims[target_d].bounds.extent())) {
+            return false;
+          }
+        }
+      }
+    }
+
     // If the target doesn't have strides, we can propagate our strides there, but we need to make sure there are no
     // contradictions when we do so. This tracks what we want the strides to be.
     std::vector<expr> target_stride(target_info.dims.size());
@@ -545,17 +564,18 @@ public:
           assert(info.dims.size() == alias.permutation.size());
           // The target doesn't have any strides, we might have some strides we assumed we could propagate.
           for (std::size_t d = 0; d < info.dims.size(); ++d) {
-            if (!info.dims[d].stride.defined()) continue;
-            int target_d = alias.permutation[d];
-            if (target_d >= static_cast<int>(target_info->dims.size())) {
-              assert(prove_true(info.dims[d].stride == 0 || info.dims[d].bounds.is_point()));
+            const int target_d = alias.permutation[d];
+            if (!info.dims[d].stride.defined() ||
+                is_variable(info.dims[d].stride, target_var, buffer_field::stride, target_d)) {
+              // This alias is asking for the stride of the target buffer.
+            } else if (info.dims[d].bounds.is_point()) {
+              // The alias dimension is extent 1, don't mess with strides.
+            } else if (target_d >= static_cast<int>(target_info->dims.size())) {
+              // This alias is a broadcast.
+              assert(prove_true(info.dims[d].stride == 0));
             } else if (target_info->dims[target_d].stride.defined()) {
-              assert(prove_true(
-                  info.dims[d].stride == target_info->dims[target_d].stride || info.dims[d].bounds.is_point()));
-            } else if (is_constant(info.dims[d].stride, 0)) {
-              // TODO(dsharlet|vksnk): stride 0 has a special meaning (i.e. that dim is broadcasted), so
-              // it might be incorrect to propagate it to the target buffer in some cases (this is an
-              // actual bug we're hitting). This is a workaround and it's possible there is a better solution.
+              // The target has a stride, and the alias wants a specific stride, they need to match.
+              assert(prove_true(info.dims[d].stride == target_info->dims[target_d].stride));
             } else {
               target_info->dims[target_d].stride = info.dims[d].stride;
             }
