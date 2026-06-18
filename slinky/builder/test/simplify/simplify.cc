@@ -324,6 +324,17 @@ TEST(simplify, loop) {
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(0, buffer_max(b3, 0)), y,
                   crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b1)))),
       matches(crop_dim::make(b1, b0, 0, bounds(0, buffer_max(b3, 0)), make_call(b1))));
+
+  // Check that we can learn enough from buffer bounds checks to simplify away a loop and associated crop.
+  ASSERT_THAT(simplify(block::make({
+                  check::make(buffer_min(b0, 0) >= 0 && buffer_max(b0, 0) <= 9),
+                  loop::make(x, loop::serial, {buffer_min(b0, 0), buffer_max(b0, 0)}, 10,
+                      crop_dim::make(b1, b0, 0, min_extent(x, 10), dummy_call({}, {b1}))),
+              })),
+      matches(block::make({
+          check::make(0 <= buffer_min(b0, 0) && buffer_max(b0, 0) <= 9),
+          dummy_call({}, {b0}),
+      })));
 }
 
 TEST(simplify, siblings) {
