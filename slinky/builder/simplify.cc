@@ -261,65 +261,61 @@ const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
 public:
-  struct buffer_info {
-    expr elem_size;
-
-    // The dimension metadata for this buffer.
-    std::vector<dim_expr> dims;
-
-    dim_expr& dim(size_t d) {
-      if (d >= dims.size()) dims.resize(d + 1);
-      return dims[d];
-    }
-    dim_expr dim(size_t d) const { return d < dims.size() ? dims[d] : dim_expr{}; }
-
-    // If non-negative, we know how many dimensions are in this buffer.
-    int rank = -1;
-
-    // The op that defined this buffer.
-    stmt decl;
-
-    // Identifies the buffer this buffer is a descendent of, if any.
-    var src;
-
-    // How many loops out is the `decl` found.
-    int loop_depth = 0;
-
-    // If this buffer is a constant, a pointer to the constant value.
-    const_raw_buffer_ptr constant;
-
-    buffer_info() = default;
-
-    buffer_info(expr elem_size) : elem_size(std::move(elem_size)) {}
-
-    buffer_info(const_raw_buffer_ptr value) : elem_size(value->elem_size), constant(value) {
-      dims.resize(value->rank);
-      for (std::size_t d = 0; d < value->rank; ++d) {
-        dims[d] = dim_expr(value->dim(d));
-      }
-      rank = value->rank;
-    }
-
-    buffer_info(var sym) { elem_size = buffer_elem_size(sym); }
-  };
-
   struct expr_info {
     interval_expr bounds;
     alignment_type alignment;
-    expr replacement;
+    // The value this variable/buffer field is known to equal, if any. Scalar variables are substituted by this
+    // directly; buffer fields are substituted by it subject to policy in `visit(const variable*)`.
+    expr known_value;
 
-    static expr_info substitution(expr replacement) {
+    expr_info() = default;
+    expr_info(interval_expr bounds, alignment_type alignment = {}, expr known_value = expr())
+        : bounds(std::move(bounds)), alignment(alignment), known_value(std::move(known_value)) {}
+
+    // Construct an `expr_info` representing a known exact (possibly symbolic) value `v`. This is used for buffer-field
+    // metadata, where `v` is the field's value (e.g. the expression for `buffer_min(b, d)`). `bounds`/`alignment` then
+    // carry the additional range/alignment knowledge that scalar variables also enjoy.
+    expr_info(expr v) {
+      if (v.defined()) {
+        known_value = v;
+        bounds = point(v);
+        if (auto c = as_constant(v)) alignment = {0, *c};
+      }
+    }
+
+    static expr_info substitution(expr known_value) {
       expr_info result;
-      result.replacement = replacement;
+      result.known_value = known_value;
       return result;
     }
 
-    var replacement_sym() const {
-      if (!replacement.defined()) return var();
-      auto result = as_variable(replacement);
-      assert(result);
-      return *result;
+    // The known exact value of this variable/field, if any (the symbolic substitution if we have one, otherwise the
+    // value implied by point bounds).
+    expr value() const {
+      if (known_value.defined()) return known_value;
+      return bounds.as_point();
     }
+
+    // Record `v` as this field's known value, keeping the bounds/alignment already computed for it. If `v` is undefined
+    // (e.g. a fold factor that canonicalized to "unfolded"), the field is unknown, so reset to empty.
+    void set_value(const expr& v) {
+      if (v.defined()) {
+        known_value = v;
+      } else {
+        *this = expr_info();
+      }
+    }
+
+    // Merge newly-learned `bounds`/`alignment` into this info (the same logic for scalar variables and buffer fields).
+    // If the result is a known constant, record it as the known value.
+    void merge(interval_expr new_bounds, alignment_type new_alignment) {
+      bounds = simplify_intersection(std::move(bounds), std::move(new_bounds));
+      alignment = alignment & new_alignment;
+      if (auto value = as_constant(bounds.as_point())) {
+        known_value = *value;
+      }
+    }
+
 
     void trim_bounds_using_alignment() {
       if (alignment.modulus == 0) {
@@ -356,6 +352,82 @@ public:
         alignment.remainder = *c;
       }
     }
+  };
+
+  // The metadata for one dimension of a buffer. Each field is an `expr_info` (rather than a bare `expr`) so that buffer
+  // fields get the same bounds/alignment tracking as scalar variables. The exact (symbolic) value of each field, when
+  // known, is in `expr_info::value()`.
+  struct dim_info {
+    expr_info min, max, stride, fold_factor;
+
+    dim_info() = default;
+    // Build from a plain `dim_expr`, treating each expr as an exact known value.
+    dim_info(const dim_expr& d) : min(d.bounds.min), max(d.bounds.max), stride(d.stride), fold_factor(d.fold_factor) {}
+
+    expr_info& field(buffer_field f) {
+      switch (f) {
+      case buffer_field::min: return min;
+      case buffer_field::max: return max;
+      case buffer_field::stride: return stride;
+      case buffer_field::fold_factor: return fold_factor;
+      default: assert(false); return min;
+      }
+    }
+    const expr_info& field(buffer_field f) const { return const_cast<dim_info*>(this)->field(f); }
+
+    // The known exact values of this dimension as a plain `dim_expr` (fields are undefined where the value is unknown).
+    dim_expr value() const { return dim_expr{{min.value(), max.value()}, stride.value(), fold_factor.value()}; }
+  };
+
+  struct buffer_info {
+    expr_info elem_size;
+
+    // The dimension metadata for this buffer.
+    std::vector<dim_info> dims;
+
+    dim_info& dim(size_t d) {
+      if (d >= dims.size()) dims.resize(d + 1);
+      return dims[d];
+    }
+    dim_info dim(size_t d) const { return d < dims.size() ? dims[d] : dim_info{}; }
+
+    // The known exact values of the dimensions as a plain `std::vector<dim_expr>`, e.g. for reconstructing a `make`.
+    std::vector<dim_expr> dim_exprs() const {
+      std::vector<dim_expr> result(dims.size());
+      for (std::size_t d = 0; d < dims.size(); ++d) {
+        result[d] = dims[d].value();
+      }
+      return result;
+    }
+
+    // If non-negative, we know how many dimensions are in this buffer.
+    int rank = -1;
+
+    // The op that defined this buffer.
+    stmt decl;
+
+    // Identifies the buffer this buffer is a descendent of, if any.
+    var src;
+
+    // How many loops out is the `decl` found.
+    int loop_depth = 0;
+
+    // If this buffer is a constant, a pointer to the constant value.
+    const_raw_buffer_ptr constant;
+
+    buffer_info() = default;
+
+    buffer_info(expr_info elem_size) : elem_size(std::move(elem_size)) {}
+
+    buffer_info(const_raw_buffer_ptr value) : elem_size(expr(value->elem_size)), constant(value) {
+      dims.resize(value->rank);
+      for (std::size_t d = 0; d < value->rank; ++d) {
+        dims[d] = dim_info(dim_expr(value->dim(d)));
+      }
+      rank = value->rank;
+    }
+
+    buffer_info(var sym) { elem_size = buffer_elem_size(sym); }
   };
 
 private:
@@ -466,49 +538,43 @@ public:
 
     void add_var_info(const variable* x, interval_expr bounds, alignment_type alignment = {}) {
       if (x->field == buffer_field::none) {
-        std::optional<expr_info> info = vars.lookup(x->sym);
-        if (!info) {
-          ensure_is_point(bounds);
-          info = {std::move(bounds), alignment};
-        } else {
-          info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));
-          info->alignment = info->alignment & alignment;
-        }
-        if (auto value = as_constant(info->bounds.as_point())) {
-          // The bounds tell us this is a constant point.
-          info->replacement = *value;
-        }
+        expr_info info = vars.lookup(x->sym).value_or(expr_info());
+        info.merge(std::move(bounds), alignment);
         vk.push_back(set_value_in_scope(vars, x->sym, std::move(info)));
       } else {
-        expr value = bounds.as_point();
-        if (!value.defined() || !is_pure(value)) {
-          // TODO: Try to resolve the circular dependency that can result if we relax this constraint.
+        // Learn about a field of a buffer. Like the scalar case above, the field's knowledge is stored as an
+        // `expr_info` on the buffer metadata, so it gets the same bounds/alignment treatment as a scalar. We only learn
+        // bounds that don't reference buffer metadata (i.e. are `is_pure`), to avoid a circular dependency where a
+        // field's bounds reference the field itself. Alignment is always safe to learn.
+        if (bounds.min.defined() && !is_pure(bounds.min)) bounds.min = expr();
+        if (bounds.max.defined() && !is_pure(bounds.max)) bounds.max = expr();
+        if (!bounds.min.defined() && !bounds.max.defined() && alignment.modulus == 1) {
+          // We didn't learn anything we can use.
           return;
         }
         var buf = x->sym;
         if (std::find_if(bk.begin(), bk.end(), [buf](const auto& i) { return i.sym() == buf; }) == bk.end()) {
-          // Save the value if we haven't already, but we set the new values below.
-          bk.push_back(scoped_value_in_symbol_map<buffer_info>(buffers, buf));
+          // Save the value if we haven't already, but we set the new values below. We seed the scope with a copy of the
+          // current value so that learning a field here preserves any knowledge already learned about this buffer in an
+          // enclosing scope (rather than building on a moved-from value).
+          bk.push_back(scoped_value_in_symbol_map<buffer_info>(buffers, buf, buffers[buf]));
         }
         std::optional<buffer_info>& info = buffers[buf];
+        if (!info) info = buffer_info(buf);
         if (x->dim >= 0) {
-          if (!info) info = buffer_info(buf);
           switch (x->field) {
-          case buffer_field::min: info->dim(x->dim).bounds.min = std::move(value); break;
-          case buffer_field::max: info->dim(x->dim).bounds.max = std::move(value); break;
-          case buffer_field::stride: info->dim(x->dim).stride = std::move(value); break;
-          case buffer_field::fold_factor: info->dim(x->dim).fold_factor = std::move(value); break;
+          case buffer_field::min:
+          case buffer_field::max:
+          case buffer_field::stride:
+          case buffer_field::fold_factor:
+            info->dim(x->dim).field(x->field).merge(std::move(bounds), alignment);
+            break;
           default: break;
           }
         } else if (x->field == buffer_field::elem_size) {
-          if (!info) {
-            info = buffer_info(std::move(value));
-          } else {
-            info->elem_size = std::move(value);
-          }
+          info->elem_size.merge(std::move(bounds), alignment);
         } else if (x->field == buffer_field::rank) {
-          if (auto rank = as_constant(value)) {
-            if (!info) info = buffer_info(buf);
+          if (auto rank = as_constant(bounds.as_point())) {
             info->rank = *rank;
           }
         }
@@ -708,72 +774,71 @@ public:
       var new_sym = op->sym;
       if (vars.contains(op->sym)) {
         const expr_info& info = *vars[op->sym];
-        if (info.replacement.defined()) {
-          new_sym = info.replacement_sym();
+        if (auto sym = as_variable(info.known_value)) {
+          new_sym = *sym;
         }
       }
       const std::optional<buffer_info>& info = buffers[new_sym];
       expr result = new_sym == op->sym ? expr(op) : variable::make(new_sym, op->field, op->dim);
-      expr bounds = result;
+
+      // Find what we know about this field of the buffer.
+      const expr_info* field = nullptr;
       if (info) {
-        // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
-        // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
-        auto visit_buffer_meta_value = [&, this](expr x) {
-          // There are many conditions in which we should substitute buffer meta:
-          // - We're being asked to substitute it (decl is undefined).
-          // - The value is something we should substitute (it's simple and pure).
-          // - The value is another buffer meta expression.
-          // - We're trying to prove something (as opposed to producing a simplified expression).
-          if (!x.defined()) {
-            // We don't have a value for this field.
-            return false;
-          }
-          if (!info->decl.defined() || should_substitute(x) || x.as<variable>() || (proving && x.defined())) {
-            if (!match(x, op)) {
-              // This is a value we should substitute, and it's different from what we started with.
-              mutate_and_set_result(x);
-              return true;
-            }
-          }
-          if (x.defined()) {
-            bounds = x;
-          }
-          return false;
-        };
         switch (op->field) {
-        case buffer_field::elem_size:
-          if (visit_buffer_meta_value(info->elem_size)) return;
-          break;
+        case buffer_field::elem_size: field = &info->elem_size; break;
         case buffer_field::min:
         case buffer_field::max:
         case buffer_field::stride:
-        case buffer_field::fold_factor: {
+        case buffer_field::fold_factor:
           if (info->rank >= 0 && op->dim >= info->rank) {
             // This buffer metadata refers to an implicit broadcast dimension.
             mutate_and_set_result(0);
             return;
           }
           if (op->dim < static_cast<index_t>(info->dims.size())) {
-            if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
+            field = &info->dims[op->dim].field(op->field);
           }
           break;
-        }
         default: break;
         }
       }
-      switch (op->field) {
-      case buffer_field::rank:
-      case buffer_field::elem_size: set_result(std::move(result), {{0, std::move(bounds)}, alignment_type()}); return;
-      default: set_result(std::move(result), {point(std::move(bounds)), alignment_type()}); return;
+
+      expr_info result_info;
+      if (field) {
+        expr x = field->value();
+        // There are many conditions in which we should substitute the field's value:
+        // - We're being asked to substitute it (the buffer's decl is undefined).
+        // - The value is something we should substitute (it's simple and pure).
+        // - The value is another buffer meta expression.
+        // - We're trying to prove something (as opposed to producing a simplified expression).
+        // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
+        // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
+        if (x.defined() && (!info->decl.defined() || should_substitute(x) || x.as<variable>() || proving) &&
+            !match(x, op)) {
+          mutate_and_set_result(x);
+          return;
+        }
+        // Keep the field symbolic, but carry its learned bounds/alignment.
+        result_info.bounds = field->bounds;
+        result_info.alignment = field->alignment;
       }
+      // Fill in the default bound (the field itself) for any side we didn't learn a tighter bound for; for
+      // rank/elem_size the natural lower bound is 0.
+      if (!result_info.bounds.min.defined()) {
+        result_info.bounds.min =
+            op->field == buffer_field::rank || op->field == buffer_field::elem_size ? expr(0) : result;
+      }
+      if (!result_info.bounds.max.defined()) result_info.bounds.max = result;
+      set_result(std::move(result), std::move(result_info));
+      return;
     } else {
       if (vars.contains(op->sym)) {
         expr_info info = *vars[op->sym];
-        if (info.replacement.defined()) {
+        if (info.known_value.defined()) {
           // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment
           // information.
           // TODO: Maybe we should intersect any information we already had with this?
-          mutate_and_set_result(info.replacement);
+          mutate_and_set_result(info.known_value);
           return;
         } else if (auto c = as_constant(info.bounds.as_point())) {
           set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
@@ -792,8 +857,8 @@ public:
   var visit_symbol(var x) {
     if (vars.contains(x)) {
       const expr_info& info = *vars[x];
-      if (info.replacement.defined()) {
-        return info.replacement_sym();
+      if (auto sym = as_variable(info.known_value)) {
+        return *sym;
       }
     }
     return x;
@@ -1079,13 +1144,14 @@ public:
           args.resize(info->rank + 1);
         }
         for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {
-          if (!info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == info->dims[d].bounds.min)) {
+          dim_expr dim = info->dims[d].value();
+          if (!dim.fold_factor.defined() && prove_true(args[d + 1] == dim.bounds.min)) {
             // This argument is equal to the default value, and we know it is in bounds.
             args[d + 1] = expr();
-          } else if (info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == 0)) {
+          } else if (dim.fold_factor.defined() && prove_true(args[d + 1] == 0)) {
             // This argument is equal to the default value, and we know it is in bounds.
             args[d + 1] = expr();
-          } else if (prove_constant_true(info->dims[d].is_broadcast())) {
+          } else if (prove_constant_true(dim.is_broadcast())) {
             // This argument is to a broadcast dimension.
             args[d + 1] = expr();
           }
@@ -1240,7 +1306,8 @@ public:
           // We don't know about this buffer or dimension, it might be folded.
           return bounds;
         }
-        if (src_info->dims[dim].fold_factor.defined() && !is_constant(src_info->dims[dim].fold_factor, dim::unfolded)) {
+        expr fold_factor = src_info->dims[dim].fold_factor.value();
+        if (fold_factor.defined() && !is_constant(fold_factor, dim::unfolded)) {
           // This dimension is folded, don't drop crops.
           return bounds;
         }
@@ -1535,29 +1602,40 @@ public:
     }
   }
 
-  dim_expr mutate(const dim_expr& d) {
-    dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
-    if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
-    if (result.fold_factor.defined() && !is_constant(result.fold_factor, 0) && !is_constant(result.stride, 0) &&
-        !(is_constant(result.min(), 0) && is_constant(result.max(), 0)) &&
-        prove_true(result.min() / result.fold_factor == result.max() / result.fold_factor))
-      result.fold_factor = expr();
-    if (is_constant(result.stride, dim::auto_stride)) result.stride = expr();
+  dim_info mutate_dim(const dim_expr& d) {
+    // Mutate each field directly into `result`, capturing its bounds/alignment, then attach the (possibly
+    // canonicalized) value.
+    dim_info result;
+    interval_expr bounds = mutate(d.bounds, &result.min, &result.max);
+    expr stride = mutate(d.stride, &result.stride);
+    expr fold_factor = mutate(d.fold_factor, &result.fold_factor);
+    if (is_constant(fold_factor, dim::unfolded)) fold_factor = expr();
+    if (fold_factor.defined() && !is_constant(fold_factor, 0) && !is_constant(stride, 0) &&
+        !(is_constant(bounds.min, 0) && is_constant(bounds.max, 0)) &&
+        prove_true(bounds.min / fold_factor == bounds.max / fold_factor))
+      fold_factor = expr();
+    if (is_constant(stride, dim::auto_stride)) stride = expr();
+    result.min.set_value(bounds.min);
+    result.max.set_value(bounds.max);
+    result.stride.set_value(stride);
+    result.fold_factor.set_value(fold_factor);
     return result;
   }
 
   template <typename T>
   bool mutate_buffer(const T* op, buffer_info& info) {
     scoped_trace trace("mutate_buffer");
-    info = buffer_info(mutate(op->elem_size));
-    bool changed = !info.elem_size.same_as(op->elem_size);
+    info = buffer_info();
+    expr elem_size = mutate(op->elem_size, &info.elem_size);
+    info.elem_size.set_value(elem_size);
+    bool changed = !info.elem_size.value().same_as(op->elem_size);
     info.dims.reserve(op->dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      info.dims.push_back(mutate(op->dims[d]));
-      changed = changed || !info.dims.back().same_as(op->dims[d]);
+      info.dims.push_back(mutate_dim(op->dims[d]));
+      changed = changed || !info.dims.back().value().same_as(op->dims[d]);
     }
     // Remove trailing broadcast dimensions.
-    while (!info.dims.empty() && prove_constant_true(info.dims.back().is_broadcast())) {
+    while (!info.dims.empty() && prove_constant_true(info.dims.back().value().is_broadcast())) {
       info.dims.pop_back();
       changed = true;
     }
@@ -1599,7 +1677,7 @@ public:
 
     if (changed || !body.same_as(op->body)) {
       set_result(block::make({std::move(before),
-          allocate::make(op->sym, op->storage, std::move(info.elem_size), std::move(info.dims), std::move(body)),
+          allocate::make(op->sym, op->storage, info.elem_size.value(), info.dim_exprs(), std::move(body)),
           std::move(after)}));
     } else {
       set_result(op);
@@ -1641,21 +1719,24 @@ public:
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
   // when those references use the same values.
-  void canonicalize_buffer_meta(expr& x, const expr& value, buffer_field field, var sym) {
-    if (!is_variable(x, sym, field) && prove_true(x == value)) x = variable::make(sym, field);
+  void canonicalize_buffer_meta(expr_info& x, const expr& value, buffer_field field, var sym) {
+    expr v = x.value();
+    if (v.defined() && !is_variable(v, sym, field) && prove_true(v == value)) {
+      x = variable::make(sym, field);
+    }
   }
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
-    canonicalize_buffer_meta(buf.elem_size, src.elem_size, buffer_field::elem_size, sym);
+    canonicalize_buffer_meta(buf.elem_size, src.elem_size.value(), buffer_field::elem_size, sym);
     for (int buf_d = 0; buf_d < static_cast<int>(buf.dims.size()); ++buf_d) {
-      dim_expr& d = buf.dims[buf_d];
+      dim_expr d = buf.dims[buf_d].value();
       // Try buf_d first, to prefer making identical buffers.
-      if (buf_d < static_cast<int>(src.dims.size()) && is_buffer_dim(d, src.dims[buf_d], sym, buf_d)) {
-        d = buffer_dim(sym, buf_d);
+      if (buf_d < static_cast<int>(src.dims.size()) && is_buffer_dim(d, src.dims[buf_d].value(), sym, buf_d)) {
+        buf.dims[buf_d] = dim_info(buffer_dim(sym, buf_d));
       } else {
         for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
-          if (src_d != buf_d && is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
-            d = buffer_dim(sym, src_d);
+          if (src_d != buf_d && is_buffer_dim(d, src.dims[src_d].value(), sym, src_d)) {
+            buf.dims[buf_d] = dim_info(buffer_dim(sym, src_d));
             break;
           }
         }
@@ -1688,6 +1769,10 @@ public:
         canonicalize_buffer(info, *src_info, *src_buf);
       }
 
+      // The known exact values of the buffer metadata, for the structural checks below.
+      std::vector<dim_expr> dims = info.dim_exprs();
+      expr elem_size = info.elem_size.value();
+
       auto make_truncate = [&](var src, int rank, stmt body) {
         if (src_info && src_info->rank <= rank) {
           // We know all the dims, and the rank is already what we want to truncate to.
@@ -1697,29 +1782,29 @@ public:
         return transpose::make_truncate(src, src, rank, std::move(body));
       };
 
-      if (match(info.elem_size, buffer_elem_size(*src_buf))) {
+      if (match(elem_size, buffer_elem_size(*src_buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
         auto is_slice = [&]() {
           int dim = 0;
           int slice_rank = 0;
           int at_rank = std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
-          for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
+          for (int d = 0; d < static_cast<int>(dims.size() + at_rank); ++d) {
             if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
               // Skip this dimension.
               ++dim;
-            } else if (slice_rank < info.dims.size()) {
+            } else if (slice_rank < static_cast<int>(dims.size())) {
               // This arg is undefined. We need to find the next dimension here to be a slice.
-              if (is_buffer_dim(info.dims[slice_rank++], *src_buf) != dim++) return false;
+              if (is_buffer_dim(dims[slice_rank++], *src_buf) != dim++) return false;
             } else {
               return false;
             }
           }
-          return slice_rank == info.dims.size();
+          return slice_rank == static_cast<int>(dims.size());
         };
         if (is_slice()) {
           // make_buffer drops trailing dims, do the same here.
-          stmt body = make_truncate(op->sym, info.dims.size(), op->body);
+          stmt body = make_truncate(op->sym, dims.size(), op->body);
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
           set_result(mutate(slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body))));
           return;
@@ -1727,10 +1812,10 @@ public:
 
         // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
         auto is_crop = [&]() {
-          if (bc->args.size() > info.dims.size() + 1) return false;
-          for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
-            if (!is_variable(info.dims[d].stride, *src_buf, buffer_field::stride, d) ||
-                !is_variable(info.dims[d].fold_factor, *src_buf, buffer_field::fold_factor, d)) {
+          if (bc->args.size() > dims.size() + 1) return false;
+          for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+            if (!is_variable(dims[d].stride, *src_buf, buffer_field::stride, d) ||
+                !is_variable(dims[d].fold_factor, *src_buf, buffer_field::fold_factor, d)) {
               return false;
             }
 
@@ -1738,7 +1823,7 @@ public:
             // If it is not defined, it must be buffer_min(buf, d).
             bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
             expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
-            if (!match(info.dims[d].bounds.min, crop_min)) {
+            if (!match(dims[d].bounds.min, crop_min)) {
               return false;
             }
           }
@@ -1746,8 +1831,8 @@ public:
         };
         if (is_crop()) {
           // make_buffer drops trailing dims, do the same here.
-          stmt body = make_truncate(op->sym, info.dims.size(), op->body);
-          set_result(mutate(crop_buffer::make(op->sym, *src_buf, dims_bounds(info.dims), std::move(body))));
+          stmt body = make_truncate(op->sym, dims.size(), op->body);
+          set_result(mutate(crop_buffer::make(op->sym, *src_buf, dims_bounds(dims), std::move(body))));
           return;
         }
 
@@ -1757,12 +1842,12 @@ public:
         std::vector<int> permutation;
         auto is_transpose = [&]() {
           if (bc->args.size() != 1) return false;
-          permutation.reserve(info.dims.size());
-          for (std::size_t d = 0; d < info.dims.size(); ++d) {
-            int dim = is_buffer_dim(info.dims[d], *src_buf);
+          permutation.reserve(dims.size());
+          for (std::size_t d = 0; d < dims.size(); ++d) {
+            int dim = is_buffer_dim(dims[d], *src_buf);
             if (dim >= 0) {
               permutation.push_back(dim);
-            } else if (prove_constant_true(info.dims[d].is_broadcast())) {
+            } else if (prove_constant_true(dims[d].is_broadcast())) {
               permutation.push_back(transpose::new_dim);
             } else {
               return false;
@@ -1790,7 +1875,7 @@ public:
         // We only needed the buffer meta, not the buffer itself.
         return mutate_with_buffer(nullptr, body, op->sym, find_buffer_data_dependency(base), info);
       } else if (changed || !body.same_as(op->body)) {
-        return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
+        return make_buffer::make(op->sym, base, info.elem_size.value(), info.dim_exprs(), std::move(body));
       } else {
         return stmt(op);
       }
@@ -2066,10 +2151,15 @@ public:
     }
 
     for (index_t i = 0; i < static_cast<index_t>(bounds.size()); ++i) {
-      if (i < static_cast<index_t>(info->dims.size()) && prove_constant_true(info->dims[i].is_broadcast())) {
+      if (i < static_cast<index_t>(info->dims.size()) && prove_constant_true(info->dims[i].value().is_broadcast())) {
         bounds[i] = {expr(), expr()};
       } else {
-        bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dim(i).bounds);
+        dim_info& di = info->dim(i);
+        // `mutate_crop_bounds` reads and updates the known min/max of this dimension as it narrows the crop.
+        interval_expr buffer = {di.min.value(), di.max.value()};
+        bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, buffer);
+        di.min = buffer.min;
+        di.max = buffer.max;
       }
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
@@ -2200,7 +2290,8 @@ public:
 
     for (index_t i = static_cast<index_t>(at.size()) - 1; i >= 0; --i) {
       if (op_at[i].defined()) {
-        if (info && i < static_cast<index_t>(info->dims.size()) && prove_constant_true(info->dims[i].is_broadcast())) {
+        if (info && i < static_cast<index_t>(info->dims.size()) &&
+            prove_constant_true(info->dims[i].value().is_broadcast())) {
           at[i] = expr();
         } else {
           at[i] = mutate(op_at[i]);
@@ -2290,7 +2381,7 @@ public:
       break;
     }
 
-    buffer_info sym_info{expr()};
+    buffer_info sym_info{expr_info{}};
     if (src_info && *src_info) {
       while (dims.size() > 0 && (*src_info)->rank >= 0 && dims.back() >= (*src_info)->rank) {
         // The last dimension would be an implicit broadcast.
