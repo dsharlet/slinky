@@ -11,6 +11,24 @@
 
 namespace slinky {
 
+// This file defines `stmt`, slinky's statement IR. Like `expr` (see runtime/expr.h), a `stmt` is an immutable,
+// reference-counted node (`base_stmt_node`); unlike an `expr`, evaluating a `stmt` produces no value, only effects
+// (running callbacks, allocating buffers, looping, etc.). Most of these nodes manipulate "symbolic" buffers (as opposed
+// to concrete buffers described in buffer.h).
+//
+// Almost every node that introduces a name (`allocate`, `make_buffer`, `let_stmt`, `loop`, `crop_*`, `slice_*`,
+// `transpose`, ...) does so for the duration of a nested `body` statement only. The bound value is live while `body`
+// runs and is torn down when control flow leaves `body`. This nesting maps directly onto a call/value stack: entering a
+// node pushes its binding, and exiting pops it, so buffers and `let` values can be stack-allocated and buffer metadata
+// can be mutated in place and restored on exit.
+//
+// Buffers are referenced by `var`, and the buffer-view nodes (`crop_buffer`, `slice_buffer`, `clone_buffer`,
+// `transpose`, ...) produce a new view of an existing buffer that shares its storage.
+//
+// Like `raw_buffer` and `buffer<>`, buffers manipulated by these operators are conceptually infinite-dimensional,
+// these nodes treat dimension indices at or beyond a buffer's rank as broadcasts, so e.g. cropping or slicing such
+// a dimension is well-defined.
+
 enum class stmt_node_type {
   none,
 
@@ -122,7 +140,8 @@ public:
 
 class eval_context;
 
-// Call `target`.
+// Calls a user-provided callback. This is how all actual computation in a pipeline happens; everything else in the IR
+// exists to set up the buffers a `call_stmt` reads and writes.
 class call_stmt : public stmt_node<call_stmt> {
 public:
   // TODO: I think it would be cleaner to pass two spans for the input and output symbol lists here, but the overhead
@@ -149,6 +168,8 @@ public:
     std::string name;
   };
 
+  // The callback to invoke. It is passed the buffers bound to `inputs` and `outputs` (looked up by `var` in the
+  // `eval_context`). It must be a pure function of its `inputs` and `scalars`, and must only write to its `outputs`.
   callable target;
   // These are not actually used during evaluation. They are only here for analyzing the IR, so we can know what will be
   // accessed (and how) by the callable.
@@ -159,20 +180,28 @@ public:
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs);
+  static stmt make(
+      callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs);
 
   static constexpr stmt_node_type static_type = stmt_node_type::call_stmt;
 };
 
+// Copies from buffer `src` to buffer `dst`. This is a distinct node from `call_stmt` (rather than just another
+// callback) so the builder can reason about and optimize copies, e.g. folding them into the producer.
 class copy_stmt : public stmt_node<copy_stmt> {
 public:
   using callable = std::function<void(const raw_buffer&, const raw_buffer&, const raw_buffer& pad)>;
 
+  // Conceptually, the copy iterates over the domain of `dst` with the loop variables `dst_x` (one per dimension of
+  // `dst`), and for each point writes `dst[dst_x...] = src[src_x...]`. Each `src_x` is an expression in terms of
+  // `dst_x`; expressing the source coordinates as functions of the destination coordinates allows a single node to
+  // describe copies, broadcasts (a `src_x` that doesn't depend on `dst_x`), transposes, flips, and other coordinate
+  // remappings.
   var src;
   std::vector<expr> src_x;
   var dst;
   std::vector<var> dst_x;
-  // If defined, the copy will be padded with the values from this buffer when `src` is out of bounds of `dst`.
+  // If defined, the copy will be padded with the values from this buffer where `src` is out of bounds of `dst`.
   var pad;
 
   // This function implements the copy operation. `slinky::copy` is always a suitable implementation of this.
@@ -186,8 +215,9 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };
 
-// Allows lifting a list of common subexpressions (specified by var/stmt pairs)
-// out of another stmt.
+// Binds each `var` in `lets` to the value of the corresponding `expr` while running `body`, allowing common
+// subexpressions to be computed once and reused. The bindings are only in scope within `body`. (This is the statement
+// analogue of the `let` expression in expr.h.)
 class let_stmt : public stmt_node<let_stmt> {
 public:
   // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
@@ -208,6 +238,7 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::let_stmt;
 };
 
+// Runs each statement in `stmts` in order. This is the IR's sequencing construct.
 class block : public stmt_node<block> {
 public:
   std::vector<stmt> stmts;
@@ -227,12 +258,18 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::block;
 };
 
-// Runs `body` for each value i in the interval `bounds` with `sym` set to i.
+// Runs `body` once for each value of `sym` in a range. Each iteration gets its own scope for `sym`.
 class loop : public stmt_node<loop> {
 public:
   var sym;
+  // Controls parallelism: `serial` runs the iterations sequentially, `parallel` allows any number to run concurrently,
+  // and an integer in between caps the number of concurrent workers. When run in parallel, `body` must be safe to
+  // execute concurrently across iterations.
   expr max_workers;
+  // The (inclusive) range of values taken by `sym`.
   interval_expr bounds;
+  // The increment between successive values of `sym`, i.e. `sym` takes the values `bounds.min, bounds.min + step, ...`
+  // up to and including `bounds.max`. When undefined it defaults to 1.
   expr step;
   stmt body;
 
@@ -261,14 +298,16 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::async;
 };
 
-// Allocates memory and creates a buffer pointing to that memory. When control flow exits `body`, the buffer is freed.
-// `sym` refers to a pointer to a `raw_buffer` object, the fields are initialized by the corresponding expressions in
-// this node (`rank` is the size of `dims`).
+// Allocates memory and creates a buffer pointing to that memory, bound to `sym` as a pointer to a `raw_buffer` object.
+// When control flow exits `body`, the buffer is freed. The buffer's fields are initialized by the expressions in this
+// node.
 class allocate : public stmt_node<allocate> {
 public:
   var sym;
+  // Whether the allocation is placed on the stack, the heap, or chosen automatically based on its size.
   memory_type storage;
   expr elem_size;
+  // The dimensions of the allocated buffer; its `rank` is the size of `dims`.
   std::vector<dim_expr> dims;
   stmt body;
 
@@ -279,13 +318,15 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::allocate;
 };
 
-// Make a `raw_buffer` object around an existing pointer `base` with fields corresponding to the expressions in this
-// node (`rank` is the size of `dims`).
+// Makes a `raw_buffer` object around an existing pointer, bound to `sym` for the duration of `body`. Unlike `allocate`,
+// it does not allocate any storage; the buffer's fields are initialized by the expressions in this node.
 class make_buffer : public stmt_node<make_buffer> {
 public:
   var sym;
+  // A pointer to the existing memory the buffer points at.
   expr base;
   expr elem_size;
+  // The dimensions of the buffer; its `rank` is the size of `dims`.
   std::vector<dim_expr> dims;
   stmt body;
 
@@ -310,7 +351,10 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::constant_buffer;
 };
 
-// Makes a clone of an existing buffer.
+// Makes a new buffer `sym` that is a copy of the metadata (base pointer, dims, etc.) of `src`, sharing the same
+// underlying storage. This gives `body` an independent buffer object it can mutate (e.g. crop or slice in place)
+// without affecting `src`. Most crop/slice/transpose nodes already produce a fresh view, so this is mainly needed when
+// the same buffer must be modified along two different paths.
 class clone_buffer : public stmt_node<clone_buffer> {
 public:
   var sym;
@@ -324,13 +368,13 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::clone_buffer;
 };
 
-// Makes a new buffer `sym` that is a cropped view of the buffer `src` to `bounds`. If the expressions in `bounds` are
-// undefined, they default to their original values in the existing buffer. The rank of the buffer is unchanged. If the
-// size of `bounds` is less than the rank, the missing values are considered undefined.
+// Makes a new buffer `sym` that is a cropped view of the buffer `src`. The rank of the buffer is unchanged.
 class crop_buffer : public stmt_node<crop_buffer> {
 public:
   var sym;
   var src;
+  // The new bounds for each dimension. An undefined bound (min or max) defaults to its original value in `src`. If
+  // `bounds` has fewer entries than the rank, the missing dimensions are left at their original bounds.
   std::vector<interval_expr> bounds;
   stmt body;
 
@@ -357,14 +401,15 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::crop_dim;
 };
 
-// Makes a new buffer `sym` that is a sliced view of the buffer `src` at the coordinate `at`. The `at` expressions can
-// be undefined, indicating that the corresponding dimension is preserved in the sliced buffer. The sliced buffer will
-// have `rank` equal to the rank of the existing buffer, less the number of sliced dimensions. If `at` is smaller than
-// the rank of the buffer, the missing values are considered undefined.
+// Makes a new buffer `sym` that is a sliced view of the buffer `src`. The sliced buffer has `rank` equal to that of
+// `src`, less the number of sliced dimensions.
 class slice_buffer : public stmt_node<slice_buffer> {
 public:
   var sym;
   var src;
+  // The coordinate at which to slice each dimension. A defined `at[d]` removes dimension `d`, fixing it at that
+  // coordinate; an undefined `at[d]` preserves dimension `d` in the result. Dimensions beyond the size of `at` are
+  // preserved as well.
   std::vector<expr> at;
   stmt body;
 
@@ -392,30 +437,36 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::slice_dim;
 };
 
-// Make a new buffer `sym` that is a copy of the `dims` dimensions of `src`.
+// Makes a new buffer `sym` that is a reordered and/or reduced view of `src`, sharing the same storage. This can both
+// reorder dimensions (a transpose) and select a subset of them.
 class transpose : public stmt_node<transpose> {
 public:
   // TODO: We might want a placeholder dim index that indicates any un-selected dims appear there.
 
   var sym;
   var src;
+  // Dimension `i` of the result is dimension `dims[i]` of `src`, so the result has rank `dims.size()`. An entry equal
+  // to `new_dim` inserts a new broadcast dimension that is not present in `src`.
   std::vector<int> dims;
   stmt body;
 
   static constexpr int new_dim = std::numeric_limits<int>::max();
 
+  // A transpose is a "truncate" when `dims` is `{0, 1, ..., n-1}`, i.e. it just keeps the first `n` dimensions in order
+  // (lowering the rank without reordering); `is_truncate` detects this case and `make_truncate` builds it.
   static bool is_truncate(span<const int> dims);
   bool is_truncate() const;
+  static stmt make_truncate(var sym, var src, int rank, stmt body);
 
   void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, std::vector<int> dims, stmt body);
-  static stmt make_truncate(var sym, var src, int rank, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::transpose;
 };
 
-// Basically an assert.
+// Asserts that `condition` evaluates to a nonzero value, aborting evaluation otherwise. Used to verify the
+// preconditions a pipeline assumes about its buffers (rank, element size, bounds, fold factors, ...) before running.
 class check : public stmt_node<check> {
 public:
   expr condition;
