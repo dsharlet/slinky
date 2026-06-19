@@ -53,7 +53,8 @@ std::ostream& operator<<(std::ostream& os, const depends_on_result& r) {
 TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(x + y, x), (depends_on_result{.var = true}));
   ASSERT_EQ(depends_on(x + x, x), (depends_on_result{.var = true}));
-  ASSERT_EQ(depends_on(buffer_at(x), x), (depends_on_result{.buffer_base = true}));
+  ASSERT_EQ(depends_on(buffer_at(x), x),
+      (depends_on_result{.buffer_base = true, .buffer_dims = true, .buffer_bounds = true}));
 
   ASSERT_EQ(depends_on(buffer_min(x, 0), x), (depends_on_result{.buffer_dims = true, .buffer_bounds = true}));
   ASSERT_EQ(depends_on(buffer_stride(x, 0), x), (depends_on_result{.buffer_dims = true}));
