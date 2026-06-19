@@ -86,6 +86,8 @@ public:
       if (auto buf = as_variable(op->args[0])) {
         if (depends_on_result* deps = find_deps(*buf)) {
           deps->buffer_base = true;
+          deps->buffer_dims = true;
+          deps->buffer_bounds = true;
         }
       }
 
