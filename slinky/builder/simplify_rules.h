@@ -184,7 +184,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, max(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         max(x, y + c1), c0 + c1 <= 0,
         max(y, x + c0) + c1 /*c0 + c1 > 0)*/) ||
-      apply(max(x + may_be<0>(c0), min(y, max(x, z) + may_be<0>(c1))), max(x + c0, min(y, z + c1)), c1 < c0) ||
+      apply(max(x + may_be<0>(c0), min(y, max(x, z) + may_be<0>(c1))), max(x + c0, min(y, z + c1)), c1 <= c0) ||
       apply(max(min(x, max(y, c0)), c1), max(min(x, y), c1), c0 <= c1) ||
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
       apply(max(x, max(y, min(x, z))), max(x, y)) ||
@@ -743,6 +743,8 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x == y || x != y, true) ||
       apply(x == y || x < y, x <= y) ||
       apply(x == y || x <= y, x <= y) ||
+      apply(x != y || x < y, x != y) ||
+      apply(x != y || x <= y, true) ||
       apply(x == y || (z || x != y), true) ||
       apply(x != y || (z || x == y), true) ||
       apply(x == c1 || x != c0, x != c0, c0 != c1) ||
