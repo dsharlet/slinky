@@ -1258,7 +1258,9 @@ public:
       buffer->src = src;
     }
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
-    assert(!vars.contains(buf));
+    // TODO: We would like to say that no shadowing is allowed. However, we have a few rewrites that rely on shadowing
+    // internally. This enables partially supporting shadowing for the purposes of those rewrites.
+    auto set_var = set_value_in_scope(vars, buf, expr_info());
     return mutate(body);
   }
   // if `decl` is nullptr, the buffer will be substituted.
