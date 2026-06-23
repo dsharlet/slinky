@@ -591,19 +591,27 @@ public:
     allocated_buffer buffer;
     buffer.elem_size = eval(op->elem_size);
     std::size_t rank = op->dims.size();
-    buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
-    for (std::size_t d = 0; d < rank; ++d) {
+    // Evaluate the dims in reverse, so we can drop trailing broadcast dims as we encounter them, avoiding a separate
+    // `remove_trailing_broadcasts` pass.
+    buffer.rank = rank;
+    bool trailing = true;
+    for (std::size_t d = rank; d-- > 0;) {
       const dim_expr& op_d = op->dims[d];
       dim& buf_d = buffer.dims[d];
       interval bounds = eval(op_d.bounds);
       buf_d.set_bounds(bounds.min, bounds.max);
       buf_d.set_stride(eval(op_d.stride, dim::auto_stride));
       buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
+      if (trailing) {
+        if (buf_d.is_broadcast()) {
+          buffer.rank = d;
+        } else {
+          trailing = false;
+        }
+      }
     }
-
-    remove_trailing_broadcasts(buffer);
 
     if (op->storage == memory_type::heap) {
       buffer.allocation = context.config->allocate(op->sym, &buffer);
@@ -649,19 +657,26 @@ public:
       buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
     }
     std::size_t rank = op->dims.size();
-    buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
-    for (std::size_t d = 0; d < rank; ++d) {
+    // Evaluate dimensions in reverse, removing trailing broadcasts as we go.
+    buffer.rank = rank;
+    bool trailing = true;
+    for (std::size_t d = rank; d-- > 0;) {
       const dim_expr& op_d = op->dims[d];
       dim& buf_d = buffer.dims[d];
       interval bounds = eval(op_d.bounds);
       buf_d.set_bounds(bounds.min, bounds.max);
       buf_d.set_stride(eval(op_d.stride));
       buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
+      if (trailing) {
+        if (buf_d.is_broadcast()) {
+          buffer.rank = d;
+        } else {
+          trailing = false;
+        }
+      }
     }
-
-    remove_trailing_broadcasts(buffer);
 
     if (!validate_buffer(buffer)) {
       std::cerr << "make_buffer of " << op->sym << " failed." << std::endl;

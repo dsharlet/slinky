@@ -190,7 +190,7 @@ void BM_allocate(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_allocate)->DenseRange(1, 4);
+BENCHMARK(BM_allocate)->DenseRange(0, 4);
 
 enum class dim_type {
   constant,

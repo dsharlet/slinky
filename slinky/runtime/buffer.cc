@@ -165,7 +165,8 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   init_stride_dim* dims_end = dims;
   // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
   index_t flat_max = 0;
-  bool overflow = false;
+  // elem_size is unsigned; a value that doesn't fit in a (signed) index_t is an overflow.
+  bool overflow = static_cast<index_t>(elem_size) < 0;
 
   auto learn_dim = [&](index_t stride, index_t extent) {
     index_t dim_stride = 0;
@@ -238,16 +239,13 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
     assert(dim_i.stride() != dim::auto_stride);
   }
 
-  index_t unaligned_size = 0;
-  overflow = overflow || add_with_overflow(flat_max, static_cast<index_t>(elem_size), unaligned_size);
-  index_t padded_size = 0;
-  overflow = overflow || add_with_overflow(unaligned_size, alignment - 1, padded_size);
-  index_t final_size = padded_size & ~(alignment - 1);
+  index_t size = 0;
+  overflow = overflow || add_with_overflow(flat_max, static_cast<index_t>(elem_size), size);
+  overflow = overflow || add_with_overflow(size, alignment - 1, size);
+  if (overflow) return std::nullopt;
 
-  if (overflow || final_size < 0) {
-    return std::nullopt;
-  }
-  return static_cast<std::size_t>(final_size);
+  assert(size >= 0);
+  return static_cast<std::size_t>(size & ~(alignment - 1));
 }
 
 void* raw_buffer::allocate(index_t base_alignment, index_t stride_alignment) {
