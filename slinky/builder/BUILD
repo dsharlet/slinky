@@ -14,6 +14,7 @@ cc_library(
         "compact_nodes.cc",
         "node_mutator.cc",
         "optimizations.cc",
+        "rewrite.cc",
         "simplify.cc",
         "simplify_bounds.cc",
         "simplify_exprs.cc",

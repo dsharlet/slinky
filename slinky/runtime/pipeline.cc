@@ -36,7 +36,7 @@ void pipeline::setup(scalars args, buffers inputs, buffers outputs, eval_context
     ctx.reserve(let->max_symbol_id + 1);
     for (const auto& i : let->lets) {
       switch (i.second.type()) {
-      case expr_node_type::constant: ctx[i.first] = i.second.as<constant>()->value; break;
+      case expr_node_type::constant: ctx[i.first] = to_constant(i.second); break;
       case expr_node_type::constant_buffer:
         ctx[i.first] = reinterpret_cast<index_t>(i.second.as<constant_buffer>()->value.get());
         break;

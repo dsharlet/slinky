@@ -111,8 +111,7 @@ SLINKY_INLINE index_t eval_variable(index_t value, buffer_field field, int d) {
 SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx);
 SLINKY_INLINE index_t eval(const let* op, eval_context& ctx);
 SLINKY_INLINE index_t eval(const call* op, eval_context& ctx);
-SLINKY_INLINE index_t eval(const variable* op, eval_context& ctx);
-SLINKY_INLINE index_t eval(const constant* op, eval_context&);
+SLINKY_INLINE index_t eval(variable op, eval_context& ctx);
 SLINKY_INLINE index_t eval(const constant_buffer* op, eval_context&);
 SLINKY_INLINE index_t eval(const add* op, eval_context& ctx);
 SLINKY_INLINE index_t eval(const sub* op, eval_context& ctx);
@@ -164,12 +163,12 @@ SLINKY_INLINE index_t eval(expr_ref e, index_t def, eval_context& ctx) {
 template <buffer_field Field>
 SLINKY_INLINE index_t eval_field(expr_ref e, eval_context& ctx) {
   switch (e.type()) {
-  case expr_node_type::constant: return static_cast<const constant*>(e.get())->value;
+  case expr_node_type::constant: return to_constant(e);
   case expr_node_type::variable: {
-    const variable* op = static_cast<const variable*>(e.get());
-    index_t value = ctx.lookup(op->sym);
-    if (op->field == buffer_field::none) return value;
-    if (op->field == Field) return eval_variable(value, Field, op->dim);
+    variable op = to_variable(e);
+    index_t value = ctx.lookup(op.sym);
+    if (op.field == buffer_field::none) return value;
+    if (op.field == Field) return eval_variable(value, Field, op.dim);
     break;
   }
   default: break;
@@ -231,11 +230,9 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval_let(const T* op, eval_conte
 
 SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) { return eval_let(op, ctx); }
 
-SLINKY_INLINE index_t eval(const variable* op, eval_context& ctx) {
-  return eval_variable(ctx.lookup(op->sym), op->field, op->dim);
+SLINKY_INLINE index_t eval(variable op, eval_context& ctx) {
+  return eval_variable(ctx.lookup(op.sym), op.field, op.dim);
 }
-
-SLINKY_INLINE index_t eval(const constant* op, eval_context&) { return op->value; }
 SLINKY_INLINE index_t eval(const constant_buffer* op, eval_context&) {
   return reinterpret_cast<index_t>(op->value.get());
 }
@@ -442,8 +439,8 @@ SLINKY_NO_INLINE index_t eval_non_inlined(const T* op, eval_context& ctx) {
 // This should allow this function to be implemented as table of tail calls.
 SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
   switch (e.type()) {
-  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
-  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()), ctx);
+  case expr_node_type::variable: return eval(to_variable(e), ctx);
+  case expr_node_type::constant: return to_constant(e);
   case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()), ctx);
   case expr_node_type::call: return eval_non_inlined(static_cast<const call*>(e.get()), ctx);
   case expr_node_type::let: return eval_non_inlined(static_cast<const let*>(e.get()), ctx);
@@ -470,8 +467,8 @@ SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
   // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
   // we handle common node types here, and call a non-inlined handler for the less common nodes below.
   switch (e.type()) {
-  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
-  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()), ctx);
+  case expr_node_type::variable: return eval(to_variable(e), ctx);
+  case expr_node_type::constant: return to_constant(e);
   default: return eval_non_inlined(e, ctx);
   }
 }

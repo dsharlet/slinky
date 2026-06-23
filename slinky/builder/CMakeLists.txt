@@ -4,6 +4,7 @@ slinky_add_library(builder
         node_mutator.cc
         optimizations.cc
         pipeline.cc
+        rewrite.cc
         simplify.cc
         simplify_bounds.cc
         simplify_exprs.cc

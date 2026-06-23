@@ -1958,7 +1958,7 @@ stmt optimize_symbols(const stmt& s, node_context& ctx) {
       constants.reserve(let->lets.size());
       non_constants.reserve(let->lets.size());
       for (const auto& p : let->lets) {
-        if (p.second.as<constant>() || p.second.as<constant_buffer>()) {
+        if (as_constant(p.second) || p.second.as<constant_buffer>()) {
           constants.push_back(p);
         } else {
           non_constants.push_back(p);
@@ -2221,12 +2221,12 @@ public:
 
   bool in_check = false;
 
-  void visit(const variable* op) override {
-    set_result(op);
-    if (in_check && op->field != buffer_field::none) {
+  void visit(variable op) override {
+    set_result(expr(op));
+    if (in_check && op.field != buffer_field::none) {
       // Treat buffers accessed by a check as being produced, so we don't compute reorder a check w.r.t. the things its
       // checking.
-      produced.insert(lookup_alias(op->sym));
+      produced.insert(lookup_alias(op.sym));
     }
   }
 
@@ -2419,7 +2419,7 @@ public:
     std::vector<std::pair<var, expr>> remaining_lets;
     remaining_lets.reserve(op->lets.size());
     for (const auto& p : op->lets) {
-      if (p.second.as<constant_buffer>() || p.second.as<constant>()) {
+      if (p.second.as<constant_buffer>() || as_constant(p.second)) {
         if (lifted_syms.insert(p.first).second) {
           lifted.push_back(p);
         }

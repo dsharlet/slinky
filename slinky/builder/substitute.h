@@ -38,8 +38,13 @@ public:
   // Implementation of substitution for vars.
   virtual var visit_symbol(var x) { return x; }
 
-  // Implementation of substitution for buffer fields.
-  virtual expr mutate_variable(const variable* op, var buf, buffer_field field, int dim) { return expr(op); }
+  // Implementation of substitution for buffer fields. `op` is the original
+  // variable to return as the identity, or null when synthesizing a query that
+  // has no corresponding original variable (in which case the identity is the
+  // undefined `expr`).
+  virtual expr mutate_variable(const variable* op, var buf, buffer_field field, int dim) {
+    return op ? expr(*op) : expr();
+  }
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }
@@ -50,7 +55,7 @@ public:
   virtual expr terminate(const expr& e) { return e; }
   virtual stmt terminate(const stmt& s) { return s; }
 
-  void visit(const variable* op) override;
+  void visit(variable op) override;
   void visit(const let* op) override;
   void visit(const call* op) override;
 
