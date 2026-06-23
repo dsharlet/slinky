@@ -465,8 +465,8 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::transpose;
 };
 
-// Asserts that `condition` evaluates to a nonzero value, aborting evaluation otherwise. Used to verify the
-// preconditions a pipeline assumes about its buffers (rank, element size, bounds, fold factors, ...) before running.
+// Asserts that `condition` evaluates to a nonzero value, aborting evaluation otherwise. These can provide information
+// that can be used to simplify the smts that follow a check.
 class check : public stmt_node<check> {
 public:
   expr condition;
