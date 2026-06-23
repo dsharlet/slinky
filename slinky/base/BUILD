@@ -16,6 +16,7 @@ cc_library(
         "ref_count.h",
         "set.h",
         "span.h",
+        "tagged_ptr.h",
         "util.h",
     ],
     srcs = [

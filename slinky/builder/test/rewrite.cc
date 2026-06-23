@@ -71,8 +71,7 @@ std::ostream& operator<<(std::ostream& os, const context_item& i) { return os <<
 
 template <typename Pattern>
 std::vector<context_item> test_match(const Pattern& pattern, expr target) {
-  match_context ctx;
-  memset(&ctx, 0, sizeof(ctx));
+  match_context ctx = match_context::empty;
   if (!match(ctx, pattern, target)) {
     return {};
   }

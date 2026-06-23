@@ -89,14 +89,14 @@ public:
 
   constant_adder(index_t c) : c(c) {}
 
-  void visit(const constant* op) override {
-    if (!add_overflows(op->value, c)) {
-      set_result(op->value + c);
+  void visit(index_t op) override {
+    if (!add_overflows(op, c)) {
+      set_result(op + c);
     } else {
       set_result(expr());
     }
   };
-  void visit(const variable* op) override { set_result(expr()); }
+  void visit(variable op) override { set_result(expr()); }
   void visit(const constant_buffer* op) override { set_result(expr()); }
 
   void visit(const let* op) override {
@@ -477,11 +477,11 @@ public:
     symbol_map<expr_info>& vars;
     symbol_map<buffer_info>& buffers;
 
-    void add_var_info(const variable* x, interval_expr bounds, alignment_type alignment = {}) {
-      if (x->field == buffer_field::none) {
-        expr_info info = vars.lookup(x->sym).value_or(expr_info());
+    void add_var_info(variable x, interval_expr bounds, alignment_type alignment = {}) {
+      if (x.field == buffer_field::none) {
+        expr_info info = vars.lookup(x.sym).value_or(expr_info());
         info.merge(std::move(bounds), alignment);
-        vk.push_back(set_value_in_scope(vars, x->sym, std::move(info)));
+        vk.push_back(set_value_in_scope(vars, x.sym, std::move(info)));
       } else {
         // Learn about a field of a buffer. Like the scalar case above, the field's knowledge is stored as an
         // `expr_info` on the buffer metadata, so it gets the same bounds/alignment treatment as a scalar. We only learn
@@ -493,7 +493,7 @@ public:
           // We didn't learn anything we can use.
           return;
         }
-        var buf = x->sym;
+        var buf = x.sym;
         if (std::find_if(bk.begin(), bk.end(), [buf](const auto& i) { return i.sym() == buf; }) == bk.end()) {
           // Save the value if we haven't already, but we set the new values below. We seed the scope with a copy of the
           // current value so that learning a field here preserves any knowledge already learned about this buffer in an
@@ -502,20 +502,18 @@ public:
         }
         std::optional<buffer_info>& info = buffers[buf];
         if (!info) info = buffer_info(buf);
-        if (x->dim >= 0) {
-          switch (x->field) {
-          case buffer_field::min:
-          case buffer_field::max:
-          case buffer_field::stride:
-          case buffer_field::fold_factor: info->dim(x->dim).field(x->field).merge(std::move(bounds), alignment); break;
-          default: break;
-          }
-        } else if (x->field == buffer_field::elem_size) {
-          info->elem_size.merge(std::move(bounds), alignment);
-        } else if (x->field == buffer_field::rank) {
+        switch (x.field) {
+        case buffer_field::min:
+        case buffer_field::max:
+        case buffer_field::stride:
+        case buffer_field::fold_factor: info->dim(x.dim).field(x.field).merge(std::move(bounds), alignment); break;
+        case buffer_field::elem_size: info->elem_size.merge(std::move(bounds), alignment); break;
+        case buffer_field::rank:
           if (auto rank = as_constant(bounds.as_point())) {
             info->rank = *rank;
           }
+          break;
+        default: break;
         }
       }
     }
@@ -537,13 +535,13 @@ public:
     }
 
     void learn_from_equal(const expr& a, const expr& b) {
-      if (const variable* v = a.as<variable>()) {
-        add_var_info(v, point(b));
+      if (a.type() == expr_node_type::variable) {
+        add_var_info(to_variable(a), point(b));
       } else if (const mod* md = a.as<mod>()) {
-        if (const variable* v = md->a.as<variable>()) {
+        if (md->a.type() == expr_node_type::variable) {
           if (auto m = as_constant(md->b)) {
             if (auto r = as_constant(b)) {
-              add_var_info(v, {}, {*m, *r});
+              add_var_info(to_variable(md->a), {}, {*m, *r});
             }
           }
         }
@@ -552,8 +550,8 @@ public:
         // so if we're going to learn from this, we need to just learn it as a fact.
         facts.push_back({a == b, true});
       }
-      if (const variable* v = b.as<variable>()) {
-        add_var_info(v, point(a));
+      if (b.type() == expr_node_type::variable) {
+        add_var_info(to_variable(b), point(a));
       }
     }
 
@@ -567,10 +565,10 @@ public:
         learn_from_less(l->a, b);
         learn_from_less(l->b, b);
       } else {
-        const variable* av = a.as<variable>();
-        const variable* bv = b.as<variable>();
-        if (av) add_var_info(av, {expr(), simplify(static_cast<const add*>(nullptr), b, -1)});
-        if (bv) add_var_info(bv, {simplify(static_cast<const add*>(nullptr), a, 1), expr()});
+        bool av = a.type() == expr_node_type::variable;
+        bool bv = b.type() == expr_node_type::variable;
+        if (av) add_var_info(to_variable(a), {expr(), simplify(static_cast<const add*>(nullptr), b, -1)});
+        if (bv) add_var_info(to_variable(b), {simplify(static_cast<const add*>(nullptr), a, 1), expr()});
         if (!(av || bv)) {
           // We couldn't learn from this, just remember it as a fact.
           facts.push_back({a < b, true});
@@ -587,10 +585,10 @@ public:
         learn_from_less_equal(l->a, b);
         learn_from_less_equal(l->b, b);
       } else {
-        const variable* av = a.as<variable>();
-        const variable* bv = b.as<variable>();
-        if (av) add_var_info(av, {expr(), b});
-        if (bv) add_var_info(bv, {a, expr()});
+        bool av = a.type() == expr_node_type::variable;
+        bool bv = b.type() == expr_node_type::variable;
+        if (av) add_var_info(to_variable(a), {expr(), b});
+        if (bv) add_var_info(to_variable(b), {a, expr()});
         if (!(av || bv)) {
           // We couldn't learn from this, just remember it as a fact.
           facts.push_back({a <= b, true});
@@ -701,34 +699,34 @@ public:
   bool prove_true(const expr& e) { return prove_constant_true(where_true(e).min); }
   bool prove_false(const expr& e) { return prove_constant_false(where_true(e).max); }
 
-  void visit(const variable* op) override {
-    if (op->field != buffer_field::none) {
-      var new_sym = op->sym;
-      if (vars.contains(op->sym)) {
-        const expr_info& info = *vars[op->sym];
+  void visit(variable op) override {
+    if (op.field != buffer_field::none) {
+      var new_sym = op.sym;
+      if (vars.contains(op.sym)) {
+        const expr_info& info = *vars[op.sym];
         if (auto sym = as_variable(info.known_value)) {
           new_sym = *sym;
         }
       }
       const std::optional<buffer_info>& info = buffers[new_sym];
-      expr result = new_sym == op->sym ? expr(op) : variable::make(new_sym, op->field, op->dim);
+      expr result = new_sym == op.sym ? expr(op) : variable::make(new_sym, op.field, op.dim);
 
       // Find what we know about this field of the buffer.
       const expr_info* field = nullptr;
       if (info) {
-        switch (op->field) {
+        switch (op.field) {
         case buffer_field::elem_size: field = &info->elem_size; break;
         case buffer_field::min:
         case buffer_field::max:
         case buffer_field::stride:
         case buffer_field::fold_factor:
-          if (info->rank >= 0 && op->dim >= info->rank) {
+          if (info->rank >= 0 && op.dim >= info->rank) {
             // This buffer metadata refers to an implicit broadcast dimension.
             mutate_and_set_result(0);
             return;
           }
-          if (op->dim < static_cast<index_t>(info->dims.size())) {
-            field = &info->dims[op->dim].field(op->field);
+          if (op.dim < static_cast<index_t>(info->dims.size())) {
+            field = &info->dims[op.dim].field(op.field);
           }
           break;
         default: break;
@@ -743,10 +741,11 @@ public:
         // - The value is something we should substitute (it's simple and pure).
         // - The value is another buffer meta expression.
         // - We're trying to prove something (as opposed to producing a simplified expression).
-        // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
-        // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
-        if (x.defined() && (!info->decl.defined() || should_substitute(x) || x.as<variable>() || proving) &&
-            !match(x, op)) {
+        // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y)
+        // where x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
+        if (x.defined() &&
+            (!info->decl.defined() || should_substitute(x) || x.type() == expr_node_type::variable || proving) &&
+            !match(x, expr(op))) {
           mutate_and_set_result(x);
           return;
         }
@@ -758,17 +757,17 @@ public:
       // rank/elem_size the natural lower bound is 0.
       if (!result_info.bounds.min.defined()) {
         result_info.bounds.min =
-            op->field == buffer_field::rank || op->field == buffer_field::elem_size ? expr(0) : result;
+            op.field == buffer_field::rank || op.field == buffer_field::elem_size ? expr(0) : result;
       }
       if (!result_info.bounds.max.defined()) result_info.bounds.max = result;
       set_result(std::move(result), std::move(result_info));
       return;
     } else {
-      if (vars.contains(op->sym)) {
-        expr_info info = *vars[op->sym];
+      if (vars.contains(op.sym)) {
+        expr_info info = *vars[op.sym];
         if (info.known_value.defined()) {
-          // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment
-          // information.
+          // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and
+          // alignment information.
           // TODO: Maybe we should intersect any information we already had with this?
           mutate_and_set_result(info.known_value);
           return;
@@ -778,12 +777,12 @@ public:
         } else {
           if (!info.bounds.min.defined()) info.bounds.min = expr(op);
           if (!info.bounds.max.defined()) info.bounds.max = expr(op);
-          set_result(op, std::move(info));
+          set_result(expr(op), std::move(info));
           return;
         }
       }
     }
-    set_result(op, {point(expr(op)), alignment_type()});
+    set_result(expr(op), {point(expr(op)), alignment_type()});
   }
 
   var visit_symbol(var x) {
@@ -799,7 +798,7 @@ public:
     return x;
   }
 
-  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
+  void visit(index_t op) override { set_result(expr(op), {point(expr(op)), {0, op}}); }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -890,7 +889,8 @@ public:
     rewrite::pattern_constant<0> c0;
     rewrite::pattern_constant<1> c1;
 
-    // It's really ugly to have rules here instead of simplify_rules, but plumbing bounds and alignment seems difficult.
+    // It's really ugly to have rules here instead of simplify_rules, but plumbing bounds and alignment seems
+    // difficult.
     if (T::static_type == expr_node_type::div) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
@@ -926,9 +926,9 @@ public:
   }
   void visit(const add* op) override {
     if (auto bc = as_constant(op->b)) {
-      // We have a lot of rules that pull constants out of expressions. Sometimes we end up with complicated expressions
-      // that add a constant, e.g. select(x, max(2, y + 3), 4) - 1 and we could put that constant back inside. However,
-      // writing rules for all of these rewrites would be very tedious, so we handle it here instead.
+      // We have a lot of rules that pull constants out of expressions. Sometimes we end up with complicated
+      // expressions that add a constant, e.g. select(x, max(2, y + 3), 4) - 1 and we could put that constant back
+      // inside. However, writing rules for all of these rewrites would be very tedious, so we handle it here instead.
       expr result = add_constant(op->a, *bc);
       if (result.defined()) {
         mutate_and_set_result(result);
@@ -1041,7 +1041,8 @@ public:
   }
 
   static bool should_substitute(const expr& e) {
-    return e.as<constant>() || (e.as<variable>() && e.as<variable>()->field == buffer_field::none);
+    return e.type() == expr_node_type::constant ||
+           (e.type() == expr_node_type::variable && to_variable(e).field == buffer_field::none);
   }
 
   void visit(const call* op) override {
@@ -1230,8 +1231,8 @@ public:
     }
   }
 
-  // Substitute expr() in for loop_var only in crop bounds within s, and only if those crop bounds do not crop a folded
-  // dimension.
+  // Substitute expr() in for loop_var only in crop bounds within s, and only if those crop bounds do not crop a
+  // folded dimension.
   stmt remove_loop_var_in_crop_bounds(const stmt& s, var loop_var) {
     class m : public node_mutator {
       symbol_map<buffer_info>& buffers;
@@ -1337,8 +1338,8 @@ public:
       set_result(stmt());
       return;
     } else if (prove_true(bounds.min + step > bounds.max)) {
-      // The loop only runs at most once. It's safe to run the body even if the loop is empty, because we assume we can
-      // move loops freely in and out of calls, even if the buffers are empty.
+      // The loop only runs at most once. It's safe to run the body even if the loop is empty, because we assume we
+      // can move loops freely in and out of calls, even if the buffers are empty.
       auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(bounds.min));
       set_result(mutate(op->body));
       return;
@@ -1365,10 +1366,9 @@ public:
       return;
     } else if (const block* b = body.as<block>()) {
       scoped_trace trace("licm");
-      // This LICM is more aggressive than the typical compiler. Because we can freely add or remove loops around calls,
-      // if we find a loop invariant stmt that consumes a loop variant stmt, we can try to force the loop varying stmt
-      // to be loop invariant, and remove both from the loop.
-      // These accumulate results in reverse order.
+      // This LICM is more aggressive than the typical compiler. Because we can freely add or remove loops around
+      // calls, if we find a loop invariant stmt that consumes a loop variant stmt, we can try to force the loop
+      // varying stmt to be loop invariant, and remove both from the loop. These accumulate results in reverse order.
       // Here, we keep the original stmt, in case we need to put it back in the loop.
       std::vector<std::pair<stmt, stmt>> lifted;
       std::vector<stmt> loop_body;
@@ -1409,8 +1409,8 @@ public:
               --j;
               i = stmt();
             } else {
-              // We can't delete the references to the loop variable here, so j is not loop invariant. Put the original
-              // stmts back in the loop.
+              // We can't delete the references to the loop variable here, so j is not loop invariant. Put the
+              // original stmts back in the loop.
               // TODO: We could be a bit more careful here, and only put the stmts that actually depend on this stmt
               // back in the loop.
               std::transform(lifted.begin(), lifted.begin() + j, std::back_inserter(loop_body),
@@ -1445,12 +1445,13 @@ public:
 
     if (prove_true(max_workers == loop::serial)) {
       scoped_trace trace("drop_loop");
-      // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
-      // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
-      // union of the bounds covered by the loop.
+      // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy
+      // on contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on
+      // the union of the bounds covered by the loop.
       stmt result = drop_loop(body, op->sym, bounds, step);
       if (!result.same_as(body)) {
-        // Here we make the bounds of the loop such that the loop runs 0 or 1 times, depending on if the loop was empty.
+        // Here we make the bounds of the loop such that the loop runs 0 or 1 times, depending on if the loop was
+        // empty.
         bounds = {bounds.min > bounds.max, 0};
         set_result(mutate(loop::make(op->sym, max_workers, bounds, 1, result)));
         return;
@@ -1655,7 +1656,7 @@ public:
   // If d is equal to buffer_dim(sym, x), return x, otherwise return -1.
   int is_buffer_dim(const dim_expr& d, var sym) {
     if (is_variable(d.bounds.min, sym, buffer_field::min)) {
-      int dim = d.bounds.min.as<variable>()->dim;
+      int dim = to_variable(d.bounds.min).dim;
       if (is_variable(d.bounds.max, sym, buffer_field::max, dim) &&
           is_variable(d.stride, sym, buffer_field::stride, dim) &&
           is_variable(d.fold_factor, sym, buffer_field::fold_factor, dim)) {
@@ -2464,7 +2465,7 @@ public:
     return result;
   }
 
-  void visit(const variable* op) override { set_result(constant_required ? expr() : expr(op)); }
+  void visit(variable op) override { set_result(constant_required ? expr() : expr(op)); }
 
   template <typename T>
   void visit_min_max(const T* op, bool take_constant) {

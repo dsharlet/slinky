@@ -135,7 +135,9 @@ namespace {
 // produce exponential bounds, and it is also unlikely we'll be able to prove useful things about the bounds of mul ops,
 // but this is a pretty lame heuristic.
 interval_expr simple_or_unbounded(expr min, expr max) {
-  auto is_simple = [](const expr& x) { return x.as<variable>() || x.as<constant>(); };
+  auto is_simple = [](const expr& x) {
+    return x.type() == expr_node_type::variable || x.type() == expr_node_type::constant;
+  };
   if (!is_simple(min)) min = slinky::negative_infinity();
   if (!is_simple(max)) max = slinky::positive_infinity();
   return {min, max};

@@ -239,11 +239,16 @@ public:
   using node_mutator::mutate;
   expr mutate(const expr& e) override {
     if (!e.defined()) return e;
-    auto i = exprs_.find(e.get());
+    // `variable` and `constant` are stored inline in the `expr` itself, not as nodes. There is nothing to move into
+    // an arena, and no address to memoize them by -- `get()` is null for all of them, so they would all collide on
+    // the same cache entry.
+    const base_expr_node* key = e.get();
+    if (!key) return e;
+    auto i = exprs_.find(key);
     if (i != exprs_.end()) return i->second;
 
     expr result = node_mutator::mutate(e);
-    exprs_[e.get()] = result;
+    exprs_[key] = result;
     return result;
   }
 
@@ -257,8 +262,6 @@ public:
     return result;
   }
 
-  void visit(const variable* op) override { compact(op); }
-  void visit(const constant* op) override { compact(op); }
   void visit(const constant_buffer* op) override { compact(op); }
   void visit(const let* op) override { compact(op); }
   void visit(const add* op) override { compact(op); }
