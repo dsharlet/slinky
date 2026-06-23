@@ -228,20 +228,20 @@ public:
 
   std::string indent(int extra = 0) const { return "\n" + std::string(depth + extra, ' '); }
 
-  void visit(const variable* v) override {
-    switch (v->field) {
-    case buffer_field::none: *this << v->sym; return;
-    case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
-    case buffer_field::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
-    case buffer_field::size_bytes: *this << "buffer_size_bytes(" << v->sym << ")"; return;
-    case buffer_field::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
-    case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
-    case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
-    case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
-    default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(v->field);
+  void visit(variable v) override {
+    switch (v.field) {
+    case buffer_field::none: *this << v.sym; return;
+    case buffer_field::rank: *this << "buffer_rank(" << v.sym << ")"; return;
+    case buffer_field::elem_size: *this << "buffer_elem_size(" << v.sym << ")"; return;
+    case buffer_field::size_bytes: *this << "buffer_size_bytes(" << v.sym << ")"; return;
+    case buffer_field::min: *this << "buffer_min(" << v.sym << ", " << v.dim << ")"; return;
+    case buffer_field::max: *this << "buffer_max(" << v.sym << ", " << v.dim << ")"; return;
+    case buffer_field::stride: *this << "buffer_stride(" << v.sym << ", " << v.dim << ")"; return;
+    case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v.sym << ", " << v.dim << ")"; return;
+    default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(v.field);
     }
   }
-  void visit(const constant* c) override { *this << c->value; }
+  void visit(index_t c) override { *this << c; }
 
   void visit(const let* l) override {
     *this << "let {";

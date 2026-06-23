@@ -49,24 +49,24 @@ public:
   std::vector<buffer_expr_ptr> inputs;
   buffer_expr_ptr result;
 
-  void visit(const variable* v) override {
-    auto i = vars.find(v->sym);
+  void visit(variable v) override {
+    auto i = vars.find(v.sym);
     if (i != vars.end()) {
       result = i->second;
       return;
     }
-    result = buffer_expr::make(v->sym, Rank, sizeof(T));
+    result = buffer_expr::make(v.sym, Rank, sizeof(T));
     inputs.push_back(result);
-    vars[v->sym] = result;
+    vars[v.sym] = result;
   }
 
-  void visit(const constant* c) override {
+  void visit(index_t c) override {
     slinky::dim dims[Rank];
     for (std::size_t d = 0; d < Rank; ++d) {
       dims[d] = dim::broadcast();
     }
 
-    result = buffer_expr::make_scalar<T>(ctx, "c" + std::to_string(c->value), c->value);
+    result = buffer_expr::make_scalar<T>(ctx, "c" + std::to_string(c), c);
     constants.push_back(result);
   }
 
@@ -146,18 +146,18 @@ public:
     b.allocate();
   }
 
-  void visit(const variable* v) override {
-    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
+  void visit(variable v) override {
+    const std::optional<buffer<T, Rank>*>& i = vars[v.sym];
     assert(i);
     result.free();
     init_buffer(result);
     copy(**i, result);
   }
 
-  void visit(const constant* c) override {
+  void visit(index_t c) override {
     result.free();
     init_buffer(result);
-    std::fill_n(result.base(), result.elem_count(), c->value);
+    std::fill_n(result.base(), result.elem_count(), c);
   }
 
   void visit_expr(const expr& e, buffer<T, Rank>& r) {

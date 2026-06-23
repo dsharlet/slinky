@@ -65,8 +65,8 @@ public:
     assert(!e_.defined());
     if (e.defined()) {
       switch (e.type()) {
-      case expr_node_type::variable: visit(static_cast<const variable*>(e.get())); break;
-      case expr_node_type::constant: visit(static_cast<const constant*>(e.get())); break;
+      case expr_node_type::variable: visit(to_variable(e)); break;
+      case expr_node_type::constant: visit(to_constant(e)); break;
       default: e.accept(this);
       }
     }
@@ -82,8 +82,8 @@ public:
     }
   }
 
-  void visit(const variable* op) override;
-  void visit(const constant* op) override;
+  void visit(variable op) override;
+  void visit(index_t op) override;
 
   void visit(const let*) override;
   void visit(const add*) override;

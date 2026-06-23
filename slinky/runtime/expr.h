@@ -14,6 +14,7 @@
 #include "slinky/base/arithmetic.h"
 #include "slinky/base/ref_count.h"
 #include "slinky/base/span.h"
+#include "slinky/base/tagged_ptr.h"
 #include "slinky/runtime/buffer.h"
 
 namespace slinky {
@@ -175,12 +176,108 @@ public:
 };
 
 class expr;
+class expr_ref;
 
-// `expr_ref` is a non-owning reference to a `base_expr_node`.
+// `expr` and `expr_ref` store a `base_expr_node*`, or a `variable` or `constant`
+// inline, in a single word using a tagged pointer. The tag is in the low bits.
+using tagged_node_ptr = tagged_ptr<base_expr_node>;
+enum expr_tag : unsigned {
+  expr_tag_node = 0,
+  expr_tag_variable = 1,
+  expr_tag_constant = 2,
+};
+
+// A reference to a scalar variable, or a field of a buffer. This is a value type
+// stored inline in an `expr`; it is not a node.
+struct variable {
+  // The variable being referenced.
+  var sym;
+
+  // The field of the variable being referenced, if any (field != buffer_field::none).
+  buffer_field field = buffer_field::none;
+
+  // If `field` is a per-dimension field, which dimension being referenced.
+  // For other fields `dim` is unused and is 0 by convention.
+  int dim = 0;
+
+  // Make a scalar variable reference.
+  static expr make(var sym);
+
+  // Make a reference to a field of a buffer.
+  static expr make(var sym, buffer_field field, int dim = 0);
+};
+
+// A constant `index_t` value. This is a value type stored inline in an `expr`;
+// it is not a node.
+struct constant {
+  index_t value;
+
+  static expr_ref get(index_t value);
+  static expr make(index_t value);
+  static expr make(const void* value);
+};
+
+// Most constants fit inline in the tagged pointer, but the inline payload only
+// holds `tag_bits` fewer bits than `index_t`. Constants that don't fit (e.g.
+// sentinels like `dim::auto_stride`) are boxed in this node instead. It is never
+// visited as a node: `accept` dispatches to `visit(index_t)`, just like an
+// inline constant.
+class boxed_constant : public base_expr_node {
+public:
+  index_t value;
+
+  boxed_constant() : base_expr_node(expr_node_type::constant) {}
+
+  void accept(expr_visitor* v) const override;
+
+  static constexpr expr_node_type static_type = expr_node_type::constant;
+};
+
+// Whether `value` fits in the inline constant payload (sign-extended).
+SLINKY_INLINE bool constant_fits_inline(index_t value) {
+  constexpr int shift = tagged_node_ptr::tag_bits;
+  return static_cast<index_t>(static_cast<std::intptr_t>(static_cast<std::uintptr_t>(value) << shift) >> shift) ==
+         value;
+}
+
+// The maximum rank of a slinky buffer.
+constexpr int max_rank = 31;
+
+namespace internal {
+
+SLINKY_INLINE std::uint32_t pack_variable(var sym, buffer_field field, int dim) {
+  assert(static_cast<unsigned>(field) < 8);
+  assert((sym.id >> 24) == 0);
+  assert(dim >= 0 && dim <= max_rank);
+  return (static_cast<std::uint32_t>(sym.id) << 8) | (static_cast<std::uint32_t>(dim) << 3) |
+         static_cast<std::uint32_t>(field);
+}
+SLINKY_INLINE variable unpack_variable(std::uintptr_t p) {
+  variable v;
+  v.field = static_cast<buffer_field>(p & 0x7);
+  v.dim = static_cast<int>((p >> 3) & 0x1f);
+  v.sym = var(p >> 8);
+  return v;
+}
+
+// The `expr_node_type` corresponding to the contents of a tagged pointer.
+SLINKY_INLINE expr_node_type tagged_type(tagged_node_ptr n) {
+  switch (n.tag()) {
+  case expr_tag_variable: return expr_node_type::variable;
+  case expr_tag_constant: return expr_node_type::constant;
+  default: return n.bits() ? n.pointer()->type : expr_node_type::none;
+  }
+}
+
+}  // namespace internal
+
+// `expr_ref` is a non-owning reference to the contents of an `expr`: a
+// `base_expr_node`, or an inline `variable` or `constant`.
 class expr_ref {
-  const base_expr_node* n_;
+  tagged_node_ptr n_;
 
 public:
+  SLINKY_INLINE expr_ref() = default;
   SLINKY_INLINE expr_ref(const expr_ref&) = default;
   SLINKY_INLINE expr_ref(expr_ref&&) = default;
   SLINKY_INLINE expr_ref& operator=(const expr_ref&) = default;
@@ -188,37 +285,58 @@ public:
 
   SLINKY_INLINE expr_ref(const expr& e);
   SLINKY_INLINE expr_ref(const base_expr_node* n) : n_(n) {}
+  SLINKY_INLINE explicit expr_ref(tagged_node_ptr n) : n_(n) {}
 
-  SLINKY_INLINE void accept(expr_visitor* v) const {
-    assert(defined());
-    n_->accept(v);
-  }
+  SLINKY_INLINE void accept(expr_visitor* v) const;
 
-  SLINKY_INLINE bool defined() const { return n_ != nullptr; }
-  SLINKY_INLINE expr_node_type type() const { return n_ ? n_->type : expr_node_type::none; }
-  SLINKY_INLINE const base_expr_node* get() const { return n_; }
+  SLINKY_INLINE bool defined() const { return n_.bits() != 0; }
+  SLINKY_INLINE expr_node_type type() const { return internal::tagged_type(n_); }
+  SLINKY_INLINE const base_expr_node* get() const { return n_.tag() == expr_tag_node ? n_.pointer() : nullptr; }
+  SLINKY_INLINE tagged_node_ptr tagged() const { return n_; }
 
   template <typename T>
   SLINKY_INLINE const T* as() const {
-    if (n_ && type() == T::static_type) {
-      return static_cast<const T*>(&*n_);
+    if (type() == T::static_type) {
+      return reinterpret_cast<const T*>(get());
     } else {
       return nullptr;
     }
   }
 };
 
-// `expr` is an owner of a reference counted pointer to a `base_expr_node`.
-// Operations that appear to mutate these objects are actually just reassigning this reference counted pointer.
+// `expr` is an owner of a `base_expr_node`, or holds a `variable` or `constant`
+// inline. When it holds a node, it owns a reference count on it. Operations that
+// appear to mutate these objects are actually just reassigning the contents.
 class expr {
-  ref_count<const base_expr_node> n_;
+  tagged_node_ptr n_;
+
+  // Add/remove a reference to the node, if this holds one.
+  SLINKY_INLINE void add_ref() const {
+    if (n_.tag() == expr_tag_node && n_.bits()) n_.pointer()->add_ref();
+  }
+  SLINKY_INLINE void release() const {
+    if (n_.tag() == expr_tag_node && n_.bits()) n_.pointer()->release();
+  }
 
 public:
   SLINKY_INLINE expr() = default;
-  SLINKY_INLINE expr(const expr&) = default;
-  SLINKY_INLINE expr(expr&&) = default;
-  SLINKY_INLINE expr& operator=(const expr&) = default;
-  SLINKY_INLINE expr& operator=(expr&&) = default;
+  SLINKY_INLINE expr(const expr& other) : n_(other.n_) { add_ref(); }
+  SLINKY_INLINE expr(expr&& other) noexcept : n_(other.n_) { other.n_ = tagged_node_ptr(); }
+  SLINKY_INLINE expr& operator=(const expr& other) {
+    other.add_ref();
+    release();
+    n_ = other.n_;
+    return *this;
+  }
+  SLINKY_INLINE expr& operator=(expr&& other) noexcept {
+    if (this != &other) {
+      release();
+      n_ = other.n_;
+      other.n_ = tagged_node_ptr();
+    }
+    return *this;
+  }
+  SLINKY_INLINE ~expr() { release(); }
 
   // Make a new constant expression.
   expr(std::int64_t x);
@@ -235,25 +353,26 @@ public:
   SLINKY_INLINE expr(long x) : expr(static_cast<std::int64_t>(x)) {}
 #endif
   expr(var sym);
+  expr(variable v);
 
   // Make an `expr` referencing an existing node.
-  SLINKY_INLINE expr(expr_ref e) : n_(e.get()) {}
-  SLINKY_INLINE explicit expr(const base_expr_node* n) : n_(n) {}
+  SLINKY_INLINE expr(expr_ref e) : n_(e.tagged()) { add_ref(); }
+  SLINKY_INLINE explicit expr(const base_expr_node* n) : n_(n) { add_ref(); }
+  // Make an `expr` from a tagged value (an inline value, or a node to own).
+  SLINKY_INLINE explicit expr(tagged_node_ptr n) : n_(n) { add_ref(); }
 
-  SLINKY_INLINE void accept(expr_visitor* v) const {
-    assert(defined());
-    n_->accept(v);
-  }
+  SLINKY_INLINE void accept(expr_visitor* v) const;
 
-  SLINKY_INLINE bool defined() const { return n_ != nullptr; }
-  SLINKY_INLINE bool same_as(expr_ref other) const { return n_ == other.get(); }
-  SLINKY_INLINE expr_node_type type() const { return n_ ? n_->type : expr_node_type::none; }
-  SLINKY_INLINE const base_expr_node* get() const { return n_; }
+  SLINKY_INLINE bool defined() const { return n_.bits() != 0; }
+  SLINKY_INLINE bool same_as(expr_ref other) const { return n_.bits() == other.tagged().bits(); }
+  SLINKY_INLINE expr_node_type type() const { return internal::tagged_type(n_); }
+  SLINKY_INLINE const base_expr_node* get() const { return n_.tag() == expr_tag_node ? n_.pointer() : nullptr; }
+  SLINKY_INLINE tagged_node_ptr tagged() const { return n_; }
 
   template <typename T>
   SLINKY_INLINE const T* as() const {
-    if (n_ && type() == T::static_type) {
-      return reinterpret_cast<const T*>(&*n_);
+    if (type() == T::static_type) {
+      return reinterpret_cast<const T*>(get());
     } else {
       return nullptr;
     }
@@ -268,7 +387,7 @@ public:
   expr& operator%=(expr r);
 };
 
-SLINKY_INLINE expr_ref::expr_ref(const expr& e) : n_(e.get()) {}
+SLINKY_INLINE expr_ref::expr_ref(const expr& e) : n_(e.tagged()) {}
 
 expr operator+(expr a, expr b);
 expr operator-(expr a, expr b);
@@ -383,40 +502,8 @@ public:
   static constexpr expr_node_type static_type = expr_node_type::let;
 };
 
-class variable : public expr_node<variable> {
-public:
-  // The variable being referenced.
-  var sym;
-
-  // The field of the variable being referenced, if any (field != buffer_field::none).
-  buffer_field field;
-
-  // If `field` is a per-dimension field, which dimension being referenced.
-  int dim;
-
-  void accept(expr_visitor* v) const override;
-
-  // Make a scalar variable reference.
-  static expr make(var sym);
-
-  // Make a reference to a field of a buffer.
-  static expr make(var sym, buffer_field field, int dim = -1);
-
-  static constexpr expr_node_type static_type = expr_node_type::variable;
-};
-
-class constant : public expr_node<constant> {
-public:
-  index_t value;
-
-  void accept(expr_visitor* v) const override;
-
-  static expr_ref get(index_t value);
-  static expr make(index_t value);
-  static expr make(const void* value);
-
-  static constexpr expr_node_type static_type = expr_node_type::constant;
-};
+// `variable` and `constant` are value types stored inline in an `expr`, declared
+// near the top of this file.
 
 class binary_op : public base_expr_node {
 public:
@@ -561,17 +648,15 @@ struct dim_expr {
 
   const expr& get_field(buffer_field field) const;
 
-  expr is_broadcast() const {
-    return bounds.min == 0 && bounds.max == 0 && stride == 0;
-  }
+  expr is_broadcast() const { return bounds.min == 0 && bounds.max == 0 && stride == 0; }
 };
 
 class expr_visitor {
 public:
   virtual ~expr_visitor() = default;
 
-  virtual void visit(const variable*) = 0;
-  virtual void visit(const constant*) = 0;
+  virtual void visit(variable) = 0;
+  virtual void visit(index_t) = 0;
   virtual void visit(const let*) = 0;
   virtual void visit(const add*) = 0;
   virtual void visit(const sub*) = 0;
@@ -591,8 +676,24 @@ public:
   virtual void visit(const call*) = 0;
 };
 
-inline void variable::accept(expr_visitor* v) const { v->visit(this); }
-inline void constant::accept(expr_visitor* v) const { v->visit(this); }
+// Dispatch the contents of a tagged pointer to the appropriate visitor method.
+SLINKY_INLINE void accept_tagged(tagged_node_ptr n, expr_visitor* v) {
+  switch (n.tag()) {
+  case expr_tag_variable: v->visit(internal::unpack_variable(n.upayload())); return;
+  case expr_tag_constant: v->visit(static_cast<index_t>(n.spayload())); return;
+  default: n.pointer()->accept(v); return;
+  }
+}
+SLINKY_INLINE void expr::accept(expr_visitor* v) const {
+  assert(defined());
+  accept_tagged(n_, v);
+}
+SLINKY_INLINE void expr_ref::accept(expr_visitor* v) const {
+  assert(defined());
+  accept_tagged(n_, v);
+}
+
+inline void boxed_constant::accept(expr_visitor* v) const { v->visit(value); }
 inline void let::accept(expr_visitor* v) const { v->visit(this); }
 inline void add::accept(expr_visitor* v) const { v->visit(this); }
 inline void sub::accept(expr_visitor* v) const { v->visit(this); }
@@ -611,11 +712,28 @@ inline void logical_not::accept(expr_visitor* v) const { v->visit(this); }
 inline void select::accept(expr_visitor* v) const { v->visit(this); }
 inline void call::accept(expr_visitor* v) const { v->visit(this); }
 
+// If `x` holds an inline `variable`, return it; `x` must be a variable.
+SLINKY_INLINE variable to_variable(expr_ref x) {
+  assert(x.type() == expr_node_type::variable);
+  return internal::unpack_variable(x.tagged().upayload());
+}
+
+// If `x` holds a constant (inline or boxed), return its value; `x` must be a
+// constant.
+SLINKY_INLINE index_t to_constant(expr_ref x) {
+  assert(x.type() == expr_node_type::constant);
+  tagged_node_ptr n = x.tagged();
+  if (n.tag() == expr_tag_constant) {
+    return static_cast<index_t>(n.spayload());
+  } else {
+    return static_cast<const boxed_constant*>(n.pointer())->value;
+  }
+}
+
 // If `x` is a constant, returns the value of the constant, otherwise `nullopt`.
 SLINKY_INLINE std::optional<index_t> as_constant(expr_ref x) {
-  const constant* cx = x.as<constant>();
-  if (cx) {
-    return cx->value;
+  if (x.type() == expr_node_type::constant) {
+    return to_constant(x);
   } else {
     return std::nullopt;
   }
@@ -623,33 +741,31 @@ SLINKY_INLINE std::optional<index_t> as_constant(expr_ref x) {
 
 // If `x` is a variable, returns the `var` of the variable, otherwise `nullopt`.
 SLINKY_INLINE std::optional<var> as_variable(expr_ref x, buffer_field field = buffer_field::none) {
-  const variable* vx = x.as<variable>();
-  if (vx && vx->field == field) {
-    return vx->sym;
-  } else {
-    return std::nullopt;
+  if (x.type() == expr_node_type::variable) {
+    variable vx = to_variable(x);
+    if (vx.field == field) return vx.sym;
   }
+  return std::nullopt;
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
 SLINKY_INLINE bool is_variable(expr_ref x, var sym, buffer_field field = buffer_field::none) {
-  const variable* vx = x.as<variable>();
-  return vx ? vx->sym == sym && vx->field == field : false;
+  if (x.type() == expr_node_type::variable) {
+    variable vx = to_variable(x);
+    return vx.sym == sym && vx.field == field;
+  }
+  return false;
 }
 
 bool is_variable(expr_ref x, var b, buffer_field field, int dim);
 
 // Check if `x` is equal to the constant `value`.
 SLINKY_INLINE bool is_constant(expr_ref x, index_t value) {
-  const constant* cx = x.as<constant>();
-  return cx ? cx->value == value : false;
+  return x.type() == expr_node_type::constant && to_constant(x) == value;
 }
 SLINKY_INLINE bool is_zero(expr_ref x) { return is_constant(x, 0); }
 SLINKY_INLINE bool is_one(expr_ref x) { return is_constant(x, 1); }
-SLINKY_INLINE bool is_true(expr_ref x) {
-  const constant* cx = x.as<constant>();
-  return cx ? cx->value != 0 : false;
-}
+SLINKY_INLINE bool is_true(expr_ref x) { return x.type() == expr_node_type::constant && to_constant(x) != 0; }
 SLINKY_INLINE bool is_false(expr_ref x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.

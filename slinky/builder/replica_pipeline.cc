@@ -48,36 +48,46 @@ std::string str_cat(Args&&... args) {
   return concat_helper.result;
 }
 
+SLINKY_INLINE bool field_has_dim(buffer_field field) {
+  switch (field) {
+  case buffer_field::min:
+  case buffer_field::max:
+  case buffer_field::stride:
+  case buffer_field::fold_factor: return true;
+  default: return false;
+  }
+}
+
 class pipeline_replicator : public expr_visitor {
 public:
   explicit pipeline_replicator(node_context& ctx) : ctx_(ctx) {}
 
-  void visit(const variable* op) override {
-    const std::string& name = ctx_.name(op->sym);
+  void visit(variable op) override {
+    const std::string& name = ctx_.name(op.sym);
 
-    if (buffers_emitted_.count(op->sym)) {
-      auto it = buffer_variables_emitted_.find(op->sym);
+    if (buffers_emitted_.count(op.sym)) {
+      auto it = buffer_variables_emitted_.find(op.sym);
       if (it != buffer_variables_emitted_.end()) {
         name_ = it->second;
       } else {
         name_ = print_assignment_prefixed("_", name + "->sym()");
-        buffer_variables_emitted_[op->sym] = name_;
+        buffer_variables_emitted_[op.sym] = name_;
       }
     } else {
-      name_ = print(var(op->sym));
+      name_ = print(var(op.sym));
     }
 
-    if (op->field != buffer_field::none) {
-      name_ = std::string("(buffer_") + to_string(op->field) + "(" + name_;
-      if (op->dim >= 0) {
+    if (op.field != buffer_field::none) {
+      name_ = std::string("(buffer_") + to_string(op.field) + "(" + name_;
+      if (field_has_dim(op.field)) {
         name_ += ", ";
-        name_ += std::to_string(op->dim);
+        name_ += std::to_string(op.dim);
       }
       name_ += "))";
     }
   }
 
-  void visit(const constant* op) override { name_ = to_string(op->value); }
+  void visit(index_t op) override { name_ = to_string(op); }
   void visit(const let* op) override { SLINKY_UNREACHABLE; }
   void visit(const add* op) override { visit_binary_op(op, "+"); }
   void visit(const sub* op) override { visit_binary_op(op, "-"); }

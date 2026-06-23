@@ -142,8 +142,8 @@ void stmt_mutator::visit(const async* op) {
   }
 }
 
-void node_mutator::visit(const variable* op) { set_result(op); }
-void node_mutator::visit(const constant* op) { set_result(op); }
+void node_mutator::visit(variable op) { set_result(expr(op)); }
+void node_mutator::visit(index_t op) { set_result(expr(op)); }
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
 void node_mutator::visit(const let_stmt* op) { set_result(mutate_let(this, op, op->is_closure)); }
 void node_mutator::visit(const add* op) { set_result(mutate_binary(this, op)); }

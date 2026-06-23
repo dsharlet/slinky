@@ -402,7 +402,10 @@ public:
   std::vector<int> dims;
   stmt body;
 
-  static constexpr int new_dim = std::numeric_limits<int>::max();
+  // A sentinel `dims` entry marking a new (broadcast) dimension not taken from
+  // the source buffer. It reuses `max_rank`, which is never a valid dimension
+  // index, so it packs into the `dim` field of an inline `variable`.
+  static constexpr int new_dim = max_rank;
 
   static bool is_truncate(span<const int> dims);
   bool is_truncate() const;
@@ -456,8 +459,8 @@ public:
 
 class recursive_node_visitor : public expr_visitor, public stmt_visitor {
 public:
-  void visit(const variable*) override;
-  void visit(const constant*) override;
+  void visit(variable) override;
+  void visit(index_t) override;
   void visit(const let* op) override;
 
   void visit(const add* op) override;

@@ -33,6 +33,9 @@ class matcher : public expr_visitor, public stmt_visitor {
     const base_expr_node* self_expr;
     const base_stmt_node* self_stmt;
   };
+  // The expression being matched, including its tag, so we can handle inline
+  // `variable`/`constant` values that don't have a node pointer.
+  tagged_node_ptr self_inline_;
 
 public:
   int match = 0;
@@ -85,34 +88,35 @@ public:
   }
 
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
-  void visit(const base_expr_node* op) {
-    switch (op->type) {
-    case expr_node_type::variable: visit(reinterpret_cast<const variable*>(op)); return;
-    case expr_node_type::constant: visit(reinterpret_cast<const constant*>(op)); return;
-    case expr_node_type::min: visit(reinterpret_cast<const class min*>(op)); return;
-    case expr_node_type::max: visit(reinterpret_cast<const class max*>(op)); return;
-    default: op->accept(this);
+  void visit_pattern(expr_ref op) {
+    switch (op.type()) {
+    case expr_node_type::variable: visit(to_variable(op)); return;
+    case expr_node_type::constant: visit(to_constant(op)); return;
+    case expr_node_type::min: visit(static_cast<const class min*>(op.get())); return;
+    case expr_node_type::max: visit(static_cast<const class max*>(op.get())); return;
+    default: op.accept(this);
     }
   }
 
-  bool try_match(const base_expr_node* e, const base_expr_node* op) {
+  bool try_match(expr_ref e, expr_ref op) {
     assert(match == 0);
-    if (e == op) {
-    } else if (!e) {
+    if (e.tagged().bits() == op.tagged().bits()) {
+    } else if (!e.defined()) {
       match = -1;
-    } else if (!op) {
+    } else if (!op.defined()) {
       match = 1;
-    } else if (e->type < op->type) {
+    } else if (e.type() < op.type()) {
       match = -1;
-    } else if (e->type > op->type) {
+    } else if (e.type() > op.type()) {
       match = 1;
     } else {
-      self_expr = e;
-      visit(op);
+      self_expr = e.get();
+      self_inline_ = e.tagged();
+      visit_pattern(op);
     }
     return match == 0;
   }
-  bool try_match(const expr& e, const expr& op) { return try_match(e.get(), op.get()); }
+  bool try_match(const expr& e, const expr& op) { return try_match(expr_ref(e), expr_ref(op)); }
 
   bool try_match(const base_stmt_node* s, const base_stmt_node* op) {
     assert(match == 0);
@@ -191,16 +195,16 @@ public:
     if (!try_match(ex->b, op->b)) return;
   }
 
-  void visit(const variable* op) override {
-    const variable* ev = static_cast<const variable*>(self);
-    if (!try_match(ev->sym, op->sym)) return;
-    if (!try_match(ev->field, op->field)) return;
-    if (!try_match(ev->dim, op->dim)) return;
+  void visit(variable op) override {
+    variable ev = to_variable(expr_ref(self_inline_));
+    if (!try_match(ev.sym, op.sym)) return;
+    if (!try_match(ev.field, op.field)) return;
+    if (!try_match(ev.dim, op.dim)) return;
   }
 
-  void visit(const constant* op) override {
-    const constant* ec = static_cast<const constant*>(self);
-    try_match(ec->value, op->value);
+  void visit(index_t op) override {
+    index_t ec = to_constant(expr_ref(self_inline_));
+    try_match(ec, op);
   }
 
   template <typename T>
@@ -413,7 +417,7 @@ public:
 
 }  // namespace
 
-bool match(expr_ref a, expr_ref b) { return matcher().try_match(a.get(), b.get()); }
+bool match(expr_ref a, expr_ref b) { return matcher().try_match(a, b); }
 bool match(stmt_ref a, stmt_ref b) { return matcher().try_match(a.get(), b.get()); }
 bool match(const interval_expr& a, const interval_expr& b) { return matcher().try_match(a, b); }
 bool match(const dim_expr& a, const dim_expr& b) { return matcher().try_match(a, b); }
@@ -426,7 +430,7 @@ int compare(const var& a, const var& b) {
 }
 int compare(expr_ref a, expr_ref b) {
   matcher m;
-  m.try_match(a.get(), b.get());
+  m.try_match(a, b);
   return m.match;
 }
 
@@ -469,17 +473,17 @@ auto mutate_let(substitutor* this_, const T* op) {
 
 }  // namespace
 
-void substitutor::visit(const variable* op) {
-  var new_sym = visit_symbol(op->sym);
+void substitutor::visit(variable op) {
+  var new_sym = visit_symbol(op.sym);
   if (!new_sym.defined()) {
     set_result(expr());
     return;
   }
-  expr result = new_sym != op->sym ? variable::make(new_sym, op->field, op->dim) : expr(op);
-  if (op->field != buffer_field::none) {
-    set_result(mutate_variable(result.as<variable>(), new_sym, op->field, op->dim));
+  variable result = new_sym != op.sym ? variable{new_sym, op.field, op.dim} : op;
+  if (op.field != buffer_field::none) {
+    set_result(mutate_variable(&result, new_sym, op.field, op.dim));
   } else {
-    set_result(std::move(result));
+    set_result(expr(result));
   }
 }
 
@@ -800,17 +804,17 @@ public:
 
   var enter_decl(var x) override { return x != target && !depends_on(replacement, x).any() ? x : var(); }
 
-  void visit(const variable* v) override {
-    if (v->sym == target) {
-      if (v->field != buffer_field::none) {
+  void visit(variable v) override {
+    if (v.sym == target) {
+      if (v.field != buffer_field::none) {
         // The replacement must be another var.
         var new_sym = replacement_symbol(replacement);
-        set_result(new_sym == v->sym ? expr(v) : variable::make(new_sym, v->field, v->dim));
+        set_result(new_sym == v.sym ? expr(v) : variable::make(new_sym, v.field, v.dim));
       } else {
         set_result(replacement);
       }
     } else {
-      set_result(v);
+      set_result(expr(v));
     }
   }
   using substitutor::visit;
@@ -851,7 +855,7 @@ public:
   std::size_t get_target_buffer_rank(var x) override { return x == target ? dims.size() : 0; }
 
   expr mutate_variable(const variable* op, var buf, buffer_field field, int dim) override {
-    if (buf != target) return expr(op);
+    if (buf != target) return op ? expr(*op) : expr();
 
     switch (field) {
     case buffer_field::rank: return def.defined() ? buffer_rank(def) : expr(dims.size());
@@ -941,7 +945,7 @@ public:
   expr_substitutor(expr_ref target, expr_ref replacement) : target(target), replacement(replacement) {}
 
   expr mutate(const expr& op) override {
-    if (matcher().try_match(op.get(), target.get())) {
+    if (match(op, target)) {
       return replacement;
     }
     return node_mutator::mutate(op);

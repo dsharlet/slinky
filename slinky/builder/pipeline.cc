@@ -276,17 +276,17 @@ public:
     return let_stmt::make(std::move(lets), std::move(s));
   }
 
-  void visit(const variable* op) override {
-    if (op->field == buffer_field::none) {
+  void visit(variable op) override {
+    if (op.field == buffer_field::none) {
       node_mutator::visit(op);
       return;
     }
 
     // Don't lift internally allocated buffer metadata expressions.
     // TODO: This should be a proper API error.
-    assert(std::binary_search(external.begin(), external.end(), op->sym));
+    assert(std::binary_search(external.begin(), external.end(), op.sym));
 
-    auto i = replacements.insert(std::pair<const expr, var>(op, 0));
+    auto i = replacements.insert(std::pair<const expr, var>(expr(op), 0));
     if (i.second) {
       i.first->second = ctx.insert_unique("g");
     }
@@ -575,13 +575,13 @@ public:
   bool depends = false;
   dependent_dims_finder(const std::map<var, std::vector<int>>& dependent_dims) : dependent_dims(dependent_dims) {}
 
-  void visit(const variable* v) override {
-    switch (v->field) {
+  void visit(variable v) override {
+    switch (v.field) {
     case buffer_field::min:
     case buffer_field::max: {
-      if (dependent_dims.count(v->sym) == 0) return;
-      for (int d : dependent_dims.at(v->sym)) {
-        if (v->dim == d) {
+      if (dependent_dims.count(v.sym) == 0) return;
+      for (int d : dependent_dims.at(v.sym)) {
+        if (v.dim == d) {
           depends = true;
           return;
         }

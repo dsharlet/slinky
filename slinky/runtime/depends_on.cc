@@ -60,10 +60,10 @@ public:
 
   depends_on_result* no_dummy(depends_on_result* deps) const { return deps != &dummy_deps ? deps : nullptr; }
 
-  void visit(const variable* op) override {
-    if (is_pure && op->field != buffer_field::none) is_pure = false;
-    if (depends_on_result* deps = find_deps(op->sym)) {
-      switch (op->field) {
+  void visit(variable op) override {
+    if (is_pure && op.field != buffer_field::none) is_pure = false;
+    if (depends_on_result* deps = find_deps(op.sym)) {
+      switch (op.field) {
       case buffer_field::none: deps->var = true; break;
       case buffer_field::min:
       case buffer_field::max:
@@ -75,7 +75,7 @@ public:
       case buffer_field::rank:
       case buffer_field::elem_size:
       case buffer_field::size_bytes: deps->var = true; break;
-      default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(op->field);
+      default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(op.field);
       }
     }
   }

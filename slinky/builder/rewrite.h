@@ -26,7 +26,7 @@ template <int N>
 class pattern_constant;
 
 struct match_context {
-  std::array<const base_expr_node*, symbol_count> vars;
+  std::array<expr_ref, symbol_count> vars;
   std::array<index_t, constant_count> constants;
   int variant;
   int variant_bits;
@@ -39,6 +39,8 @@ struct match_context {
   index_t matched(const pattern_constant<N>& p) const {
     return constants[N];
   }
+
+  static match_context empty;
 };
 
 template <int matched>
@@ -119,9 +121,9 @@ public:
 template <int matched, int N>
 SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, expr_ref x, match_context& ctx) {
   if (matched & (1 << N)) {
-    return slinky::match(x.get(), ctx.vars[N]);
+    return slinky::match(x, ctx.vars[N]);
   } else {
-    ctx.vars[N] = x.get();
+    ctx.vars[N] = x;
     return true;
   }
 }
@@ -158,8 +160,8 @@ SLINKY_UNIQUE bool match(const pattern_constant<N>& p, index_t x, match_context&
 
 template <int matched, int N>
 SLINKY_UNIQUE bool match(const pattern_constant<N>& p, expr_ref x, match_context& ctx) {
-  if (const constant* c = x.as<constant>()) {
-    return match<matched>(p, c->value, ctx);
+  if (auto c = as_constant(x)) {
+    return match<matched>(p, *c, ctx);
   }
   return false;
 }
@@ -777,7 +779,9 @@ SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indetermin
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }); }
+SLINKY_UNIQUE auto is_constant(const T& x) {
+  return make_predicate(x, [](expr_ref x) { return x.type() == expr_node_type::constant; });
+}
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>

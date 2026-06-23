@@ -88,60 +88,37 @@ stmt let_stmt::make(var sym, expr value, stmt body) { return make({{sym, std::mo
 
 namespace {
 
-template <std::int64_t value>
-const constant* make_static_constant() {
-  static constant result;
-  // Don't let the ref counting free this object.
-  result.add_ref();
-  result.value = value;
-  return &result;
-}
-
-const variable* make_variable(var sym) {
-  auto n = new variable();
-  n->sym = sym;
-  n->field = buffer_field::none;
-  n->dim = -1;
-  return n;
-}
-
-const constant* get_constant(std::int64_t value) {
-  static const constant* zero = make_static_constant<0>();
-  static const constant* one = make_static_constant<1>();
-  if (value == 0) {
-    return zero;
-  } else if (value == 1) {
-    return one;
+// Build the tagged pointer for a constant. Most values fit inline; values that
+// don't are boxed in a `boxed_constant` node.
+tagged_node_ptr make_constant(std::int64_t value) {
+  if (constant_fits_inline(value)) {
+    return tagged_node_ptr::from_payload(expr_tag_constant, static_cast<std::uintptr_t>(value));
   } else {
-    return nullptr;
+    boxed_constant* n = new boxed_constant();
+    n->value = value;
+    return tagged_node_ptr(n);
   }
 }
 
-const constant* make_constant(std::int64_t value) {
-  if (const constant* n = get_constant(value)) return n;
-
-  assert(value <= std::numeric_limits<index_t>::max());
-  assert(value >= std::numeric_limits<index_t>::min());
-  auto n = new constant();
-  n->value = value;
-  return n;
+SLINKY_INLINE tagged_node_ptr make_variable(var sym, buffer_field field, int dim) {
+  return tagged_node_ptr::from_payload(expr_tag_variable, internal::pack_variable(sym, field, dim));
 }
 
 }  // namespace
 
 expr::expr(std::int64_t x) : expr(make_constant(x)) {}
-expr::expr(var sym) : expr(make_variable(sym)) {}
+expr::expr(var sym) : expr(make_variable(sym, buffer_field::none, 0)) {}
+expr::expr(variable v) : expr(make_variable(v.sym, v.field, v.dim)) {}
 
-expr variable::make(var sym) { return expr(make_variable(sym)); }
-expr variable::make(var sym, buffer_field field, int dim) {
-  variable* n = new variable();
-  n->sym = sym;
-  n->field = field;
-  n->dim = dim;
-  return expr(n);
+expr variable::make(var sym) { return expr(make_variable(sym, buffer_field::none, 0)); }
+expr variable::make(var sym, buffer_field field, int dim) { return expr(make_variable(sym, field, dim)); }
+
+expr_ref constant::get(index_t value) {
+  // `get` returns a non-owning reference, so the value must be inline (a boxed
+  // constant node would have no owner). All current callers pass small values.
+  assert(constant_fits_inline(value));
+  return expr_ref(make_constant(value));
 }
-
-expr_ref constant::get(index_t value) { return get_constant(value); }
 expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
@@ -686,8 +663,9 @@ bool is_non_positive(expr_ref x) {
 }
 
 bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
-  if (const variable* v = x.as<variable>()) {
-    return v->sym == b && v->field == field && v->dim == dim;
+  if (x.type() == expr_node_type::variable) {
+    variable v = to_variable(x);
+    return v.sym == b && v.field == field && v.dim == dim;
   } else {
     return false;
   }
@@ -779,7 +757,7 @@ int is_infinity(expr_ref x) {
 }
 
 bool is_finite(expr_ref x) {
-  if (x.as<constant>()) return true;
+  if (x.type() == expr_node_type::constant) return true;
   if (const call* c = x.as<call>()) {
     return c->intrinsic == intrinsic::buffer_at;
   }
@@ -832,8 +810,8 @@ expr semaphore_wait(span<const expr> sems, span<const expr> counts) {
 expr wait_for(expr task) { return wait_for(std::vector<expr>{std::move(task)}); }
 expr wait_for(std::vector<expr> tasks) { return call::make(intrinsic::wait_for, std::move(tasks)); }
 
-void recursive_node_visitor::visit(const variable*) {}
-void recursive_node_visitor::visit(const constant*) {}
+void recursive_node_visitor::visit(variable) {}
+void recursive_node_visitor::visit(index_t) {}
 
 void recursive_node_visitor::visit(const let* op) {
   for (const auto& p : op->lets) {

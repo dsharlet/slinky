@@ -77,8 +77,8 @@ public:
     // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (e.type()) {
-    case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()));
-    case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
+    case expr_node_type::variable: return eval(to_variable(e));
+    case expr_node_type::constant: return to_constant(e);
     default: return eval_non_inlined(e);
     }
   }
@@ -141,23 +141,21 @@ public:
     }
   }
 
-  index_t eval(const variable* op) {
-    index_t value = context.lookup(op->sym);
+  index_t eval(variable op) {
+    index_t value = context.lookup(op.sym);
     const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
-    switch (op->field) {
+    switch (op.field) {
     case buffer_field::none: return value;
     case buffer_field::rank: return buf->rank;
     case buffer_field::elem_size: return buf->elem_size;
     case buffer_field::size_bytes: return buf->size_bytes();
-    case buffer_field::min: return buf->dim(op->dim).min();
-    case buffer_field::max: return buf->dim(op->dim).max();
-    case buffer_field::stride: return buf->dim(op->dim).stride();
-    case buffer_field::fold_factor: return buf->dim(op->dim).fold_factor();
-    default: SLINKY_UNREACHABLE << "unkonwn var field " << to_string(op->field);
+    case buffer_field::min: return buf->dim(op.dim).min();
+    case buffer_field::max: return buf->dim(op.dim).max();
+    case buffer_field::stride: return buf->dim(op.dim).stride();
+    case buffer_field::fold_factor: return buf->dim(op.dim).fold_factor();
+    default: SLINKY_UNREACHABLE << "unkonwn var field " << to_string(op.field);
     }
   }
-
-  static index_t eval(const constant* op) { return op->value; }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const let* op) {
     // This is a bit ugly but we really want to avoid heap allocations here.

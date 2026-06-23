@@ -2082,12 +2082,12 @@ public:
 
   bool in_check = false;
 
-  void visit(const variable* op) override {
-    set_result(op);
-    if (in_check && op->field != buffer_field::none) {
+  void visit(variable op) override {
+    set_result(expr(op));
+    if (in_check && op.field != buffer_field::none) {
       // Treat buffers accessed by a check as being produced, so we don't compute reorder a check w.r.t. the things its
       // checking.
-      produced.insert(lookup_alias(op->sym));
+      produced.insert(lookup_alias(op.sym));
     }
   }
 

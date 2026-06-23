@@ -28,8 +28,12 @@ public:
   std::set<const void*> visited;
 
   expr mutate(const expr& e) override {
-    if (visited.count(e.get())) return e;
-    visited.insert(e.get());
+    // `variable`/`constant` are stored inline (no node pointer), so identify
+    // exprs by their tagged bits, which are unique per distinct inline value or
+    // node pointer.
+    const void* key = reinterpret_cast<const void*>(e.tagged().bits());
+    if (visited.count(key)) return e;
+    visited.insert(key);
     return node_mutator::mutate(e);
   }
   stmt mutate(const stmt& s) override {

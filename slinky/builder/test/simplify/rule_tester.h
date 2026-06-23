@@ -135,7 +135,7 @@ class rule_tester {
     }
     for (std::size_t i = 0; i < rewrite::symbol_count; ++i) {
       exprs[i] = expr_gen_.random_expr(0);
-      m.vars[i] = exprs[i].get();
+      m.vars[i] = exprs[i];
     }
   }
 
