@@ -206,6 +206,11 @@ T lcm(T a, T b) {
   return (a * b) / gcd(a, b);
 }
 
+template <typename T>
+bool is_power_of_two(T x) {
+  return x > 0 && (x & (x - 1)) == 0;
+}
+
 // Computes ((x + a)/b)*c
 template <typename T>
 T staircase(T x, T a, T b, T c) {
