@@ -12,7 +12,7 @@ namespace slinky {
 #ifdef _MSC_VER
 #define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(_alloca((N) * sizeof(T)))
 #else
-#define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(__builtin_alloca((N) * sizeof(T)))
+#define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(__builtin_alloca_with_align((N) * sizeof(T), alignof(T) * 8))
 #endif
 
 #if !defined(__has_attribute)
