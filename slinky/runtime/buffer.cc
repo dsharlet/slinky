@@ -90,12 +90,14 @@ std::size_t raw_buffer::elem_count() const {
 
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims, index_t alignment) {
   const std::size_t data_size = rank == 0 || dims ? alloc_size(rank, elem_size, dims) : 0;
-  const std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank + data_size + alignment - 1;
+  const std::size_t unaligned_size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank + data_size;
+  const std::size_t size = unaligned_size + alignof(slinky::dim) - 1 + alignment - 1;
   char* mem = reinterpret_cast<char*>(malloc(size));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
   buf->elem_size = elem_size;
   buf->rank = rank;
+  mem = align_up(mem, alignof(slinky::dim));
   buf->dims = reinterpret_cast<slinky::dim*>(mem);
   if (rank > 0 && dims) {
     internal::copy_small_n(dims, rank, buf->dims);
