@@ -316,7 +316,6 @@ public:
       }
     }
 
-
     void trim_bounds_using_alignment() {
       if (alignment.modulus == 0) {
         bounds = point(alignment.remainder);
@@ -566,9 +565,7 @@ public:
           case buffer_field::min:
           case buffer_field::max:
           case buffer_field::stride:
-          case buffer_field::fold_factor:
-            info->dim(x->dim).field(x->field).merge(std::move(bounds), alignment);
-            break;
+          case buffer_field::fold_factor: info->dim(x->dim).field(x->field).merge(std::move(bounds), alignment); break;
           default: break;
           }
         } else if (x->field == buffer_field::elem_size) {
@@ -864,7 +861,9 @@ public:
     return x;
   }
 
-  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
+  void visit(const constant* op) override {
+    set_result(op, {point(expr(op)), {0, op->value}});
+  }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -1710,11 +1709,10 @@ public:
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
   bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
-    return 
-      is_buffer_meta(d.bounds.min, src.bounds.min, sym, buffer_field::min, dim) &&
-      is_buffer_meta(d.bounds.max, src.bounds.max, sym, buffer_field::max, dim) &&
-      is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim, slinky::dim::auto_stride) &&
-      is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim, slinky::dim::unfolded);
+    return is_buffer_meta(d.bounds.min, src.bounds.min, sym, buffer_field::min, dim) &&
+           is_buffer_meta(d.bounds.max, src.bounds.max, sym, buffer_field::max, dim) &&
+           is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim, slinky::dim::auto_stride) &&
+           is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim, slinky::dim::unfolded);
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
@@ -2371,6 +2369,11 @@ public:
     while (src_info && *src_info) {
       if (const transpose* t = (*src_info)->decl.as<transpose>()) {
         if (t->sym == src) {
+          if (t->src == src) {
+            // This is a self shadowing transpose, which the make_buffer simplification can generate
+            // (we don't allow shadowing in the simplifier inputs.
+            break;
+          }
           // This is a transpose of another transpose. Rewrite this to directly transpose the parent.
           dims = permute(dims, t->dims, transpose::new_dim);
           src = t->src;
