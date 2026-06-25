@@ -227,7 +227,7 @@ public:
   using element = void;
   using pointer = void*;
 
-  void* base;
+  alignas(16) void* base;
   std::size_t elem_size;
 
   // `rank` is the number of dimensions in the `dims` array. However, conceptually, the buffer has infinite dimensions
