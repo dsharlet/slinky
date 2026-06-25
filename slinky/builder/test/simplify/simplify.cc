@@ -1112,6 +1112,11 @@ TEST(simplify, transpose) {
                   {check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0, 3, 2}, dummy_call({}, {b1}))})),
       matches(
           block::make({check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0}, dummy_call({}, {b1}))})));
+
+  // We want to say that we don't allow shadowing in the simplifier. However, the simplifier does generate self-shadowed
+  // transposes. This test case covers an issue where such self-shadowed transposes produced an infinite loop.
+  ASSERT_THAT(simplify(transpose::make(b0, b0, {}, transpose::make(b0, b0, {}, dummy_call({}, {b0})))),
+      matches(transpose::make(b0, b0, {}, transpose::make(b0, b0, {}, dummy_call({}, {b0})))));
 }
 
 TEST(simplify, knowledge) {
