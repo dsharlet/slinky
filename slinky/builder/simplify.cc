@@ -501,6 +501,10 @@ public:
     node_mutator::set_result(mutate(e, &result_info));
   }
 
+  void mutate_and_set_result(const stmt& s) {
+    node_mutator::set_result(mutate(s));
+  }
+
   interval_expr mutate(const interval_expr& x, expr_info* min_info, expr_info* max_info) {
     if (deep_is_point(x)) {
       expr result = mutate(x.min, min_info);
@@ -1748,7 +1752,7 @@ public:
     // check below could be unnecessary.
     auto deps = depends_on(op->body, op->sym);
     if (!deps.any()) {
-      set_result(mutate(op->body));
+      mutate_and_set_result(op->body);
       return;
     }
 
