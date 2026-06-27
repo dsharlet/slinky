@@ -1,10 +1,14 @@
 #include "slinky/runtime/depends_on.h"
 
 #include <cassert>
+#include <map>
+#include <utility>
+#include <vector>
 
 #include "slinky/base/chrome_trace.h"
+#include "slinky/base/span.h"
 #include "slinky/runtime/expr.h"
-#include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
@@ -75,7 +79,6 @@ public:
       case buffer_field::rank:
       case buffer_field::elem_size:
       case buffer_field::size_bytes: deps->var = true; break;
-      default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(op->field);
       }
     }
   }
