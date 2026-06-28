@@ -1074,6 +1074,22 @@ TEST(simplify, make_buffer) {
           b0, memory_type::heap, 4, {{{0, 0}, 0}, {{0, 0}, {}}}, transpose::make(b1, b0, {1}, dummy_call({}, {b1})))));
 }
 
+TEST(simplify, shadowing_buffer_var) {
+  stmt body = dummy_call({}, {b1});
+  auto make_crop = [body](var sym, var src, std::vector<expr> at, std::vector<interval_expr> bounds,
+                       std::vector<dim_expr> dims) {
+    for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
+      if (bounds[d].min.defined()) dims[d].bounds.min = bounds[d].min;
+      if (bounds[d].max.defined()) dims[d].bounds.max = bounds[d].max;
+    }
+    return make_buffer::make(sym, buffer_at(src, at), buffer_elem_size(src), dims, body);
+  };
+
+  // This relies on internal shadowing to work.
+  ASSERT_THAT(simplify(let_stmt::make(b1, x, make_crop(b1, b0, {x}, {{x, y}}, buffer_dims(b0, 1)))),
+      matches(crop_dim::make(b1, b0, 0, {x, y}, transpose::make_truncate(b1, b1, 1, body))));
+}
+
 TEST(simplify, transpose) {
   ASSERT_THAT(simplify(transpose::make(b1, b0, {2, 1, 0}, transpose::make(b2, b1, {2, 1, 0}, dummy_call({}, {b2})))),
       matches(transpose::make(b2, b0, {0, 1, 2}, dummy_call({}, {b2}))));
