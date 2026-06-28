@@ -587,7 +587,19 @@ public:
         if (sym != op->sym) {
           body = crop_buffer::make(op->sym, sym, dims_bounds(op->dims), std::move(body));
         }
-        stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+        // We want the bounds of the original allocation, but the strides and fold factor of the alias. This is related
+        // to the `!depends_on(offset, dst).any()` branch in `is_copy`. We want to track two sets of bounds of aliases:
+        // 1. The original bounds (the ones used here)
+        // 2. The bounds the alias refers to.
+        // These are often identical, as the `is_copy` code suggests. When they are not, we need the bounds the alias
+        // refers to to check if the alias would grow the allocation (or it is out of bounds), but we still need the
+        // original bounds, which we get here.
+        std::vector<dim_expr> alias_dims = alias.dims;
+        for (std::size_t d = 0; d < alias_dims.size(); ++d) {
+          alias_dims[d].bounds = info.dims[d].bounds;
+        }
+        stmt result =
+            make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, std::move(alias_dims), std::move(body));
         // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
         result = make_buffer::make(sym, expr(), elem_size, op->dims, std::move(result));
 

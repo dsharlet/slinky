@@ -1227,6 +1227,64 @@ TEST_P(padded_transposed_copy, pipeline) {
   }
 }
 
+class padded_self_add : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(alias, padded_self_add, testing::Bool());
+
+TEST_P(padded_self_add, pipeline) {
+  bool no_alias_buffers = GetParam();
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto added = buffer_expr::make(ctx, "added", 2, sizeof(int));
+  auto padded = buffer_expr::make(ctx, "padded", 2, sizeof(int));
+  auto padding = buffer_expr::make_scalar<int>(ctx, "padding", 3);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  test_context eval_ctx;
+
+  func produce = func::make(add_1<int>, {{in, {point(x), point(y)}}}, {{added, {x, y}}});
+  func crop = func::make_copy(
+      {added, {point(x + 1), point(y)}}, {padded, {x, y}}, {padding, {point(x), point(y)}}, eval_ctx.copy);
+  func consume =
+      func::make(subtract<int>, {{added, {point(x), point(y)}}, {padded, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  consume.loops({{y, 2, loop::parallel}});
+  produce.compute_at({&consume, y});
+  added->store_at({&consume, y});
+  padded->store_at({&consume, y});
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  const int W = 8;
+  const int H = 5;
+
+  buffer<int, 2> in_buf({W + 1, H});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), (in_buf(x, y) + 1) - (in_buf(x + 1, y) + 1));
+    }
+  }
+
+  if (no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 6);
+  } else {
+    // When aliasing, one of the two intermediates is not allocated in each loop iteration.
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 3);
+  }
+}
+
 TEST(broadcast_new_dim, pipeline) {
   node_context ctx;
 
