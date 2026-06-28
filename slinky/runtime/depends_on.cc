@@ -1,6 +1,7 @@
 #include "slinky/runtime/depends_on.h"
 
 #include <cassert>
+#include <cstddef>
 #include <map>
 #include <utility>
 #include <vector>
