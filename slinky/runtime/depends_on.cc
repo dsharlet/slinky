@@ -1,10 +1,15 @@
 #include "slinky/runtime/depends_on.h"
 
 #include <cassert>
+#include <cstddef>
+#include <map>
+#include <utility>
+#include <vector>
 
 #include "slinky/base/chrome_trace.h"
+#include "slinky/base/span.h"
 #include "slinky/runtime/expr.h"
-#include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
@@ -75,7 +80,6 @@ public:
       case buffer_field::rank:
       case buffer_field::elem_size:
       case buffer_field::size_bytes: deps->var = true; break;
-      default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(op->field);
       }
     }
   }
@@ -122,6 +126,10 @@ public:
       // We have src_deps we want to transitively add to via this declaration.
       var_deps.push_back({sym, src_deps});
     } else if (decl_needs_shadow(sym)) {
+      if (!unknown_deps && var_deps.size() == 1) {
+        // The only dep we are looking for is shadowed by this declaration, so the body cannot depend on it.
+        return;
+      }
       // We are shadowing something we are finding the dependencies of. Point at the dummy instead to avoid
       // contaminating the dependencies.
       var_deps.push_back({sym, &dummy_deps});

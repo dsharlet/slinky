@@ -501,6 +501,10 @@ public:
     node_mutator::set_result(mutate(e, &result_info));
   }
 
+  void mutate_and_set_result(const stmt& s) {
+    node_mutator::set_result(mutate(s));
+  }
+
   interval_expr mutate(const interval_expr& x, expr_info* min_info, expr_info* max_info) {
     if (deep_is_point(x)) {
       expr result = mutate(x.min, min_info);
@@ -1743,14 +1747,20 @@ public:
   }
 
   void visit(const make_buffer* op) override {
+    // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
+    // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
+    // check below could be unnecessary.
+    auto deps = depends_on(op->body, op->sym);
+    if (!deps.any()) {
+      mutate_and_set_result(op->body);
+      return;
+    }
+
     expr base = mutate(op->base);
     buffer_info info;
     bool changed = mutate_buffer(op, info);
 
-    // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
-    // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
-    // check below could be unnecessary.
-    if (can_substitute_buffer(depends_on(op->body, op->sym))) {
+    if (can_substitute_buffer(deps)) {
       // We only needed the buffer meta, not the buffer itself.
       set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_data_dependency(base), std::move(info)));
       return;
