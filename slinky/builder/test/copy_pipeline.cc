@@ -562,6 +562,49 @@ TEST_P(concatenated_output, pipeline) {
   }
 }
 
+// A concatenate that writes an external output and owns a loop over a non-concat
+// dim.
+TEST(concat_looped_output, pipeline) {
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  var x(ctx, "x");  // concat axis (dim 0)
+  var y(ctx, "y");  // non-concat dim (dim 1) -- the concat loops over this
+  test_context eval_ctx;
+
+  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  func add2 = func::make(add_1<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  func concat = func::make_concat({intm1, intm2}, {out, {x, y}}, 0,
+      {0, in1->dim(0).extent(), in1->dim(0).extent() + in2->dim(0).extent()}, eval_ctx.copy);
+
+  concat.loops({{y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+
+  const int W1 = 4, W2 = 7, H = 5;
+  buffer<short, 2> in1_buf({W1, H}), in2_buf({W2, H});
+  init_random(in1_buf);
+  init_random(in2_buf);
+  buffer<short, 2> out_buf({W1 + W2, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W1 + W2; ++x) {
+      short expected = (x < W1 ? in1_buf(x, y) : in2_buf(x - W1, y)) + 1;
+      ASSERT_EQ(out_buf(x, y), expected) << "x=" << x << " y=" << y;
+    }
+  }
+}
+
 class transposed_output : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
 
 auto iota3 = testing::Values(0, 1, 2);
