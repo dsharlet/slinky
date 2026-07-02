@@ -350,7 +350,7 @@ std::ostream& operator<<(std::ostream& os, const pattern_binary<T, A, B>& p) {
   case not_equal::static_type: return os << '(' << p.a << " != " << p.b << ')';
   case logical_and::static_type: return os << '(' << p.a << " && " << p.b << ')';
   case logical_or::static_type: return os << '(' << p.a << " || " << p.b << ')';
-  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(T::static_type);
+  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(T::static_type); return os;
   }
 }
 
@@ -382,7 +382,7 @@ template <typename T, typename A>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_unary<T, A>& p) {
   switch (T::static_type) {
   case logical_not::static_type: return os << '!' << p.a;
-  default: SLINKY_UNREACHABLE << "unknown unary operator " << to_string(T::static_type);
+  default: SLINKY_UNREACHABLE << "unknown unary operator " << to_string(T::static_type); return os;
   }
 }
 
