@@ -535,8 +535,7 @@ public:
       // by set_value_in_scope below and restored for sibling crops of the same buffer (e.g. the
       // per-input output crops of a concatenate), truncating every input after the first. Save
       // and restore `op->sym`'s entry around the substitution so only *other* buffers are
-      // updated; keeping the substitution here (before set_value_in_scope) preserves the
-      // established ordering the sliding-window/folding logic depends on.
+      // updated.
       std::optional<box_expr> self_bounds = current_buffer_bounds()[op->sym];
       substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
       current_buffer_bounds()[op->sym] = std::move(self_bounds);
