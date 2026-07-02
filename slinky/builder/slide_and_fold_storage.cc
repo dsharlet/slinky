@@ -529,8 +529,16 @@ public:
       }
 
       // Now do the reverse substitution, because the updated bounds can be used in other
-      // bounds.
+      // bounds. This must not corrupt `op->sym`'s own entry: `*bounds` typically references
+      // `buffer_max(op->sym, ...)`, so substituting it into `op->sym`'s current entry would
+      // fold the narrowed bound back into itself. That corrupted entry would then be captured
+      // by set_value_in_scope below and restored for sibling crops of the same buffer (e.g. the
+      // per-input output crops of a concatenate), truncating every input after the first. Save
+      // and restore `op->sym`'s entry around the substitution so only *other* buffers are
+      // updated.
+      std::optional<box_expr> self_bounds = current_buffer_bounds()[op->sym];
       substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
+      current_buffer_bounds()[op->sym] = std::move(self_bounds);
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
@@ -559,9 +567,13 @@ public:
       b = simplify(b);
     }
 
-    // Now do the reverse substitution, because the updated bounds can be used in other
-    // bounds.
+    // Now do the reverse substitution, because the updated bounds can be used in other bounds.
+    // As in visit(crop_buffer), don't let it corrupt `op->sym`'s own entry: save and restore that
+    // entry around the substitution so only *other* buffers pick up the narrowed bounds. See the
+    // longer explanation there.
+    std::optional<box_expr> self_bounds = current_buffer_bounds()[op->sym];
     substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
+    current_buffer_bounds()[op->sym] = std::move(self_bounds);
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
