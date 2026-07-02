@@ -297,7 +297,7 @@ bool apply_add_rules(Fn&& apply) {
       apply((x + may_be<0>(c0)) + (y + may_be<0>(c1)), (x + y) + eval(c0 + c1), c0 != 0 || c1 != 0) ||
 
       apply(staircase(x, c0, c1, c2) + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, c0 != 0 && c1 != 0 && c2 != 0 && c3%c2 == 0) ||
-      apply(staircase(x, 0, c0, c0) + x%c0, x) ||
+      apply(staircase(x, 0, c0, c0) + x%c0, x, c0 != 0) ||
 
       apply(min(x, y + c1) + c2, min(y, x + c2), c1 == -c2) ||
       apply(max(x, y + c1) + c2, max(y, x + c2), c1 == -c2) ||
@@ -416,8 +416,8 @@ bool apply_div_rules(Fn&& apply) {
       apply(x/-1, -x) ||
       apply(x/x, x != 0) ||
 
-      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1)) ||
-      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1)) ||
+      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), c0 > 0) ||
+      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1), c0 > 0) ||
       apply((x*c0)/(y*c1), (x*eval(c0/c1))/y, c1 > 0 && c0%c1 == 0) ||
       apply((x*c0)/(y*c1), x/(y*eval(c1/c0)), c0 > 0 && c1%c0 == 0) ||
       apply((x*c0)/c1, x*eval(c0/c1), c0%c1 == 0) ||
@@ -491,10 +491,10 @@ bool apply_less_rules(Fn&& apply) {
       apply(x + may_be<0>(z) < may_be<0>(w) + staircase(x, c0, c1, c1), z + (x + c0)%c1 < w + c0, c1 > 1) ||
       apply(staircase(x, c0, c1, c1) < x,
         c0 < (x + c0)%c1, c1 > 1 && c0 != 0,
-        x%c1 != 0, c1 > 0 /*&& c0 == 0*/) ||
+        x%c1 != 0, c1 > 0 && c0 == 0) ||
       apply(x < staircase(x, c0, c1, c1),
         (x + c0)%c1 < c0, c1 > 1 && c0 != 0,
-        false, c1 > 0 /*&& c0 == 0*/) ||
+        false, c1 > 0 && c0 == 0) ||
 
       apply(x%c0 < c1,
         true, c0 > 0 && c0 <= c1,
@@ -633,11 +633,11 @@ bool apply_equal_rules(Fn&& apply) {
       apply(max(x, c0)/c1 == c2,
         x/c1 == c2, c1 > 0 && c0/c1 < c2,
         x < (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
-        false) ||
+        false, c1 > 0) ||
       apply(min(x, c0)/c1 == c2,
         x/c1 == c2, c1 > 0 && c0/c1 > c2,
-        x > (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
-        false) ||
+        x >= c2*c1, c1 > 0 && c0/c1 == c2,
+        false, c1 > 0) ||
 
       apply(max(x, c0) == max(x, c1), x >= eval(max(c0, c1)), c0 != c1) ||
       apply(min(x, c0) == min(x, c1), x <= eval(min(c0, c1)), c0 != c1) ||
