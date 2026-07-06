@@ -495,12 +495,16 @@ TEST_P(copied_input, pipeline) {
   ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
-class concatenated_output : public testing::TestWithParam<bool> {};
+class concatenated_output : public testing::TestWithParam<std::tuple<bool, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output,
+    testing::Combine(testing::Bool(), testing::Values(0, 1), testing::Bool()),
+    test_params_to_string<concatenated_output::ParamType>);
 
 TEST_P(concatenated_output, pipeline) {
-  bool no_alias_buffers = GetParam();
+  bool no_alias_buffers = std::get<0>(GetParam());
+  int concat_dim = std::get<1>(GetParam());
+  bool with_loops = std::get<2>(GetParam());
   // Make the pipeline
   node_context ctx;
 
@@ -513,8 +517,13 @@ TEST_P(concatenated_output, pipeline) {
 
   // If we want to alias intermediate buffer to the output buffer,
   // we need to tell aliaser that output is unfolded and it's safe to alias.
-  out->dim(0).fold_factor = dim::unfolded;
-  out->dim(1).fold_factor = dim::unfolded;
+  // Skip this when adding loops: a potentially folded output combined with a
+  // loop is what used to expose a slide_and_fold bug for concats writing to
+  // the pipeline output.
+  if (!with_loops) {
+    out->dim(0).fold_factor = dim::unfolded;
+    out->dim(1).fold_factor = dim::unfolded;
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -523,21 +532,30 @@ TEST_P(concatenated_output, pipeline) {
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-  func concatenated = func::make_concat(
-      {intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()}, eval_ctx.copy);
+  func concatenated = func::make_concat({intm1, intm2}, {out, {x, y}}, concat_dim,
+      {0, in1->dim(concat_dim).extent(), out->dim(concat_dim).extent()}, eval_ctx.copy);
+
+  if (with_loops) {
+    // Loop over the non-concat dim.
+    concatenated.loops({{concat_dim == 0 ? y : x, 1}});
+  }
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
-  // Run the pipeline.
-  const int W = 20;
-  const int H1 = 4;
-  const int H2 = 7;
-  buffer<short, 2> in1_buf({W, H1});
-  buffer<short, 2> in2_buf({W, H2});
+  // Run the pipeline. C1/C2 are the input extents along the concat dim, N is the
+  // extent of the other dim.
+  const int N = 20;
+  const int C1 = 4;
+  const int C2 = 7;
+  auto make_dims = [&](index_t c) {
+    return concat_dim == 0 ? std::vector<index_t>{c, N} : std::vector<index_t>{N, c};
+  };
+  buffer<short, 2> in1_buf(make_dims(C1));
+  buffer<short, 2> in2_buf(make_dims(C2));
   init_random(in1_buf);
   init_random(in2_buf);
 
-  buffer<short, 2> out_buf({W, H1 + H2});
+  buffer<short, 2> out_buf(make_dims(C1 + C2));
   out_buf.allocate();
 
   // Not having span(std::initializer_list<T>) is unfortunate.
@@ -545,63 +563,23 @@ TEST_P(concatenated_output, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int y = 0; y < H1 + H2; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
+  // c iterates the concat dim, n the other dim.
+  auto at = [&](const buffer<short, 2>& buf, int c, int n) { return concat_dim == 0 ? buf(c, n) : buf(n, c); };
+  for (int c = 0; c < C1 + C2; ++c) {
+    for (int n = 0; n < N; ++n) {
+      ASSERT_EQ(at(out_buf, c, n), (c < C1 ? at(in1_buf, c, n) : at(in2_buf, c - C1, n)) + 1)
+          << "c=" << c << " n=" << n;
     }
   }
 
-  if (!no_alias_buffers) {
+  if (!no_alias_buffers && !with_loops) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
     ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
 
-  if (no_alias_buffers == true) {
+  if (no_alias_buffers == true && concat_dim == 1 && !with_loops) {
     check_replica_pipeline(
         define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}));
-  }
-}
-
-// A concatenate that writes an external output and owns a loop over a non-concat
-// dim.
-TEST(concat_looped_output, pipeline) {
-  node_context ctx;
-
-  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
-  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
-  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
-  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
-  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
-
-  var x(ctx, "x");  // concat axis (dim 0)
-  var y(ctx, "y");  // non-concat dim (dim 1) -- the concat loops over this
-  test_context eval_ctx;
-
-  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  func add2 = func::make(add_1<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func concat = func::make_concat({intm1, intm2}, {out, {x, y}}, 0,
-      {0, in1->dim(0).extent(), in1->dim(0).extent() + in2->dim(0).extent()}, eval_ctx.copy);
-
-  concat.loops({{y, 1}});
-
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
-
-  const int W1 = 4, W2 = 7, H = 5;
-  buffer<short, 2> in1_buf({W1, H}), in2_buf({W2, H});
-  init_random(in1_buf);
-  init_random(in2_buf);
-  buffer<short, 2> out_buf({W1 + W2, H});
-  out_buf.allocate();
-
-  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs, eval_ctx);
-
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W1 + W2; ++x) {
-      short expected = (x < W1 ? in1_buf(x, y) : in2_buf(x - W1, y)) + 1;
-      ASSERT_EQ(out_buf(x, y), expected) << "x=" << x << " y=" << y;
-    }
   }
 }
 
