@@ -96,6 +96,10 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(min(7, x), min(y, 7))), matches(min(min(x, y), 7)));
   ASSERT_THAT(simplify(min(min(7, x), min(7, y))), matches(min(min(x, y), 7)));
 
+  ASSERT_THAT(simplify(min(x, 3) / 2 == 1), matches(2 <= x));
+  ASSERT_THAT(simplify(max(x, 0) / -1 == 0), matches(x <= 0));
+  ASSERT_THAT(simplify(min(x, 0) / -1 == 0), matches(x >= 0));
+
   ASSERT_THAT(simplify(x + 0), matches(x));
   ASSERT_THAT(simplify(x - 0), matches(x));
   ASSERT_THAT(simplify(0 + x + 0), matches(x));
@@ -107,6 +111,8 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(x / x), matches(x != 0));
   ASSERT_THAT(simplify(0 / x), matches(0));
+
+  ASSERT_THAT(simplify((y + x / -2) / 3), matches((y + x / -2) / 3));
 
   ASSERT_THAT(simplify(((x + 1) - (y - 1)) + 1), matches(x - y + 3));
 

@@ -127,9 +127,8 @@ class rule_tester {
   expr_generator<gtest_seeded_mt19937> expr_gen_;
 
   std::array<expr, rewrite::symbol_count> exprs;
-  rewrite::match_context m;
 
-  void init_match_context() {
+  void init_match_context(rewrite::match_context& m) {
     for (std::size_t i = 0; i < m.constants.size(); ++i) {
       m.constants[i] = expr_gen_.random_constant();
     }
@@ -140,7 +139,7 @@ class rule_tester {
   }
 
 public:
-  rule_tester() : expr_gen_(rng_, var_count) { init_match_context(); }
+  rule_tester() : expr_gen_(rng_, var_count) {}
 
   SLINKY_NO_INLINE void test_expr(expr pattern, expr replacement, const std::string& rule_str) {
     if (contains_infinity(pattern)) {
@@ -181,6 +180,9 @@ public:
     std::stringstream rule_str;
     rule_str << p << " -> " << r;
 
+    rewrite::match_context m;
+    init_match_context(m);
+
     expr pattern = expr(substitute(p, m));
     bool overflowed = false;
     expr replacement = expr(substitute(r, m, overflowed));
@@ -201,8 +203,9 @@ public:
 
     // Some rules are very picky about a large number of constants, which makes it very unlikely to generate an
     // expression that the rule applies to.
+    rewrite::match_context m;
     for (int test = 0; test < 100000; ++test) {
-      init_match_context();
+      init_match_context(m);
       bool overflowed = false;
       if (substitute(pr, m, overflowed) && !overflowed) {
         expr pattern = expr(substitute(p, m));
