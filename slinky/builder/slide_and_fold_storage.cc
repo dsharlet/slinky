@@ -106,6 +106,12 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
 void substitute_bounds(symbol_map<box_expr>& buffers, var buffer_id, const box_expr& bounds) {
   scoped_trace trace("substitute_bounds");
   auto dims = make_dims_from_bounds(bounds);
+  // Don't substitute buffer bounds that are defined in terms of itself, e.g. from define_undef_bounds.
+  // It seems to work to do this, but it can generate very large expensive expressions to simplify.
+  for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
+    if (depends_on(dims[d].bounds.min, buffer_id).buffer_bounds) dims[d].bounds.min = expr();
+    if (depends_on(dims[d].bounds.max, buffer_id).buffer_bounds) dims[d].bounds.max = expr();
+  }
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     for (interval_expr& j : *buffers[i]) {
