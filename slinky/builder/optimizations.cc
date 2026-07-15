@@ -528,6 +528,17 @@ public:
         std::optional<buffer_info>& target_info = buffers[target_var];
         assert(target_info);
 
+        if (target_info->producers > 1 && !target_info->is_output) {
+          // The target is an intermediate with more than one producer (e.g. a
+          // concatenate feeding a downstream consumer). Aliasing this buffer
+          // into one slice of the target is not correct in general: the other
+          // producers write the rest of the target via copies into its own
+          // allocation, and consumers expect the full buffer. (Symmetric to the
+          // `info.producers > 1` guard above, which only covers aliasing the
+          // multi-producer buffer itself.)
+          continue;
+        }
+
         if (!alias_compatible(info, alias, target_var, *target_info)) {
           continue;
         }

@@ -1102,4 +1102,118 @@ TEST_P(stride_propagation, cropped) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), constrain_outer ? 2 : 1);
 }
 
+// Regression test for aliasing a producer of a *multi-producer* buffer. A
+// concatenate has 3 producers (a, b, c) writing disjoint feature slices of
+// `packed`, and a pass-2 that slices `packed` back into 3 views. With everything
+// stored at its producing func's level (store_outputs_innermost), `packed` is a
+// single buffer that all of the producers AND the slice-views alias into. It was
+// tempting for the copy aliaser to alias a producer into `packed`; doing so
+// corrupts the shared allocation (the other producers write the rest of it), and
+// here it produces an out-of-bounds access.
+index_t combine3(
+    const buffer<const int>& sa, const buffer<const int>& sb, const buffer<const int>& sc, const buffer<int>& out) {
+  const buffer<const int>* s[3] = {&sa, &sb, &sc};
+  for (index_t ii = out.dim(1).begin(); ii < out.dim(1).end(); ++ii) {
+    index_t base = 0;
+    for (int r = 0; r < 3; ++r) {
+      for (index_t ff = 0; ff < s[r]->dim(0).extent(); ++ff) {
+        int acc = 0;
+        for (index_t kk = s[r]->dim(1).begin(); kk < s[r]->dim(1).end(); ++kk)
+          acc += (*s[r])(s[r]->dim(0).min() + ff, kk, ii);
+        out(base + ff, ii) = acc;
+      }
+      base += s[r]->dim(0).extent();
+    }
+  }
+  return 0;
+}
+
+TEST(cannot_alias, concat_producer_batch_reduce) {
+  node_context ctx;
+  const int Wa = 1, Wb = 1, Wc = 4, K = 4, I = 3;
+
+  auto in_a = buffer_expr::make(ctx, "in_a", 3, sizeof(int));
+  auto in_b = buffer_expr::make(ctx, "in_b", 3, sizeof(int));
+  auto in_c = buffer_expr::make(ctx, "in_c", 3, sizeof(int));
+  auto a = buffer_expr::make(ctx, "a", 3, sizeof(int));
+  auto b = buffer_expr::make(ctx, "b", 3, sizeof(int));
+  auto c = buffer_expr::make(ctx, "c", 3, sizeof(int));
+  auto packed = buffer_expr::make(ctx, "packed", 3, sizeof(int));
+  auto sl_a = buffer_expr::make(ctx, "sl_a", 3, sizeof(int));
+  auto sl_b = buffer_expr::make(ctx, "sl_b", 3, sizeof(int));
+  auto sl_c = buffer_expr::make(ctx, "sl_c", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var f(ctx, "f"), k(ctx, "k"), i(ctx, "i");
+
+  func pa = func::make(add_1<int>, {{in_a, {point(f), point(k), point(i)}}}, {{a, {f, k, i}}});
+  func pb = func::make(add_1<int>, {{in_b, {point(f), point(k), point(i)}}}, {{b, {f, k, i}}});
+  func pc = func::make(add_1<int>, {{in_c, {point(f), point(k), point(i)}}}, {{c, {f, k, i}}});
+
+  func concat = func::make_concat({a, b, c}, {packed, {f, k, i}}, 0,
+      {0, in_a->dim(0).extent(), in_a->dim(0).extent() + in_b->dim(0).extent(),
+          in_a->dim(0).extent() + in_b->dim(0).extent() + in_c->dim(0).extent()});
+
+  // Slice packed back into its 3 feature regions (views that ALSO alias
+  // into packed), then reduce each over k.
+  func slice_a = func::make_copy({packed, {point(f), point(k), point(i)}}, {sl_a, {f, k, i}});
+  func slice_b = func::make_copy({packed, {point(f) + Wa, point(k), point(i)}}, {sl_b, {f, k, i}});
+  func slice_c = func::make_copy({packed, {point(f) + (Wa + Wb), point(k), point(i)}}, {sl_c, {f, k, i}});
+
+  interval_expr all_k = in_a->dim(1).bounds;
+  func combine = func::make(combine3,
+      {{sl_a, {in_a->dim(0).bounds, all_k, point(i)}}, {sl_b, {in_b->dim(0).bounds, all_k, point(i)}},
+          {sl_c, {in_c->dim(0).bounds, all_k, point(i)}}},
+      {{out, {f, i}}}, call_stmt::attributes{.name = "combine"});
+
+  // One outer i-loop over everything; packed, producers and slice-views are all
+  // computed per-i and stored at the i level, so they alias into the SAME per-i
+  // packed symbol.
+  combine.loops({{i, 1}});
+  concat.compute_at({&combine, i});
+  slice_a.compute_at({&combine, i});
+  slice_b.compute_at({&combine, i});
+  slice_c.compute_at({&combine, i});
+  pa.compute_at({&combine, i});
+  pb.compute_at({&combine, i});
+  pc.compute_at({&combine, i});
+  // Store every buffer at its producing func's own level: packed at the concat's
+  // level, partials at theirs.
+  concat.store_outputs_innermost();
+  pa.store_outputs_innermost();
+  pb.store_outputs_innermost();
+  pc.store_outputs_innermost();
+  slice_a.store_outputs_innermost();
+  slice_b.store_outputs_innermost();
+  slice_c.store_outputs_innermost();
+
+  pipeline p = build_pipeline(ctx, {in_a, in_b, in_c}, {out});
+
+  buffer<int, 3> in_a_buf({Wa, K, I}), in_b_buf({Wb, K, I}), in_c_buf({Wc, K, I});
+  init_random(in_a_buf);
+  init_random(in_b_buf);
+  init_random(in_c_buf);
+  buffer<int, 2> out_buf({Wa + Wb + Wc, I});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_a_buf, &in_b_buf, &in_c_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  auto ref = [&](int ff, int ii) {
+    int s = 0;
+    for (int kk = 0; kk < K; ++kk) {
+      int v = ff < Wa        ? in_a_buf(ff, kk, ii)
+              : ff < Wa + Wb ? in_b_buf(ff - Wa, kk, ii)
+                             : in_c_buf(ff - Wa - Wb, kk, ii);
+      s += v + 1;
+    }
+    return s;
+  };
+  for (int ii = 0; ii < I; ++ii)
+    for (int ff = 0; ff < Wa + Wb + Wc; ++ff)
+      ASSERT_EQ(out_buf(ff, ii), ref(ff, ii)) << "f=" << ff << " i=" << ii;
+}
+
 }  // namespace slinky
