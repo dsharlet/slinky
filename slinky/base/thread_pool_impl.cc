@@ -44,7 +44,7 @@ void thread_pool_impl::task_impl::destroy() {
 std::size_t thread_pool_impl::task_impl::shard::work(task_body& body) {
   std::size_t done = 0;
   while (true) {
-    std::size_t i = this->i++;
+    std::size_t i = this->i.fetch_add(1, std::memory_order_relaxed);
     if (i >= end) {
       // There are no more iterations to run.
       break;
