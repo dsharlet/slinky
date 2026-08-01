@@ -55,7 +55,7 @@ struct interval {
   index_t min, max;
 };
 
-const let_stmt* as_closure(const stmt& s) {
+const let_stmt* as_closure(stmt_ref s) {
   const let_stmt* l = s.as<let_stmt>();
   return l && l->is_closure ? l : nullptr;
 }
@@ -67,9 +67,9 @@ SLINKY_INLINE void remove_trailing_broadcasts(raw_buffer& buffer) {
 }
 
 // The evaluators are mutually recursive, so we need to declare them before defining them.
-SLINKY_INLINE index_t eval(const expr& e, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval_non_inlined(const expr& e, eval_context& ctx);
-inline index_t eval_binary(const expr& e, eval_context& ctx);
+SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx);
+SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
+inline index_t eval_binary(expr_ref e, eval_context& ctx);
 inline index_t eval(const variable* op, eval_context& ctx);
 inline index_t eval(const constant* op);
 inline index_t eval(const let* op, eval_context& ctx);
@@ -77,8 +77,8 @@ inline index_t eval(const logical_not* op, eval_context& ctx);
 inline index_t eval(const class select* op, eval_context& ctx);
 SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx);
 
-SLINKY_INLINE index_t eval(const stmt& op, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval_non_inlined(const stmt& op, eval_context& ctx);
+SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx);
+SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx);
 SLINKY_INLINE index_t eval(const call_stmt* op, eval_context& ctx);
 inline index_t eval(const copy_stmt* op, eval_context& ctx);
 inline index_t eval(const let_stmt* op, eval_context& ctx);
@@ -97,7 +97,7 @@ SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx);
 inline index_t eval(const check* op, eval_context& ctx);
 
 // Assume `e` is defined, evaluate it and return the result.
-SLINKY_INLINE index_t eval(const expr& e, eval_context& ctx) {
+SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
   // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
   // we handle common node types here, and call a non-inlined handler for the less common nodes below.
   switch (e.type()) {
@@ -107,7 +107,7 @@ SLINKY_INLINE index_t eval(const expr& e, eval_context& ctx) {
   }
 }
 
-SLINKY_NO_INLINE index_t eval_non_inlined(const expr& e, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
   switch (e.type()) {
   case expr_node_type::call: return eval(static_cast<const call*>(e.get()), ctx);
   case expr_node_type::let: return eval(static_cast<const let*>(e.get()), ctx);
@@ -117,7 +117,7 @@ SLINKY_NO_INLINE index_t eval_non_inlined(const expr& e, eval_context& ctx) {
   }
 }
 
-inline index_t eval_binary(const expr& e, eval_context& ctx) {
+inline index_t eval_binary(expr_ref e, eval_context& ctx) {
   const binary_op* op = static_cast<const binary_op*>(e.get());
   index_t a = eval(op->a, ctx);
   index_t b = eval(op->b, ctx);
@@ -140,7 +140,7 @@ inline index_t eval_binary(const expr& e, eval_context& ctx) {
 }
 
 // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
-SLINKY_INLINE index_t eval(const expr& e, index_t def, eval_context& ctx) {
+SLINKY_INLINE index_t eval(expr_ref e, index_t def, eval_context& ctx) {
   if (e.defined()) {
     return eval(e, ctx);
   } else {
@@ -212,7 +212,7 @@ inline index_t eval(const class select* op, eval_context& ctx) {
 }
 
 inline bool eval_short_circuit_op(const call* op, eval_context& ctx) {
-  for (const expr& i : op->args) {
+  for (expr_ref i : op->args) {
     index_t x = eval(i, ctx);
     if (!x && op->intrinsic == intrinsic::and_then) {
       return false;
@@ -324,7 +324,7 @@ inline index_t eval_validate_buffer(const call* op, eval_context& ctx) {
 
 inline index_t eval_wait_for(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
-  for (const expr& i : op->args) {
+  for (expr_ref i : op->args) {
     var sym = *as_variable(i);
     thread_pool::task* t = reinterpret_cast<thread_pool::task*>(ctx.lookup(sym));
     if (!t) continue;
@@ -370,7 +370,7 @@ SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx) {
   }
 }
 
-SLINKY_INLINE index_t eval(const stmt& op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) {
   // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
   // we handle common node types here, and call a non-inlined handler for the less common nodes below.
   switch (op.type()) {
@@ -380,7 +380,7 @@ SLINKY_INLINE index_t eval(const stmt& op, eval_context& ctx) {
   }
 }
 
-SLINKY_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value, eval_context& ctx) {
+SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_context& ctx) {
   ctx.reserve(sym.id + 1);
   index_t old_value = ctx.set(sym, value);
   index_t result = eval(op, ctx);
@@ -389,7 +389,7 @@ SLINKY_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value, ev
   return result;
 }
 
-SLINKY_NO_INLINE index_t eval_non_inlined(const stmt& op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   switch (op.type()) {
   case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()), ctx);
   case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()), ctx);
@@ -473,8 +473,16 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
 
   if (n == 0) {
     return 0;
-  } else if (n == 1) {
-    return eval_with_value(op->body, op->sym, bounds.min, ctx);
+  }
+
+  stmt_ref body = op->body;
+  const let_stmt* closure = as_closure(body);
+  if (closure) {
+    body = closure->body;
+  }
+
+  if (n == 1) {
+    return eval_with_value(body, op->sym, bounds.min, ctx);
   } else {
     ctx.reserve(op->sym.id + 1);
 
@@ -487,16 +495,11 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
       index_t step;
       index_t min;
       var sym;
-      stmt body;
+      stmt_ref body;
       const let_stmt* closure;
       std::atomic<index_t> result{0};
     };
 
-    stmt body = op->body;
-    const let_stmt* closure = as_closure(body);
-    if (closure) {
-      body = closure->body;
-    }
     shared_state state = {ctx, step, bounds.min, op->sym, body, closure};
 
     auto task = [&state, context = eval_context()](index_t i) mutable {
@@ -508,7 +511,7 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
 
       context.set(state.sym, i * state.step + state.min);
       // Evaluate the parallel loop body with our copy of the context.
-      index_t result_i = evaluate(state.body, context);
+      index_t result_i = eval(state.body, context);
       if (result_i != 0) {
         index_t zero = 0;
         state.result.compare_exchange_strong(zero, result_i);
@@ -549,13 +552,13 @@ inline index_t eval(const loop* op, eval_context& ctx) {
   }
 }
 
-inline index_t eval_with_new_context(stmt task, eval_context& ctx) {
+inline index_t eval_with_new_context(stmt_ref task, eval_context& ctx) {
   eval_context new_ctx;
   const let_stmt* closure = as_closure(task);
   if (closure) task = closure->body;
   init_context(new_ctx, ctx, closure);
 
-  return evaluate(task, new_ctx);
+  return eval(task, new_ctx);
 }
 
 SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx) {
