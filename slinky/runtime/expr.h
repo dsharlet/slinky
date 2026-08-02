@@ -18,6 +18,24 @@
 
 namespace slinky {
 
+// This file defines `expr`, slinky's expression IR. An `expr` is an immutable, reference-counted node in an expression
+// tree (`base_expr_node`), and evaluating one always produces a single `index_t` result.
+//
+// The node types are deliberately kept small and simple so that the IR can be evaluated by a lightweight interpreter
+// (see runtime/evaluate.h) with very low overhead, without compiling or allocating per-evaluation state. In particular:
+//
+// - Every operation produces exactly one `index_t`, so intermediate results can live on a stack (or in registers) rather
+//   than in heap-allocated temporaries.
+// - `let` binds values that are conceptually pushed onto an evaluation stack in order: a later binding may refer to
+//   values bound earlier in the same `let`, and a binding's value is available only within the `let`'s body. This
+//   strictly-scoped, ordered model means variable lookups can be implemented as cheap, stack-relative accesses.
+// - There are no nodes with unbounded side effects or non-local control flow; `select`, `and_then`, and `or_else`
+//   provide the only conditional evaluation, and they evaluate their branches lazily.
+//
+// Variables are represented by `var`, an integer id interned by a `node_context`. A `variable` node may also reference a
+// field of a buffer bound to that `var` (e.g. its rank, or the min/stride/etc. of one of its dimensions), which is how
+// expressions describe buffer metadata symbolically.
+
 class node_context;
 class expr;
 

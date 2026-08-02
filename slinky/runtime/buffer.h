@@ -18,11 +18,20 @@
 
 namespace slinky {
 
-// index_t needs to at least be as big as a pointer and must be signed.
-// Using ptrdiff_t or intptr_t here seems tempting, but those can
-// alias to `long` under some compilers which can cause some not so fun
-// overloading issues with expr(), so let's use std::conditional
-// instead to make it an exact alias of either int32_t or int64_t.
+// This file defines slinky's concrete (as opposed to symbolic) multi-dimensional buffer abstraction.
+//
+// Conceptually, a buffer has infinitely many dimensions. A buffer only stores metadata (a `dim`) for the first `rank`
+// dimensions; every dimension `d >= rank` is implicitly a broadcast dimension, equivalent to `dim::broadcast()`.
+// A broadcast dimension has stride 0, so indexing it does not move the base pointer, and it "contains" every index. This
+// means a low-rank buffer can be indexed (and iterated) as if it had any higher rank, with the extra dimensions simply
+// reading the same memory. It also means operations that remove or ignore dimensions (e.g. `slice`, `crop`, `fuse`) can
+// treat an out-of-range dimension index as a no-op rather than an error.
+//
+// Indices into a buffer are `index_t`, a signed integer at least as wide as a pointer. Bounds are inclusive `[min,
+// max]`; a dimension is empty when `max < min`. Addresses are computed as the base pointer plus, for each dimension, the
+// (optionally folded) index offset from `min` times the dimension's `stride` in bytes. Because strides are explicit and
+// in bytes, dimensions may be stored in any order and may overlap (e.g. broadcasts, or folded storage).
+
 using index_t = std::conditional<sizeof(void*) == 4, std::int32_t, std::int64_t>::type;
 
 // Helper to offset a pointer by a number of bytes.
@@ -55,12 +64,21 @@ const T* align_up(const T* x, std::size_t align) {
   return reinterpret_cast<const T*>((reinterpret_cast<uintptr_t>(x) + align - 1) & ~(align - 1));
 }
 
+// Describes a single dimension of a buffer: its inclusive bounds `[min, max]`, its `stride` in bytes, and its
+// `fold_factor`.
+//
 // TODO(https://github.com/dsharlet/slinky/issues/1): This and buffer_expr in pipeline.h should have the same API
 // (except for expr instead of index_t).
 class dim {
   alignas(16) index_t min_;
   index_t max_;
+  // The number of bytes between consecutive elements in this dimension. It may be negative or 0 (a 0 stride makes the
+  // dimension a broadcast: every index maps to the same memory). `auto_stride` is a placeholder requesting that
+  // `init_strides` compute a dense stride.
   index_t stride_;
+  // When not `unfolded`, makes storage in this dimension circular: an index `i` accesses element `i mod fold_factor`.
+  // This allows a sliding window of the dimension to be stored in `fold_factor` elements, which is how slinky bounds
+  // the memory of intermediate buffers in a loop (see the stencil example in README.md).
   index_t fold_factor_;
 
   static const dim broadcast_;
@@ -80,6 +98,8 @@ public:
 
   friend bool operator!=(const dim& lhs, const dim& rhs) { return !(lhs == rhs); }
 
+  // A broadcast dimension has stride 0 and bounds `[0, 0]`. Indexing it never moves the base pointer, and it `contains`
+  // every index. Dimensions beyond a buffer's `rank` are implicitly broadcasts (see the file comment above).
   static const dim& broadcast() { return broadcast_; }
 
   index_t min() const { return min_; }
@@ -746,14 +766,24 @@ const buffer<NewT>& raw_buffer::cast() const {
   return *reinterpret_cast<const buffer<NewT>*>(this);
 }
 
-// Copy the contents of `src` to `dst`.
-// If `padding` is `no_padding, every index of `dst` must be in bounds of `src`.
-// If `padding` is not `no_padding`, `dst` will be copied from `src` if it is in bounds, otherwise it will be copied
-// from `padding`, which must be in bounds.
+// Copy the contents of `src` to `dst`. Every element of `dst` is written: the iteration domain is the bounds of `dst`,
+// and for each index, `dst` is written from `src` evaluated at the same index. `src` and `dst` must have the same
+// `elem_size`, but need not have the same rank, strides, or fold factors; `copy` handles any combination of layouts.
+//
+// Because buffers are conceptually infinite-dimensional, `src` may broadcast into `dst`: any dimension of `src` that is
+// a broadcast (stride 0), or that is beyond `src.rank`, contributes the same element for every index of `dst` in that
+// dimension. This makes `copy` usable for broadcasting a lower-rank (or scalar, rank-0) `src` across `dst`.
+//
+// Indices of `dst` that are out of bounds of `src` are handled according to `pad`:
+// - If `pad` is `no_padding`, every index of `dst` must be in bounds of `src` (otherwise the result is undefined).
+// - Otherwise, such indices are written from `pad` evaluated at the same index, which must be in bounds of `pad`. Like
+//   `src`, `pad` may be lower rank / broadcast (e.g. a rank-0 `pad` fills the out-of-bounds region with a constant).
 static constexpr raw_buffer no_padding = {};
 void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad = no_padding);
 
-// Performs only the padding operation of a copy. The region that would have been copied is unmodified.
+// Performs only the padding operation of a `copy`: writes the elements of `dst` that are *outside* `src_bounds` (one
+// `dim` per dimension of `dst`) from `pad`, exactly as `copy` would. The region of `dst` inside `src_bounds` (the part
+// `copy` would have filled from `src`) is left unmodified. `pad` may broadcast as in `copy`.
 void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
 
 // Returns true if the buffer's dimensions and pointer arithmetic do not
@@ -1015,12 +1045,22 @@ static constexpr std::size_t max_bufs_size = 4;
 
 }  // namespace internal
 
-// Call `f(index_t extent, T* base[, Ts* bases, ...])` for each contiguous slice in the domain of `buf[,
-// bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
+// Call `f(index_t extent, T* base[, Ts* bases, ...])` once for each contiguous slice covering the domain of `buf`. A
+// "contiguous slice" is a maximal run of elements that is contiguous (stride == elem_size) in `buf` *and* in every one
+// of `bufs`; `f` receives the slice length `extent` (a number of elements, not bytes) and a pointer to the start of the
+// slice in each buffer. Iterating in slices rather than per-element lets the callback process many elements at once
+// (e.g. with a vectorized loop or `memcpy`), which is why this is the preferred primitive for performance-sensitive
+// callbacks. The slice always covers at least one element, and `f` is not called at all if the domain is empty.
 //
-// When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
-// lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
-// If the other buffers are out of bounds for a slice, the corresponding argument to the callback will be `nullptr`.
+// `buf` defines the iteration domain. When additional `bufs` are passed, they are sliced in tandem with `buf`:
+// - A buffer that is lower rank than `buf` (or has broadcast/stride-0 dimensions) broadcasts in the "missing"
+//   dimensions, i.e. the same memory is revisited as `buf` iterates over those dimensions.
+// - Where a buffer is out of bounds of `buf`'s domain, the corresponding pointer passed to `f` is `nullptr`. The
+//   callback is responsible for handling this (e.g. treating it as padding).
+// To keep the contiguous slices long, prefer making the first (innermost, smallest-stride) dimension of `buf` the one
+// that is contiguous in all the buffers; `optimize_dims` can be used to sort/fuse dimensions toward this.
+//
+// This function attempts to be efficient to support production quality implementations of callbacks.
 template <typename Buf, typename F, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F& f, const Bufs&... bufs) {
   static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
@@ -1040,8 +1080,12 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
       });
 }
 
-// Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`, or
-// `nullptr` if `buf` is out of bounds of `bufs`.
+// Call `f(T* base[, Ts* bases, ...])` once for each element in the domain of `buf`, passing a pointer to that element of
+// `buf` and pointers to the corresponding element of each of `bufs`. This is the element-at-a-time analogue of
+// `for_each_contiguous_slice`; prefer that function when the callback can process a contiguous run at once.
+//
+// As with `for_each_contiguous_slice`, `buf` defines the iteration domain, lower-rank or broadcast `bufs` broadcast in
+// the missing dimensions, and where a buffer is out of bounds of `buf`'s domain the corresponding pointer is `nullptr`.
 template <typename F, typename Buf, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
   static constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
