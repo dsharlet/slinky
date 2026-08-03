@@ -501,9 +501,7 @@ public:
     node_mutator::set_result(mutate(e, &result_info));
   }
 
-  void mutate_and_set_result(const stmt& s) {
-    node_mutator::set_result(mutate(s));
-  }
+  void mutate_and_set_result(const stmt& s) { node_mutator::set_result(mutate(s)); }
 
   interval_expr mutate(const interval_expr& x, expr_info* min_info, expr_info* max_info) {
     if (deep_is_point(x)) {
@@ -865,9 +863,7 @@ public:
     return x;
   }
 
-  void visit(const constant* op) override {
-    set_result(op, {point(expr(op)), {0, op->value}});
-  }
+  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -2396,17 +2392,27 @@ public:
 
     buffer_info sym_info{expr_info{}};
     if (src_info && *src_info) {
-      while (dims.size() > 0 && (*src_info)->rank >= 0 && dims.back() >= (*src_info)->rank) {
-        // The last dimension would be an implicit broadcast.
-        dims.pop_back();
-      }
+      const int src_rank = (*src_info)->rank;
+      if (src_rank >= 0) {
+        for (std::size_t i = 0; i < dims.size(); ++i) {
+          if (dims[i] >= src_rank && prove_constant_true((*src_info)->dim(i).value().is_broadcast())) {
+            // A new broadcast dimension is the same as the dimension it replaces in src, which is also a broadcast.
+            // Using the src dimension can make this transpose a no-op.
+            dims[i] = static_cast<int>(i);
+          }
+        }
 
-      if (transpose::is_truncate(dims) && (*src_info)->rank >= 0 &&
-          (*src_info)->rank <= static_cast<int>(dims.size())) {
-        // This truncate is a no-op.
-        auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
-        set_result(mutate(op->body));
-        return;
+        while (dims.size() > 0 && dims.back() >= src_rank) {
+          // The last dimension would be an implicit broadcast.
+          dims.pop_back();
+        }
+
+        if (transpose::is_truncate(dims) && src_rank <= static_cast<int>(dims.size())) {
+          // This truncate is a no-op.
+          auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
+          set_result(mutate(op->body));
+          return;
+        }
       }
 
       sym_info.elem_size = (*src_info)->elem_size;
