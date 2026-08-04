@@ -647,25 +647,20 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
       buffer.base = SLINKY_ALLOCA(char, *size + alignment - 1);
       buffer.base = align_up(buffer.base, alignment);
       buffer.allocation = nullptr;
+      return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
     } else {
       buffer.allocation = ctx.config->allocate(op->sym, &buffer);
     }
   }
 
+  index_t result;
   if (!buffer.base && buffer.elem_count() > 0) {
     std::cerr << "allocate of " << op->sym << " failed." << std::endl;
-    if (buffer.allocation) {
-      ctx.config->free(op->sym, &buffer, buffer.allocation);
-    }
-    return -1;
+    result = -1;
+  } else {
+    result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
-
-  index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
-
-  if (buffer.allocation) {
-    ctx.config->free(op->sym, &buffer, buffer.allocation);
-  }
-
+  ctx.config->free(op->sym, &buffer, buffer.allocation);
   return result;
 }
 
