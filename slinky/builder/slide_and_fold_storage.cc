@@ -731,6 +731,7 @@ public:
     loop_bounds.min = loops.back().bounds.min;
     if (body.same_as(op->body) && loop_bounds.min.same_as(op->bounds.min) && loop_bounds.max.same_as(op->bounds.max)) {
       set_result(op);
+      loops.pop_back();
       return;
     }
 
