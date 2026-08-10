@@ -13,6 +13,7 @@ cc_test(
         "simplify.cc", 
     ] + glob(["*rules.cc"]),
     deps = [
+        "//slinky/base",
         "//slinky/base/test:util",
         "//slinky/builder",
         "//slinky/runtime",
