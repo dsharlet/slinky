@@ -702,6 +702,13 @@ TEST(simplify, allocate) {
                   x, memory_type::heap, 1, {dim::broadcast(), {bounds(2, 3), 4, 5}}, check::make(buffer_at(x)))),
       matches(allocate::make(
           x, memory_type::heap, 1, {dim::broadcast(), {bounds(2, 3), 4, expr()}}, check::make(buffer_at(x)))));
+
+  // An allocate with elem_size == 0 is rewritten to constant_buffer.
+  slinky::dim zero_dims[] = {{0, 255, 0, dim::unfolded}};
+  auto expected_zero_buf = raw_buffer::make(1, 0, zero_dims);
+  ASSERT_THAT(
+      simplify(allocate::make(x, memory_type::automatic, 0, {{{0, 255}, 0, dim::unfolded}}, check::make(buffer_at(x)))),
+      matches(constant_buffer::make(x, expected_zero_buf, check::make(buffer_at(x)))));
 }
 
 TEST(simplify, constant_buffer) {
@@ -1115,11 +1122,10 @@ TEST(simplify, transpose) {
 
   // A new_dim where the src dimension is provably a broadcast can use the src dimension instead, which makes this
   // transpose a no-op.
-  ASSERT_THAT(
-      simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}, {{0, 30}, {}, {}}},
-          transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
-      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}, {{0, 30}, {}, {}}},
-          dummy_call({}, {b0}))));
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}, {{0, 30}, {}, {}}},
+                  transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}, {{0, 30}, {}, {}}}, dummy_call({}, {b0}))));
 
   // The same, but the new_dim is the last dimension, so the transpose is a no-op instead of a truncate. The allocate
   // then drops the trailing broadcast dimension it no longer needs.
@@ -1131,9 +1137,8 @@ TEST(simplify, transpose) {
   ASSERT_THAT(
       simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
           transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
-      matches(
-          allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
-              transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))));
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
+          transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))));
 
   // Transposes that put trailing broadcasts at the end of the buffer should be dropped.
   ASSERT_THAT(simplify(block::make(
