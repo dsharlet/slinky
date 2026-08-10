@@ -3,8 +3,17 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <limits>
 #include <numeric>
+#include <optional>
+#include <utility>
+#include <vector>
 
+#include "slinky/base/arithmetic.h"
 #include "slinky/base/test/seeded_test.h"
 #include "slinky/builder/simplify.h"
 #include "slinky/builder/substitute.h"
@@ -13,6 +22,7 @@
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
