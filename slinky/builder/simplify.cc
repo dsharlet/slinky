@@ -863,7 +863,9 @@ public:
     return x;
   }
 
-  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
+  void visit(const constant* op) override {
+    set_result(op, {point(expr(op)), {0, op->value}});
+  }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -1670,6 +1672,34 @@ public:
         body = block::make({end_before, end_body});
       } else {
         set_result(block::make({b->stmts.begin(), end_before}));
+        return;
+      }
+    }
+
+    if (is_zero(info.elem_size.value())) {
+      // This buffer doesn't actually allocate any memory, we might be able to rewrite it as a constant.
+      std::vector<slinky::dim> dims(info.dims.size());
+      bool all_constants = true;
+      for (std::size_t d = 0; d < info.dims.size(); ++d) {
+        const dim_expr& dim_d = info.dims[d].value();
+        auto min = as_constant(dim_d.bounds.min);
+        auto max = as_constant(dim_d.bounds.max);
+        auto stride = dim_d.stride.defined() ? as_constant(dim_d.stride) : std::optional<index_t>(0);
+        auto fold_factor = dim_d.fold_factor.defined() ? as_constant(dim_d.fold_factor)
+                                                       : std::optional<index_t>(slinky::dim::unfolded);
+        if (min && max && stride && fold_factor) {
+          dims[d].set_bounds(*min, *max);
+          dims[d].set_stride(*stride);
+          dims[d].set_fold_factor(*fold_factor);
+        } else {
+          all_constants = false;
+          break;
+        }
+      }
+      if (all_constants) {
+        raw_buffer_ptr buf = raw_buffer::make(dims.size(), 0, dims.empty() ? nullptr : dims.data());
+        set_result(block::make(
+            {std::move(before), constant_buffer::make(op->sym, std::move(buf), std::move(body)), std::move(after)}));
         return;
       }
     }
