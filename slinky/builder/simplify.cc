@@ -50,23 +50,7 @@ void ensure_is_point(interval_expr& x) {
   }
 }
 
-// Returns true if a and b can be used equivalently.
-bool buffers_equal(const raw_buffer& a, const raw_buffer& b) {
-  if (a.rank != b.rank) return false;
-  if (a.elem_size != b.elem_size) return false;
-  for (std::size_t d = 0; d < a.rank; ++d) {
-    if (a.dim(d) != b.dim(d)) return false;
-  }
-  const index_t elem_size = a.elem_size;
-  bool equal = true;
-  for_each_contiguous_slice(
-      a,
-      [&](index_t slice_extent, const void* a, const void* b) {
-        equal = equal && std::memcmp(a, b, slice_extent * elem_size) == 0;
-      },
-      b);
-  return equal;
-}
+
 
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
@@ -1155,53 +1139,47 @@ public:
     std::map<expr, var, node_less> reverse_lets;
 
     bool values_changed = false;
-    for (const auto& s : op->lets) {
-      expr_info value_info;
-      expr value = mutate(s.second, &value_info);
+    auto add_lets = [&](const auto& op_lets) {
+      for (const auto& s : op_lets) {
+        expr_info value_info;
+        expr value = mutate(s.second, &value_info);
 
-      if (const constant_buffer* cb = value.as<constant_buffer>()) {
-        constexpr std::size_t max_equal_buffers_size = 256;
-        for (std::size_t i = 0; i < buffers.size(); ++i) {
-          std::optional<buffer_info>& parent = buffers[i];
-          if (parent && parent->constant &&
-              (parent->constant == cb->value ||
-                  (cb->value->size_bytes() < max_equal_buffers_size && buffers_equal(*parent->constant, *cb->value)))) {
-            // `parent` has the same value as this constant, use the parent instead.
-            value = variable::make(var(i));
-            break;
-          }
-        }
-      }
-
-      if (should_substitute(value)) {
-        value_info = expr_info::substitution(std::move(value));
-        values_changed = true;
-      } else {
         var& name = reverse_lets[value];
         if (name.defined()) {
           // This value is the same as another let value, use that variable instead.
           value = expr(name);
+        } else {
+          name = s.first;
+        }
+        if (should_substitute(value)) {
           value_info = expr_info::substitution(std::move(value));
           values_changed = true;
         } else {
-          name = s.first;
           lets.emplace_back(s.first, std::move(value));
           values_changed = values_changed || !lets.back().second.same_as(s.second);
         }
-      }
 
-      assert(!vars.contains(s.first));
-      scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
+        assert(!vars.contains(s.first));
+        scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
 
-      if (const constant_buffer* cb = lets.empty() ? nullptr : lets.back().second.as<constant_buffer>()) {
-        if (lets.back().first == s.first) {
-          scoped_buffers.push_back(set_value_in_scope(buffers, s.first, buffer_info(cb->value)));
+        if (const constant_buffer* cb = lets.empty() ? nullptr : lets.back().second.as<constant_buffer>()) {
+          if (lets.back().first == s.first) {
+            scoped_buffers.push_back(set_value_in_scope(buffers, s.first, buffer_info(cb->value)));
+          }
         }
       }
+    };
+
+    add_lets(op->lets);
+    auto body_node = op->body;
+    while (const T* let_body = body_node.template as<T>()) {
+      add_lets(let_body->lets);
+      body_node = let_body->body;
+      values_changed = true;
     }
 
     expr_info body_info;
-    auto body = mutate(op->body, &body_info);
+    auto body = mutate(body_node, &body_info);
 
     scoped_buffers.clear();
     scoped_values.clear();
@@ -1219,13 +1197,6 @@ public:
       } else {
         ++it;
       }
-    }
-
-    while (const T* let_body = body.template as<T>()) {
-      // Flatten nested lets
-      lets.insert(lets.end(), let_body->lets.begin(), let_body->lets.end());
-      body = let_body->body;
-      values_changed = true;
     }
 
     if (lets.empty()) {
