@@ -216,50 +216,6 @@ expr add_constant(const expr& a, index_t b) {
   return constant_adder(b).mutate(a);
 }
 
-const_raw_buffer_ptr fold_slice_of_const_buffer(const raw_buffer& cb, const std::vector<expr>& at) {
-  bool is_slice_in_bounds = true;
-  for (size_t d = 0; d < std::min<size_t>(at.size(), cb.rank); ++d) {
-    if (!at[d].defined()) continue;
-    const constant* cx = at[d].as<constant>();
-    if (!cx) return nullptr;
-    if (!cb.dims[d].contains(cx->value)) {
-      is_slice_in_bounds = false;
-    }
-  }
-
-  // Make a buffer of the same rank as the constant, but with the sliced
-  // dimensions as singletons at the sliced `at`.
-  std::vector<dim> dims;
-  dims.reserve(cb.rank);
-  for (size_t d = 0; d < cb.rank; ++d) {
-    if (d < at.size() && at[d].defined()) {
-      const index_t v = at[d].as<constant>()->value;
-      dims.emplace_back(v, v);
-    } else {
-      dims.push_back(cb.dims[d]);
-    }
-  }
-
-  raw_buffer_ptr sliced_buf;
-  if (is_slice_in_bounds) {
-    sliced_buf = raw_buffer::make(cb.rank, cb.elem_size, dims.data());
-    copy(cb, *sliced_buf);
-  } else {
-    sliced_buf = raw_buffer::make(cb.rank, cb.elem_size);
-    std::copy_n(dims.data(), cb.rank, sliced_buf->dims);
-  }
-
-  for (int d = std::min<int>(at.size(), cb.rank) - 1; d >= 0; --d) {
-    if (at[d].defined()) {
-      const constant* cx = at[d].as<constant>();
-      assert(cx);
-      sliced_buf->slice(d, cx->value);
-    }
-  }
-
-  return sliced_buf;
-}
-
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
 public:
@@ -2339,14 +2295,6 @@ public:
       // This slice is a no-op.
       set_result(mutate(substitute(op_body, op_sym, op_src)));
       return;
-    }
-
-    if (info && info->constant) {
-      const_raw_buffer_ptr sliced_buf = fold_slice_of_const_buffer(*info->constant, at);
-      if (sliced_buf) {
-        set_result(mutate(let_stmt::make(op_sym, constant_buffer::make(std::move(sliced_buf)), op_body)));
-        return;
-      }
     }
 
     stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));
