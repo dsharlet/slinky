@@ -1596,6 +1596,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
         result, [](const check* op) { return has_side_effects(op->condition) ? stmt(op) : stmt(); });
   }
 
+  result = lift_constants(result);
   result = simplify(result);
 
   result = insert_early_free(result);
@@ -1604,7 +1605,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = inject_traces(result, ctx);
   }
 
-  result = lift_constants(result);
   // This pass adds closures around parallel loop bodies, any following passes need to maintain this closure.
   result = optimize_symbols(result, ctx);
 
