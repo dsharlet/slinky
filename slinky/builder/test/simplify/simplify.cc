@@ -718,27 +718,30 @@ TEST(simplify, allocate) {
   auto expected_zero_buf = raw_buffer::make(1, 0, zero_dims);
   ASSERT_THAT(
       simplify(allocate::make(x, memory_type::automatic, 0, {{{0, 255}, 0, dim::unfolded}}, check::make(buffer_at(x)))),
-      matches(constant_buffer::make(x, expected_zero_buf, check::make(buffer_at(x)))));
+      matches(let_stmt::make(x, constant_buffer::make(expected_zero_buf), check::make(buffer_at(x)))));
 }
 
 TEST(simplify, constant_buffer) {
   auto zero_float = raw_buffer::make_scalar<float>(0.0f);
   auto zero_int = raw_buffer::make_scalar<std::int32_t>(0);
-  ASSERT_THAT(
-      simplify(constant_buffer::make(x, zero_int, constant_buffer::make(y, zero_float, dummy_call({x, y}, {z})))),
-      matches(constant_buffer::make(x, zero_int, dummy_call({x, x}, {z}))));
+  ASSERT_THAT(simplify(let_stmt::make(x, constant_buffer::make(zero_int),
+                  let_stmt::make(y, constant_buffer::make(zero_float), dummy_call({x, y}, {z})))),
+      matches(let_stmt::make(x, constant_buffer::make(zero_int), dummy_call({x, x}, {z}))));
 
   auto one = raw_buffer::make_scalar<float>(1.0f);
-  ASSERT_THAT(simplify(constant_buffer::make(x, zero_int, constant_buffer::make(y, one, dummy_call({x, y}, {z})))),
-      matches(constant_buffer::make(x, zero_int, constant_buffer::make(y, one, dummy_call({x, y}, {z})))));
+  ASSERT_THAT(simplify(let_stmt::make(x, constant_buffer::make(zero_int),
+                  let_stmt::make(y, constant_buffer::make(one), dummy_call({x, y}, {z})))),
+      matches(let_stmt::make({{x, constant_buffer::make(zero_int)}, {y, constant_buffer::make(one)}},
+          dummy_call({x, y}, {z}))));
 
   // This has the same size and memory contents as the above buffers, but a different shape.
   slinky::dim dims[] = {{0, 1, 2, dim::unfolded}};
   auto zero_int16x2 = raw_buffer::make(1, 2, dims);
   std::memset(zero_int16x2->base, 0, 4);
-  ASSERT_THAT(
-      simplify(constant_buffer::make(x, zero_int, constant_buffer::make(y, zero_int16x2, dummy_call({x, y}, {z})))),
-      matches(constant_buffer::make(x, zero_int, constant_buffer::make(y, zero_int16x2, dummy_call({x, y}, {z})))));
+  ASSERT_THAT(simplify(let_stmt::make(x, constant_buffer::make(zero_int),
+                  let_stmt::make(y, constant_buffer::make(zero_int16x2), dummy_call({x, y}, {z})))),
+      matches(let_stmt::make({{x, constant_buffer::make(zero_int)}, {y, constant_buffer::make(zero_int16x2)}},
+          dummy_call({x, y}, {z}))));
 }
 
 TEST(simplify, slice_of_crop) {
@@ -807,8 +810,8 @@ TEST(simplify, slice_of_const_buffer) {
     raw_buffer_ptr sliced_constant_buf = raw_buffer::make_copy(*constant_buf);
     sliced_constant_buf->rank = 1;
 
-    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, 1, 0, body))),
-        matches(constant_buffer::make(b3, sliced_constant_buf, body)));
+    ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf), slice_dim::make(b3, b1, 1, 0, body))),
+        matches(let_stmt::make(b3, constant_buffer::make(sliced_constant_buf), body)));
   }
 
   {
@@ -821,8 +824,8 @@ TEST(simplify, slice_of_const_buffer) {
     sliced_buf->slice(/*dim=*/1, /*at=*/10);
     sliced_buf->slice(/*dim=*/0, /*at=*/5);
 
-    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, {5, 10}, body))),
-        matches(constant_buffer::make(b3, sliced_buf, body)));
+    ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf), slice_buffer::make(b3, b1, {5, 10}, body))),
+        matches(let_stmt::make(b3, constant_buffer::make(sliced_buf), body)));
   }
 
   {
@@ -836,8 +839,8 @@ TEST(simplify, slice_of_const_buffer) {
     sliced_buf->slice(/*dim=*/0, /*at=*/5);
     ASSERT_EQ(sliced_buf->base, nullptr);
 
-    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, {5, 21}, body))),
-        matches(constant_buffer::make(b3, sliced_buf, body)));
+    ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf), slice_buffer::make(b3, b1, {5, 21}, body))),
+        matches(let_stmt::make(b3, constant_buffer::make(sliced_buf), body)));
   }
   {
     // Slicing of a tensor of rank 3.
@@ -851,8 +854,8 @@ TEST(simplify, slice_of_const_buffer) {
 
         raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
         sliced_buf->slice(d, at);
-        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_dim::make(b3, b1, d, at, body))),
-            matches(constant_buffer::make(b3, sliced_buf, body)));
+        ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf), slice_dim::make(b3, b1, d, at, body))),
+            matches(let_stmt::make(b3, constant_buffer::make(sliced_buf), body)));
       }
     }
 
@@ -877,8 +880,8 @@ TEST(simplify, slice_of_const_buffer) {
             sliced_buf->slice(i, at);
           }
         }
-        ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, ats, body))),
-            matches(constant_buffer::make(b3, sliced_buf, body)));
+        ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf), slice_buffer::make(b3, b1, ats, body))),
+            matches(let_stmt::make(b3, constant_buffer::make(sliced_buf), body)));
       }
     }
 
@@ -892,8 +895,8 @@ TEST(simplify, slice_of_const_buffer) {
       for (int i = 2; i >= 0; --i) {
         sliced_buf->slice(i, at);
       }
-      ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf, slice_buffer::make(b3, b1, ats, body))),
-          matches(constant_buffer::make(b3, sliced_buf, body)));
+      ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf), slice_buffer::make(b3, b1, ats, body))),
+          matches(let_stmt::make(b3, constant_buffer::make(sliced_buf), body)));
     }
   }
 
@@ -906,13 +909,13 @@ TEST(simplify, slice_of_const_buffer) {
     raw_buffer_ptr sliced_buf = raw_buffer::make_copy(*constant_buf);
     sliced_buf->slice(1, 0);
 
-    ASSERT_THAT(simplify(constant_buffer::make(b1, constant_buf,
+    ASSERT_THAT(simplify(let_stmt::make(b1, constant_buffer::make(constant_buf),
                     // No-op crop_dim gets replaced by the source buffer.
                     crop_dim::make(b2, b1, 0, {0, 0},
                         // slice_dim of a constant buffer gets replaced by a new constant buffer.
                         slice_dim::make(b4, b1, 1, 0, dummy_call({b4, b2}, {}))))),
-        matches(
-            constant_buffer::make(b1, constant_buf, constant_buffer::make(b4, sliced_buf, dummy_call({b4, b1}, {})))));
+        matches(let_stmt::make({{b1, constant_buffer::make(constant_buf)}, {b4, constant_buffer::make(sliced_buf)}},
+            dummy_call({b4, b1}, {}))));
   }
 }
 
@@ -1072,12 +1075,12 @@ TEST(simplify, make_buffer) {
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
           transpose::make(b1, b0, {0, 1}, dummy_call({}, {b0, b1})))));
 
-  // Truncating a consant buffer.
+  // Truncating a constant buffer.
   const dim const_dims[] = {dim::broadcast(), dim::broadcast()};
   auto const_buffer = slinky::raw_buffer::make(/*rank=*/2, /*elem_size=*/1, const_dims);
   ASSERT_THAT(
-      simplify(constant_buffer::make(b0, const_buffer, make_buffer::make(b1, buffer_at(b0, 0, 0), 1, {}, body))),
-      matches(constant_buffer::make(b0, const_buffer, transpose::make_truncate(b1, b0, 0, body))));
+      simplify(let_stmt::make(b0, constant_buffer::make(const_buffer), make_buffer::make(b1, buffer_at(b0, 0, 0), 1, {}, body))),
+      matches(let_stmt::make(b0, constant_buffer::make(const_buffer), transpose::make_truncate(b1, b0, 0, body))));
 
   // The same buffer
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},

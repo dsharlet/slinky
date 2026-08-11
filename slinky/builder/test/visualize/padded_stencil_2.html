@@ -349,24 +349,23 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  check(__in);
-  check((buffer_rank(__in) == 2));
-  check(validate_buffer(__in));
-  check(out);
-  check((buffer_rank(out) == 2));
-  check(validate_buffer(out));
-  check((buffer_elem_size(__in) == 2));
-  check((buffer_elem_size(out) == 2));
-  check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-  check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
-    let g = buffer_min(__in, 0);
-    let g_1 = buffer_min(__in, 1);
-    let g_0 = buffer_max(__in, 0);
-    let g_2 = buffer_max(__in, 1);
-    { let padding = allocate('padding', 2, [
-        
-      ]);
+    let padding = make_buffer('<constant>', 0, 2, []);
+    check(__in);
+    check((buffer_rank(__in) == 2));
+    check(validate_buffer(__in));
+    check(out);
+    check((buffer_rank(out) == 2));
+    check(validate_buffer(out));
+    check((buffer_elem_size(__in) == 2));
+    check((buffer_elem_size(out) == 2));
+    check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+    check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+    {
+      let g = buffer_min(__in, 0);
+      let g_1 = buffer_min(__in, 1);
+      let g_0 = buffer_max(__in, 0);
+      let g_2 = buffer_max(__in, 1);
       { let padded_intm = allocate('padded_intm', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
@@ -403,7 +402,6 @@ function pipeline(__in, out) {
         }
         free(padded_intm);
       }
-      free(padding);
     }
   }
 }

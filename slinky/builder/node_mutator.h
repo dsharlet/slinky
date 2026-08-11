@@ -35,7 +35,6 @@ public:
   void visit(const copy_stmt*) override;
   void visit(const allocate*) override;
   void visit(const make_buffer*) override;
-  void visit(const constant_buffer*) override;
   void visit(const clone_buffer*) override;
   void visit(const crop_buffer*) override;
   void visit(const crop_dim*) override;
@@ -67,6 +66,7 @@ public:
       switch (e.type()) {
       case expr_node_type::variable: visit(static_cast<const variable*>(e.get())); break;
       case expr_node_type::constant: visit(static_cast<const constant*>(e.get())); break;
+      case expr_node_type::constant_buffer: visit(static_cast<const constant_buffer*>(e.get())); break;
       default: e.accept(this);
       }
     }
@@ -84,6 +84,7 @@ public:
 
   void visit(const variable* op) override;
   void visit(const constant* op) override;
+  void visit(const constant_buffer* op) override;
 
   void visit(const let*) override;
   void visit(const add*) override;
@@ -122,7 +123,6 @@ stmt clone_with(const loop* op, stmt new_body);
 stmt clone_with(const let_stmt* op, stmt new_body);
 stmt clone_with(const allocate* op, stmt new_body);
 stmt clone_with(const make_buffer* op, stmt new_body);
-stmt clone_with(const constant_buffer* op, stmt new_body);
 stmt clone_with(const clone_buffer* op, stmt new_body);
 stmt clone_with(const crop_buffer* op, stmt new_body);
 stmt clone_with(const crop_dim* op, stmt new_body);
@@ -134,7 +134,6 @@ stmt clone_with(const async* op, stmt new_body);
 stmt clone_with(const loop* op, var sym, stmt new_body);
 stmt clone_with(const allocate* op, var sym, stmt new_body);
 stmt clone_with(const make_buffer* op, var sym, stmt new_body);
-stmt clone_with(const constant_buffer* op, var sym, stmt new_body);
 stmt clone_with(const clone_buffer* op, var sym, stmt new_body);
 stmt clone_with(const crop_buffer* op, var sym, stmt new_body);
 stmt clone_with(const crop_dim* op, var sym, stmt new_body);

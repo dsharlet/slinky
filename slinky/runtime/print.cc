@@ -64,7 +64,6 @@ const char* to_string(stmt_node_type type) {
   case stmt_node_type::loop: return "loop";
   case stmt_node_type::allocate: return "allocate";
   case stmt_node_type::make_buffer: return "make_buffer";
-  case stmt_node_type::constant_buffer: return "constant_buffer";
   case stmt_node_type::clone_buffer: return "clone_buffer";
   case stmt_node_type::crop_buffer: return "crop_buffer";
   case stmt_node_type::crop_dim: return "crop_dim";
@@ -100,6 +99,7 @@ const char* to_string(expr_node_type type) {
   case expr_node_type::select: return "select";
   case expr_node_type::call: return "call";
   case expr_node_type::constant: return "constant";
+  case expr_node_type::constant_buffer: return "constant_buffer";
 
   default: return "<invalid expr_node_type>";
   }
@@ -242,6 +242,34 @@ public:
     }
   }
   void visit(const constant* c) override { *this << c->value; }
+  void visit(const constant_buffer* n) override {
+    if (!n->value) {
+      *this << "constant_buffer(null)";
+      return;
+    }
+    const raw_buffer& buf = *n->value;
+    *this << "constant_buffer(";
+    const size_t size = buf.size_bytes();
+    if (size <= 16) {
+      *this << "[";
+      std::stringstream data;
+      data << std::hex << std::setfill('0');
+      const uint8_t* bytes = reinterpret_cast<uint8_t*>(buf.base);
+      for (size_t i = 0; i < size; ++i) {
+        if (i > 0 && i % 4 == 0) data << ' ';
+        data << std::setw(2) << static_cast<int>(bytes[size - i - 1]);
+      }
+      *this << data.str();
+      *this << "]";
+    } else {
+      *this << buf.base;
+    }
+    *this << ", " << buf.elem_size << ", {";
+    if (buf.rank > 0) {
+      print_vector(span<const dim>{buf.dims, buf.rank}, ", ");
+    }
+    *this << "})";
+  }
 
   void visit(const let* l) override {
     *this << "let {";
@@ -372,35 +400,6 @@ public:
     if (!n->dims.empty()) {
       *this << "" << indent(2);
       print_vector(n->dims, "," + indent(2));
-      *this << "" << indent();
-    }
-    *this << "}) {";
-    *this << n->body;
-    *this << indent() << "}";
-  }
-
-  void visit(const constant_buffer* n) override {
-    const raw_buffer& buf = *n->value;
-    *this << indent() << n->sym << " = constant_buffer(";
-    const size_t size = buf.size_bytes();
-    if (size <= 16) {
-      *this << "[";
-      std::stringstream data;
-      data << std::hex << std::setfill('0');
-      const uint8_t* bytes = reinterpret_cast<uint8_t*>(buf.base);
-      for (size_t i = 0; i < size; ++i) {
-        if (i > 0 && i % 4 == 0) data << ' ';
-        data << std::setw(2) << static_cast<int>(bytes[size - i - 1]);
-      }
-      *this << data.str();
-      *this << "]";
-    } else {
-      *this << buf.base;
-    }
-    *this << ", " << buf.elem_size << ", {";
-    if (buf.rank > 0) {
-      *this << "" << indent(2);
-      print_vector(span<const dim>{buf.dims, buf.rank}, "," + indent(2));
       *this << "" << indent();
     }
     *this << "}) {";

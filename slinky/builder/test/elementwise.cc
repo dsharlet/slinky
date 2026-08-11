@@ -126,6 +126,7 @@ public:
   }
 
   void visit(const let*) override { SLINKY_UNREACHABLE; }
+  void visit(const constant_buffer*) override { SLINKY_UNREACHABLE; }
   void visit(const call*) override { SLINKY_UNREACHABLE; }
   void visit(const logical_not*) override { SLINKY_UNREACHABLE; }
 };
@@ -201,6 +202,7 @@ public:
   }
 
   void visit(const let*) override { SLINKY_UNREACHABLE; }
+  void visit(const constant_buffer*) override { SLINKY_UNREACHABLE; }
   void visit(const call*) override { SLINKY_UNREACHABLE; }
   void visit(const logical_not*) override { SLINKY_UNREACHABLE; }
 };

@@ -55,6 +55,9 @@ stmt parallelize_tasks(const stmt& s);
 // Clean-up semaphores remaining after simplifications.
 stmt cleanup_semaphores(const stmt& s);
 
+// Lift constant lets to a single root let_stmt.
+stmt lift_constants(const stmt& s);
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

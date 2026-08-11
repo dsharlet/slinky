@@ -134,6 +134,14 @@ public:
     }
   }
   void visit(const constant* c) override { *this << c->value; }
+  void visit(const constant_buffer* n) override {
+    *this << "make_buffer('<constant>', 0, "
+          << (n->value ? n->value->elem_size : 0) << ", [";
+    if (n->value && n->value->rank > 0) {
+      print_vector(span<const dim>{n->value->dims, n->value->rank}, ", ");
+    }
+    *this << "])";
+  }
 
   void visit(const let* l) override {
     // Use a lambda to allow scoped lets within an expression
@@ -269,12 +277,6 @@ public:
     *this << indent() << "}\n";
     --depth;
     *this << indent() << "}\n";
-  }
-
-  void visit(const constant_buffer* n) override {
-    // For visualization purposes, just make an equivalent allocation.
-    stmt equiv = allocate::make(n->sym, memory_type::heap, n->value->elem_size, buffer_dims(*n->value), n->body);
-    equiv.accept(this);
   }
 
   void visit(const clone_buffer* n) override {

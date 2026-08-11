@@ -145,6 +145,12 @@ expr_ref constant::get(index_t value) { return get_constant(value); }
 expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
+expr constant_buffer::make(const_raw_buffer_ptr value) {
+  auto n = new constant_buffer();
+  n->value = std::move(value);
+  return expr(n);
+}
+
 expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
 expr sub::make(expr a, expr b) { return make_bin_op<sub>(std::move(a), std::move(b)); }
 expr mul::make(expr a, expr b) { return make_bin_op<mul>(std::move(a), std::move(b)); }
@@ -548,14 +554,6 @@ stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr>
   return stmt(n);
 }
 
-stmt constant_buffer::make(var sym, const_raw_buffer_ptr value, stmt body) {
-  auto n = new constant_buffer();
-  n->sym = sym;
-  n->value = value;
-  n->body = std::move(body);
-  return stmt(n);
-}
-
 stmt clone_buffer::make(var sym, var src, stmt body) {
   auto n = new clone_buffer();
   n->sym = sym;
@@ -834,6 +832,7 @@ expr wait_for(std::vector<expr> tasks) { return call::make(intrinsic::wait_for, 
 
 void recursive_node_visitor::visit(const variable*) {}
 void recursive_node_visitor::visit(const constant*) {}
+void recursive_node_visitor::visit(const constant_buffer*) {}
 
 void recursive_node_visitor::visit(const let* op) {
   for (const auto& p : op->lets) {
@@ -921,9 +920,6 @@ void recursive_node_visitor::visit(const make_buffer* op) {
     if (i.stride.defined()) i.stride.accept(this);
     if (i.fold_factor.defined()) i.fold_factor.accept(this);
   }
-  if (op->body.defined()) op->body.accept(this);
-}
-void recursive_node_visitor::visit(const constant_buffer* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const clone_buffer* op) {

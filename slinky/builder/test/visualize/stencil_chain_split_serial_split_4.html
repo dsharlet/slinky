@@ -349,9 +349,8 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  { let __trace_names = allocate('__trace_names', 1, [
-      {bounds:[0, 53], stride:1, fold_factor:-1}
-    ]);
+  {
+    let __trace_names = make_buffer('<constant>', 0, 1, [{bounds: [0, 53], stride:1, fold_factor:NaN}]);
     {
       let __trace_token = trace_begin(buffer_at(__trace_names, 45));
       check(__in);
@@ -425,7 +424,6 @@ function pipeline(__in, out) {
       }
       check(trace_end(__trace_token));
     }
-    free(__trace_names);
   }
 }
 let __in = allocate('in', 2, [{bounds: [-2, 21], stride:2, fold_factor:NaN}, {bounds: [-2, 31], stride:48, fold_factor:NaN}], true);
