@@ -20,6 +20,7 @@
 #include "slinky/builder/simplify.h"
 #include "slinky/builder/slide_and_fold_storage.h"
 #include "slinky/builder/substitute.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/depends_on.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
@@ -954,7 +955,8 @@ class pipeline_builder {
 
         if (!has_all_allocations(candidate, results[ix].allocations)) continue;
 
-        results[ix].body = constant_buffer::make(candidate->sym(), candidate->constant(), results[ix].body);
+        results[ix].body =
+            let_stmt::make(candidate->sym(), constant_buffer::make(candidate->constant()), results[ix].body);
         constants_to_remove.push_back(i.first);
       }
 
@@ -1426,7 +1428,7 @@ public:
   stmt make_buffers(stmt body) {
     // Place all remaining constant_buffer-s.
     for (std::pair<var, buffer_expr_ptr> i : constants_) {
-      body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
+      body = let_stmt::make(i.first, constant_buffer::make(i.second->constant()), std::move(body));
     }
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
@@ -1525,7 +1527,7 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
   stmt result = m.mutate(s);
   result = m.add_trace(result, m.get_trace_arg("pipeline"));
   buffer<char, 1> names_const_buf(m.names.data(), m.names.size());
-  result = constant_buffer::make(m.names_buf, raw_buffer::make_copy(names_const_buf), result);
+  result = let_stmt::make(m.names_buf, constant_buffer::make(raw_buffer::make_copy(names_const_buf)), result);
   return result;
 }
 
@@ -1566,6 +1568,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = slide_and_fold_storage(result, ctx);
   result = deshadow(result, builder.external_symbols(), ctx);
+  result = lift_constants(result);
   result = simplify(result);
 
   // Try to reuse buffers and eliminate copies where possible.
@@ -1593,6 +1596,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
         result, [](const check* op) { return has_side_effects(op->condition) ? stmt(op) : stmt(); });
   }
 
+  result = lift_constants(result);
   result = simplify(result);
 
   result = insert_early_free(result);

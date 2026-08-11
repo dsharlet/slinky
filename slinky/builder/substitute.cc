@@ -203,6 +203,11 @@ public:
     try_match(ec->value, op->value);
   }
 
+  void visit(const constant_buffer* op) override {
+    const constant_buffer* ec = static_cast<const constant_buffer*>(self);
+    try_match(ec->value.get(), op->value.get());
+  }
+
   template <typename T>
   void visit_let(const T* op) {
     const T* el = static_cast<const T*>(self);
@@ -321,15 +326,6 @@ public:
     if (!try_match(mbs->base, op->base)) return;
     if (!try_match(mbs->elem_size, op->elem_size)) return;
     if (!try_match(mbs->dims, op->dims)) return;
-    if (!try_match(mbs->body, op->body)) return;
-  }
-
-  void visit(const constant_buffer* op) override {
-    const constant_buffer* mbs = static_cast<const constant_buffer*>(self);
-    assert(mbs);
-
-    if (!try_match(mbs->sym, op->sym)) return;
-    if (!try_match(mbs->value.get(), op->value.get())) return;
     if (!try_match(mbs->body, op->body)) return;
   }
 
@@ -536,17 +532,6 @@ void substitutor::visit(const make_buffer* op) {
     set_result(op);
   } else {
     set_result(make_buffer::make(sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
-  }
-  exit_decls();
-}
-void substitutor::visit(const constant_buffer* op) {
-  var sym = enter_decl(op->sym);
-  stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
-  if (sym == op->sym && body.same_as(op->body)) {
-    set_result(op);
-  } else {
-    set_result(constant_buffer::make(sym, op->value, std::move(body)));
   }
   exit_decls();
 }

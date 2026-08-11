@@ -50,23 +50,7 @@ void ensure_is_point(interval_expr& x) {
   }
 }
 
-// Returns true if a and b can be used equivalently.
-bool buffers_equal(const raw_buffer& a, const raw_buffer& b) {
-  if (a.rank != b.rank) return false;
-  if (a.elem_size != b.elem_size) return false;
-  for (std::size_t d = 0; d < a.rank; ++d) {
-    if (a.dim(d) != b.dim(d)) return false;
-  }
-  const index_t elem_size = a.elem_size;
-  bool equal = true;
-  for_each_contiguous_slice(
-      a,
-      [&](index_t slice_extent, const void* a, const void* b) {
-        equal = equal && std::memcmp(a, b, slice_extent * elem_size) == 0;
-      },
-      b);
-  return equal;
-}
+
 
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
@@ -115,6 +99,7 @@ public:
     }
   };
   void visit(const variable* op) override { set_result(expr()); }
+  void visit(const constant_buffer* op) override { set_result(expr()); }
 
   void visit(const let* op) override {
     expr body = mutate(op->body);
@@ -213,49 +198,6 @@ public:
 expr add_constant(const expr& a, index_t b) {
   if (b == 0) return a;
   return constant_adder(b).mutate(a);
-}
-
-const_raw_buffer_ptr fold_slice_of_const_buffer(const constant_buffer& cb, const std::vector<expr>& at) {
-  bool is_slice_in_bounds = true;
-  for (size_t d = 0; d < std::min<size_t>(at.size(), cb.value->rank); ++d) {
-    if (!at[d].defined()) continue;
-    const constant* cx = at[d].as<constant>();
-    if (!cx) return nullptr;
-    if (!cb.value->dims[d].contains(cx->value)) {
-      is_slice_in_bounds = false;
-    }
-  }
-
-  // Make a buffer of the same rank as the constant, but with the sliced
-  // dimensions as singletons at the sliced `at`.
-  std::vector<dim> dims;
-  dims.reserve(cb.value->rank);
-  for (size_t d = 0; d < cb.value->rank; ++d) {
-    if (d < at.size() && at[d].defined()) {
-      const index_t v = at[d].as<constant>()->value;
-      dims.emplace_back(v, v);
-    } else {
-      dims.push_back(cb.value->dims[d]);
-    }
-  }
-
-  raw_buffer_ptr sliced_buf;
-  if (is_slice_in_bounds) {
-    sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size, dims.data());
-    copy(*cb.value, *sliced_buf);
-  } else {
-    sliced_buf = raw_buffer::make(cb.value->rank, cb.value->elem_size);
-    std::copy_n(dims.data(), cb.value->rank, sliced_buf->dims);
-  }
-
-  for (int d = std::min<int>(at.size(), cb.value->rank) - 1; d >= 0; --d) {
-    if (at[d].defined()) {
-      const constant* cx = at[d].as<constant>();
-      assert(cx);
-      sliced_buf->slice(d, cx->value);
-    }
-  }
-  return sliced_buf;
 }
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
@@ -854,10 +796,13 @@ public:
   }
 
   var visit_symbol(var x) {
-    if (vars.contains(x)) {
+    while (vars.contains(x)) {
       const expr_info& info = *vars[x];
       if (auto sym = as_variable(info.known_value)) {
-        return *sym;
+        if (*sym == x) break;
+        x = *sym;
+      } else {
+        break;
       }
     }
     return x;
@@ -1187,35 +1132,56 @@ public:
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
+    using sv_buf_type = scoped_value_in_symbol_map<buffer_info>;
+    std::vector<sv_buf_type> scoped_buffers;
+    scoped_buffers.reserve(op->lets.size());
+
     std::map<expr, var, node_less> reverse_lets;
 
     bool values_changed = false;
-    for (const auto& s : op->lets) {
-      expr_info value_info;
-      expr value = mutate(s.second, &value_info);
+    auto add_lets = [&](const auto& op_lets) {
+      for (const auto& s : op_lets) {
+        expr_info value_info;
+        expr value = mutate(s.second, &value_info);
 
-      var& name = reverse_lets[value];
-      if (name.defined()) {
-        // This value is the same as another let value, use that variable instead.
-        value = expr(name);
-      } else {
-        name = s.first;
-      }
-      if (should_substitute(value)) {
-        value_info = expr_info::substitution(std::move(value));
-        values_changed = true;
-      } else {
-        lets.emplace_back(s.first, std::move(value));
-        values_changed = values_changed || !lets.back().second.same_as(s.second);
-      }
+        var& name = reverse_lets[value];
+        if (name.defined()) {
+          // This value is the same as another let value, use that variable instead.
+          value = expr(name);
+        } else {
+          name = s.first;
+        }
+        if (should_substitute(value)) {
+          value_info = expr_info::substitution(std::move(value));
+          values_changed = true;
+        } else {
+          lets.emplace_back(s.first, std::move(value));
+          values_changed = values_changed || !lets.back().second.same_as(s.second);
+        }
 
-      assert(!vars.contains(s.first));
-      scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
+        assert(!vars.contains(s.first));
+        scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
+
+        if (const constant_buffer* cb = lets.empty() ? nullptr : lets.back().second.as<constant_buffer>()) {
+          if (lets.back().first == s.first) {
+            scoped_buffers.push_back(set_value_in_scope(buffers, s.first, buffer_info(cb->value)));
+          }
+        }
+      }
+    };
+
+    add_lets(op->lets);
+    auto body_node = op->body;
+    while (const T* let_body = body_node.template as<T>()) {
+      add_lets(let_body->lets);
+      body_node = let_body->body;
+      values_changed = true;
     }
 
     expr_info body_info;
-    auto body = mutate(op->body, &body_info);
+    auto body = mutate(body_node, &body_info);
 
+    scoped_buffers.clear();
     scoped_values.clear();
     for (auto it = lets.rbegin(); it != lets.rend();) {
       auto deps = depends_on(body, it->first);
@@ -1231,13 +1197,6 @@ public:
       } else {
         ++it;
       }
-    }
-
-    while (const T* let_body = body.template as<T>()) {
-      // Flatten nested lets
-      lets.insert(lets.end(), let_body->lets.begin(), let_body->lets.end());
-      body = let_body->body;
-      values_changed = true;
     }
 
     if (lets.empty()) {
@@ -1699,7 +1658,7 @@ public:
       if (all_constants) {
         raw_buffer_ptr buf = raw_buffer::make(dims.size(), 0, dims.empty() ? nullptr : dims.data());
         set_result(block::make(
-            {std::move(before), constant_buffer::make(op->sym, std::move(buf), std::move(body)), std::move(after)}));
+            {std::move(before), let_stmt::make(op->sym, constant_buffer::make(std::move(buf)), std::move(body)), std::move(after)}));
         return;
       }
     }
@@ -1918,44 +1877,7 @@ public:
     set_result(lift_decl_invariants(body, op->sym, make_make_buffer));
   }
 
-  void visit(const constant_buffer* op) override {
-    // Don't check big constants for equality. If a constant is big, this equality check could be expensive, and the
-    // caller really should avoid making such duplicate buffers in the first place. The case we are trying to catch here
-    // is e.g. duplicated scalar buffers for padded copies.
-    constexpr std::size_t max_equal_buffers_size = 256;
-    for (std::size_t i = 0; i < buffers.size(); ++i) {
-      std::optional<buffer_info>& parent = buffers[i];
-      if (parent && parent->constant &&
-          (parent->constant == op->value ||
-              (op->value->size_bytes() < max_equal_buffers_size && buffers_equal(*parent->constant, *op->value)))) {
-        // `parent` has the same value as this constant, use the parent instead.
-        auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(var(i))));
-        set_result(mutate(op->body));
-        return;
-      }
-    }
-
-    buffer_info info(op->value);
-    info.decl = stmt(op);
-    stmt body = mutate_with_buffer(op, op->body, op->sym, info);
-
-    auto make_constant_buffer = [&](stmt body) {
-      auto deps = depends_on(body, op->sym);
-      if (!deps.any()) {
-        // This constant_buffer is unused.
-        return body;
-      } else if (can_substitute_buffer(deps)) {
-        // We only needed the buffer meta, not the buffer itself.
-        return mutate_with_buffer(nullptr, body, op->sym, info);
-      } else if (!body.same_as(op->body)) {
-        return constant_buffer::make(op->sym, op->value, std::move(body));
-      } else {
-        return stmt(op);
-      }
-    };
-
-    set_result(lift_decl_invariants(body, op->sym, make_constant_buffer));
-  }
+  void visit(const constant_buffer* op) override { set_result(op, {point(expr(op)), alignment_type()}); }
 
   std::optional<buffer_info> get_buffer_info(var buf) {
     std::optional<buffer_info> info = buffers[buf];
@@ -2344,17 +2266,6 @@ public:
       // This slice is a no-op.
       set_result(mutate(substitute(op_body, op_sym, op_src)));
       return;
-    }
-
-    if (info) {
-      const constant_buffer* cb = info->decl.as<constant_buffer>();
-      if (cb) {
-        const_raw_buffer_ptr sliced_buf = fold_slice_of_const_buffer(*cb, at);
-        if (sliced_buf) {
-          set_result(mutate(constant_buffer::make(op_sym, std::move(sliced_buf), op_body)));
-          return;
-        }
-      }
     }
 
     stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));

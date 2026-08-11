@@ -234,7 +234,6 @@ public:
     }
     visit_sym_body(op->sym, nullptr, op->body);
   }
-  void visit(const constant_buffer* op) override { visit_sym_body(op->sym, nullptr, op->body); }
   void visit(const crop_buffer* op) override {
     for (const interval_expr& i : op->bounds) {
       if (i.min.defined()) i.min.accept(this);

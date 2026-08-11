@@ -479,15 +479,23 @@ public:
     }
   }
 
-  void visit(const constant_buffer* op) override {
-    // Constants are similar to inputs in that they cannot be mutated.
-    auto s = set_value_in_scope(
-        buffers, op->sym, buffer_info(buffer_dims(*op->value), op->value->elem_size, /*is_input=*/true));
+  void visit(const let_stmt* op) override {
+    std::vector<scoped_value_in_symbol_map<buffer_info>> scoped_buffers;
+    for (const auto& p : op->lets) {
+      if (const constant_buffer* cb = p.second.as<constant_buffer>()) {
+        scoped_buffers.push_back(set_value_in_scope(
+            buffers, p.first, buffer_info(buffer_dims(*cb->value), cb->value->elem_size, /*is_input=*/true)));
+      }
+    }
     stmt_mutator::visit(op);
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
-    for (std::optional<buffer_info>& i : buffers) {
-      if (i) i->do_not_alias(op->sym);
+    for (const auto& p : op->lets) {
+      if (p.second.as<constant_buffer>()) {
+        for (std::optional<buffer_info>& i : buffers) {
+          if (i) i->do_not_alias(p.first);
+        }
+      }
     }
   }
 
@@ -1568,14 +1576,19 @@ public:
     stmt_mutator::visit(op);
   }
 
-  void visit(const constant_buffer* op) override {
-    sliceable_dims sd = {};
-    for (std::size_t dim = 0; dim < op->value->rank; ++dim) {
-      if (op->value->dim(dim).extent() == 1) {
-        sd.set(dim);
+  void visit(const let_stmt* op) override {
+    std::vector<scoped_value_in_symbol_map<sliceable_dims>> scoped_sds;
+    for (const auto& p : op->lets) {
+      if (const constant_buffer* cb = p.second.as<constant_buffer>()) {
+        sliceable_dims sd = {};
+        for (std::size_t dim = 0; dim < cb->value->rank; ++dim) {
+          if (cb->value->dim(dim).extent() == 1) {
+            sd.set(dim);
+          }
+        }
+        scoped_sds.push_back(set_value_in_scope(symbol_to_sliceable_dims_, p.first, sd));
       }
     }
-    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
     stmt_mutator::visit(op);
   }
 
@@ -1827,9 +1840,13 @@ public:
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op); }
-  void visit(const constant_buffer* op) override {
-    // Constant buffers are not mutable, because the raw_buffer object we use is not allocated by a declaration.
-    visit_buffer_decl(op, false);
+  void visit(const let_stmt* op) override {
+    for (const auto& p : op->lets) {
+      if (p.second.as<constant_buffer>()) {
+        can_mutate[p.first] = false;
+      }
+    }
+    stmt_mutator::visit(op);
   }
 
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
@@ -2164,7 +2181,6 @@ public:
   }
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
-  void visit(const constant_buffer* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_data_dependency(op->base)); }
   void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
   void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
@@ -2274,6 +2290,48 @@ public:
 stmt cleanup_semaphores(const stmt& s) {
   scoped_trace trace("cleanup_semaphores");
   return semaphore_cleaner().mutate(s);
+}
+
+namespace {
+
+class constant_lifter : public stmt_mutator {
+public:
+  std::vector<std::pair<var, expr>> lifted;
+  std::set<var> lifted_syms;
+
+  void visit(const let_stmt* op) override {
+    std::vector<std::pair<var, expr>> remaining_lets;
+    remaining_lets.reserve(op->lets.size());
+    for (const auto& p : op->lets) {
+      if (p.second.as<constant_buffer>() || p.second.as<constant>()) {
+        if (lifted_syms.insert(p.first).second) {
+          lifted.push_back(p);
+        }
+      } else {
+        remaining_lets.push_back(p);
+      }
+    }
+    stmt body = mutate(op->body);
+    if (remaining_lets.empty()) {
+      set_result(std::move(body));
+    } else if (remaining_lets.size() == op->lets.size() && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(let_stmt::make(std::move(remaining_lets), std::move(body), op->is_closure));
+    }
+  }
+};
+
+}  // namespace
+
+stmt lift_constants(const stmt& s) {
+  scoped_trace trace("lift_constants");
+  constant_lifter lifter;
+  stmt body = lifter.mutate(s);
+  if (lifter.lifted.empty()) {
+    return s;
+  }
+  return let_stmt::make(std::move(lifter.lifted), std::move(body));
 }
 
 }  // namespace slinky

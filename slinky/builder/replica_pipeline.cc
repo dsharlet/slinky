@@ -78,6 +78,7 @@ public:
   }
 
   void visit(const constant* op) override { name_ = to_string(op->value); }
+  void visit(const constant_buffer* op) override { SLINKY_UNREACHABLE; }
   void visit(const let* op) override { SLINKY_UNREACHABLE; }
   void visit(const add* op) override { visit_binary_op(op, "+"); }
   void visit(const sub* op) override { visit_binary_op(op, "-"); }

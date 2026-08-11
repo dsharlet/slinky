@@ -101,8 +101,8 @@ TEST(match, basic) {
     raw_buffer_ptr buf_3 = raw_buffer::make(2, 2, dims);
     std::memset(buf_3->base, buf_3->size_bytes(), 0x18);
 
-    ASSERT_TRUE(match(constant_buffer::make(x, buf_1, {}), constant_buffer::make(x, buf_2, {})));
-    ASSERT_FALSE(match(constant_buffer::make(x, buf_1, {}), constant_buffer::make(x, buf_3, {})));
+    ASSERT_TRUE(match(constant_buffer::make(buf_1), constant_buffer::make(buf_2)));
+    ASSERT_FALSE(match(constant_buffer::make(buf_1), constant_buffer::make(buf_3)));
   }
 }
 

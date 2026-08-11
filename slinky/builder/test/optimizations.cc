@@ -5,8 +5,10 @@
 
 #include "slinky/builder/optimizations.h"
 #include "slinky/builder/substitute.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
@@ -409,6 +411,27 @@ TEST(optimizations, parallelize_tasks) {
           dummy_call({y}, {z}),
           dummy_call({y}, {y}),
       })));
+}
+
+TEST(optimizations, lift_constants) {
+  auto buf1 = raw_buffer::make_scalar<float>(1.0f);
+  auto buf2 = raw_buffer::make_scalar<int>(2);
+
+  // Constants inside inner blocks or loops or lets get lifted to root let_stmt.
+  stmt s = loop::make(x, loop::serial, {0, 10}, expr(),
+      let_stmt::make(y, constant_buffer::make(buf1),
+          let_stmt::make(z, x + 1,
+              let_stmt::make(w, constant_buffer::make(buf2), dummy_call({y, w, z}, {})))));
+
+  stmt expected = let_stmt::make({{y, constant_buffer::make(buf1)}, {w, constant_buffer::make(buf2)}},
+      loop::make(x, loop::serial, {0, 10}, expr(),
+          let_stmt::make(z, x + 1, dummy_call({y, w, z}, {}))));
+
+  ASSERT_THAT(lift_constants(s), matches(expected));
+
+  // If no constants, stmt is returned unchanged.
+  stmt no_consts = loop::make(x, loop::serial, {0, 10}, expr(), dummy_call({x}, {}));
+  ASSERT_THAT(lift_constants(no_consts), matches(no_consts));
 }
 
 }  // namespace slinky

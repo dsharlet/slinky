@@ -72,6 +72,7 @@ SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
 inline index_t eval_binary(expr_ref e, eval_context& ctx);
 inline index_t eval(const variable* op, eval_context& ctx);
 inline index_t eval(const constant* op);
+inline index_t eval(const constant_buffer* op);
 inline index_t eval(const let* op, eval_context& ctx);
 inline index_t eval(const logical_not* op, eval_context& ctx);
 inline index_t eval(const class select* op, eval_context& ctx);
@@ -86,7 +87,6 @@ inline index_t eval(const block* op, eval_context& ctx);
 inline index_t eval(const loop* op, eval_context& ctx);
 inline index_t eval(const allocate* op, eval_context& ctx);
 inline index_t eval(const make_buffer* op, eval_context& ctx);
-inline index_t eval(const constant_buffer* op, eval_context& ctx);
 inline index_t eval(const clone_buffer* op, eval_context& ctx);
 inline index_t eval(const crop_buffer* op, eval_context& ctx);
 inline index_t eval(const crop_dim* op, eval_context& ctx);
@@ -103,6 +103,7 @@ SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
   switch (e.type()) {
   case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
   case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
+  case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()));
   default: return eval_non_inlined(e, ctx);
   }
 }
@@ -182,6 +183,7 @@ inline index_t eval(const variable* op, eval_context& ctx) {
 }
 
 inline index_t eval(const constant* op) { return op->value; }
+inline index_t eval(const constant_buffer* op) { return reinterpret_cast<index_t>(op->value.get()); }
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let* op, eval_context& ctx) {
   // This is a bit ugly but we really want to avoid heap allocations here.
@@ -397,7 +399,6 @@ SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()), ctx);
   case stmt_node_type::allocate: return eval(reinterpret_cast<const allocate*>(op.get()), ctx);
   case stmt_node_type::make_buffer: return eval(reinterpret_cast<const make_buffer*>(op.get()), ctx);
-  case stmt_node_type::constant_buffer: return eval(reinterpret_cast<const constant_buffer*>(op.get()), ctx);
   case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()), ctx);
   case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()), ctx);
   case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()), ctx);
@@ -701,10 +702,6 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   }
 
   return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
-}
-
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const constant_buffer* op, eval_context& ctx) {
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&*op->value), ctx);
 }
 
 inline index_t eval(const clone_buffer* op, eval_context& ctx) {

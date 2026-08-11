@@ -82,6 +82,7 @@ enum class expr_node_type {
   select,
   call,
   constant,
+  constant_buffer,
 };
 
 enum class intrinsic {
@@ -418,6 +419,17 @@ public:
   static constexpr expr_node_type static_type = expr_node_type::constant;
 };
 
+class constant_buffer : public expr_node<constant_buffer> {
+public:
+  const_raw_buffer_ptr value;
+
+  void accept(expr_visitor* v) const override;
+
+  static expr make(const_raw_buffer_ptr value);
+
+  static constexpr expr_node_type static_type = expr_node_type::constant_buffer;
+};
+
 class binary_op : public base_expr_node {
 public:
   expr a, b;
@@ -572,6 +584,7 @@ public:
 
   virtual void visit(const variable*) = 0;
   virtual void visit(const constant*) = 0;
+  virtual void visit(const constant_buffer*) = 0;
   virtual void visit(const let*) = 0;
   virtual void visit(const add*) = 0;
   virtual void visit(const sub*) = 0;
@@ -593,6 +606,7 @@ public:
 
 inline void variable::accept(expr_visitor* v) const { v->visit(this); }
 inline void constant::accept(expr_visitor* v) const { v->visit(this); }
+inline void constant_buffer::accept(expr_visitor* v) const { v->visit(this); }
 inline void let::accept(expr_visitor* v) const { v->visit(this); }
 inline void add::accept(expr_visitor* v) const { v->visit(this); }
 inline void sub::accept(expr_visitor* v) const { v->visit(this); }
