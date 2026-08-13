@@ -719,28 +719,16 @@ public:
   static bool prove_constant_true(const expr& e) {
     if (!e.defined()) return false;
 
-    std::optional<index_t> ec = evaluate_constant(e);
-    if (ec) return *ec != 0;
-
     // e is constant true if we know it has bounds that don't include zero.
-    std::optional<index_t> a = as_constant(constant_lower_bound(e));
-    if (a && *a > 0) return true;
-    std::optional<index_t> b = as_constant(constant_upper_bound(e));
-    return b && *b < 0;
+    constant_bounds b = constant_bounds_of(e);
+    return (b.min && *b.min > 0) || (b.max && *b.max < 0);
   }
 
   static bool prove_constant_false(const expr& e) {
     if (!e.defined()) return false;
 
-    std::optional<index_t> ec = evaluate_constant(e);
-    if (ec) return *ec == 0;
-
     // e is constant false if we know its bounds are [0, 0].
-    std::optional<index_t> a = as_constant(constant_lower_bound(e));
-    if (!a) return false;
-    std::optional<index_t> b = as_constant(constant_upper_bound(e));
-    if (!b) return false;
-    return *a == 0 && *b == 0;
+    return constant_bounds_of(e).as_point() == std::optional<index_t>(0);
   }
 
   // Attempt to prove that the interval only contains true or false.
@@ -2837,7 +2825,234 @@ public:
   }
 };
 
+// Computes constant bounds of an expression directly as scalar intervals, without constructing any
+// expressions. This mirrors the per-op strength of `constant_evaluator` above: it should prove
+// exactly what a directed `constant_evaluator` walk proves, in one walk for both directions.
+class constant_bounds_evaluator {
+  // The input expressions are heavily shared DAGs (see constant_evaluator); memoize per node.
+  // Raw pointer keys are safe here because this evaluator creates no temporary expressions: every
+  // visited node is reachable from the root, which the caller keeps alive.
+  std::unordered_map<const base_expr_node*, constant_bounds> memo;
+  size_t visits = 0;
+  static constexpr size_t memo_threshold = 64;
+
+  static std::optional<index_t> checked_add(const std::optional<index_t>& a, const std::optional<index_t>& b) {
+    if (a && b && !add_overflows(*a, *b)) return *a + *b;
+    return std::nullopt;
+  }
+  static std::optional<index_t> checked_sub(const std::optional<index_t>& a, const std::optional<index_t>& b) {
+    if (a && b && !sub_overflows(*a, *b)) return *a - *b;
+    return std::nullopt;
+  }
+  static std::optional<index_t> checked_mul(index_t a, const std::optional<index_t>& b) {
+    if (b && !mul_overflows(a, *b)) return a * *b;
+    return std::nullopt;
+  }
+  static std::optional<index_t> opt_min(const std::optional<index_t>& a, const std::optional<index_t>& b) {
+    if (a && b) return std::min(*a, *b);
+    return a ? a : b;
+  }
+  static std::optional<index_t> opt_max(const std::optional<index_t>& a, const std::optional<index_t>& b) {
+    if (a && b) return std::max(*a, *b);
+    return a ? a : b;
+  }
+  // Boolean-ish helpers: an expression is "true" if it is non-zero.
+  static bool known_true(const constant_bounds& x) { return (x.min && *x.min > 0) || (x.max && *x.max < 0); }
+  static bool known_false(const constant_bounds& x) { return x.as_point() == std::optional<index_t>(0); }
+  static constant_bounds as_boolean(const constant_bounds& x) {
+    if (known_true(x)) return {1, 1};
+    if (known_false(x)) return {0, 0};
+    return {0, 1};
+  }
+
+  constant_bounds compute(const base_expr_node* n) {
+    switch (n->type) {
+    case expr_node_type::constant: {
+      index_t value = static_cast<const constant*>(n)->value;
+      return {value, value};
+    }
+    case expr_node_type::add: {
+      const add* op = static_cast<const add*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      return {checked_add(a.min, b.min), checked_add(a.max, b.max)};
+    }
+    case expr_node_type::sub: {
+      const sub* op = static_cast<const sub*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      return {checked_sub(a.min, b.max), checked_sub(a.max, b.min)};
+    }
+    case expr_node_type::min: {
+      const class min* op = static_cast<const class min*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      // The upper bound of min(a, b) is bounded by either side; the lower bound needs both.
+      return {a.min && b.min ? opt_min(a.min, b.min) : std::nullopt, opt_min(a.max, b.max)};
+    }
+    case expr_node_type::max: {
+      const class max* op = static_cast<const class max*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      return {opt_max(a.min, b.min), a.max && b.max ? opt_max(a.max, b.max) : std::nullopt};
+    }
+    case expr_node_type::mul: {
+      const mul* op = static_cast<const mul*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      // Like constant_evaluator, we only handle one side being a constant point.
+      if (auto ca = a.as_point()) {
+        if (*ca == 0) return {0, 0};
+        if (*ca > 0) return {checked_mul(*ca, b.min), checked_mul(*ca, b.max)};
+        return {checked_mul(*ca, b.max), checked_mul(*ca, b.min)};
+      } else if (auto cb = b.as_point()) {
+        if (*cb == 0) return {0, 0};
+        if (*cb > 0) return {checked_mul(*cb, a.min), checked_mul(*cb, a.max)};
+        return {checked_mul(*cb, a.max), checked_mul(*cb, a.min)};
+      }
+      return {};
+    }
+    case expr_node_type::div: {
+      const div* op = static_cast<const div*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      // Like constant_evaluator, we only handle a constant denominator (a constant numerator over
+      // an interval denominator is tricky).
+      if (auto cb = b.as_point()) {
+        if (*cb == 0) return {0, 0};
+        auto div_opt = [&](const std::optional<index_t>& x) -> std::optional<index_t> {
+          if (x) return euclidean_div(*x, *cb);
+          return std::nullopt;
+        };
+        if (*cb > 0) return {div_opt(a.min), div_opt(a.max)};
+        return {div_opt(a.max), div_opt(a.min)};
+      }
+      return {};
+    }
+    case expr_node_type::mod: {
+      const mod* op = static_cast<const mod*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      if (auto ca = a.as_point()) {
+        if (auto cb = b.as_point()) {
+          return constant_bounds{euclidean_mod(*ca, *cb), euclidean_mod(*ca, *cb)};
+        }
+      }
+      // 0 <= a % b < max(-min(b), max(b)); the upper bound needs both bounds of b.
+      std::optional<index_t> hi;
+      if (b.min && b.max && !sub_overflows<index_t>(0, *b.min)) {
+        index_t m = std::max(-*b.min, *b.max);
+        if (!sub_overflows<index_t>(m, 1)) hi = std::max<index_t>(0, m - 1);
+      }
+      return {0, hi};
+    }
+    case expr_node_type::equal:
+    case expr_node_type::not_equal: {
+      const binary_op* op = static_cast<const binary_op*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      auto ca = a.as_point(), cb = b.as_point();
+      if (ca && cb) {
+        index_t r = n->type == expr_node_type::equal ? (*ca == *cb ? 1 : 0) : (*ca != *cb ? 1 : 0);
+        return {r, r};
+      }
+      return {0, 1};
+    }
+    case expr_node_type::less:
+    case expr_node_type::less_equal: {
+      const binary_op* op = static_cast<const binary_op*>(n);
+      constant_bounds a = bounds(op->a), b = bounds(op->b);
+      const bool eq = n->type == expr_node_type::less_equal;
+      // Definitely true if upper(a) < lower(b); definitely false if !(lower(a) < upper(b)).
+      std::optional<index_t> lo = 0, hi = 1;
+      if (a.max && b.min && (eq ? *a.max <= *b.min : *a.max < *b.min)) lo = 1;
+      if (a.min && b.max && !(eq ? *a.min <= *b.max : *a.min < *b.max)) hi = 0;
+      return {lo, hi};
+    }
+    case expr_node_type::logical_and: {
+      const logical_and* op = static_cast<const logical_and*>(n);
+      return bounds_of_and(bounds(op->a), bounds(op->b));
+    }
+    case expr_node_type::logical_or: {
+      const logical_or* op = static_cast<const logical_or*>(n);
+      return bounds_of_or(bounds(op->a), bounds(op->b));
+    }
+    case expr_node_type::logical_not: {
+      const logical_not* op = static_cast<const logical_not*>(n);
+      constant_bounds a = bounds(op->a);
+      if (known_true(a)) return {0, 0};
+      if (known_false(a)) return {1, 1};
+      return {0, 1};
+    }
+    case expr_node_type::select: {
+      const class select* op = static_cast<const class select*>(n);
+      constant_bounds c = bounds(op->condition);
+      if (known_true(c)) return bounds(op->true_value);
+      if (known_false(c)) return bounds(op->false_value);
+      constant_bounds t = bounds(op->true_value), f = bounds(op->false_value);
+      return {t.min && f.min ? opt_min(t.min, f.min) : std::nullopt,
+          t.max && f.max ? opt_max(t.max, f.max) : std::nullopt};
+    }
+    case expr_node_type::call: {
+      const call* op = static_cast<const call*>(n);
+      if (op->intrinsic == intrinsic::abs) {
+        assert(op->args.size() == 1);
+        constant_bounds x = bounds(op->args[0]);
+        // abs(x) = max(0, max(x, -x)).
+        std::optional<index_t> neg_max = x.min && !sub_overflows<index_t>(0, *x.min) ? std::optional<index_t>(-*x.min)
+                                                                            : std::nullopt;
+        std::optional<index_t> neg_min = x.max && !sub_overflows<index_t>(0, *x.max) ? std::optional<index_t>(-*x.max)
+                                                                            : std::nullopt;
+        // The lower bound of max(x, -x) is bounded below by either side; and by 0.
+        std::optional<index_t> lo = opt_max(opt_max(x.min, neg_min), std::optional<index_t>(0));
+        // The upper bound needs both.
+        std::optional<index_t> hi = x.max && neg_max ? opt_max(x.max, neg_max) : std::nullopt;
+        hi = hi ? std::optional<index_t>(std::max<index_t>(0, *hi)) : std::nullopt;
+        return {lo, hi};
+      } else if (op->intrinsic == intrinsic::and_then) {
+        assert(op->args.size() == 2);
+        return bounds_of_and(bounds(op->args[0]), bounds(op->args[1]));
+      } else if (op->intrinsic == intrinsic::or_else) {
+        assert(op->args.size() == 2);
+        return bounds_of_or(bounds(op->args[0]), bounds(op->args[1]));
+      }
+      return {};
+    }
+    default: return {};
+    }
+  }
+
+  static constant_bounds bounds_of_and(const constant_bounds& a, const constant_bounds& b) {
+    if (known_false(a) || known_false(b)) return {0, 0};
+    if (known_true(a)) return as_boolean(b);
+    if (known_true(b)) return as_boolean(a);
+    return {0, 1};
+  }
+  static constant_bounds bounds_of_or(const constant_bounds& a, const constant_bounds& b) {
+    if (known_true(a) || known_true(b)) return {1, 1};
+    if (known_false(a)) return as_boolean(b);
+    if (known_false(b)) return as_boolean(a);
+    return {0, 1};
+  }
+
+public:
+  constant_bounds bounds(const expr& x) {
+    const base_expr_node* n = x.get();
+    if (!n) return {};
+    // Leaves are cheaper to just handle than to look up in the memo.
+    if (n->type == expr_node_type::variable) return {};
+    if (n->type == expr_node_type::constant) {
+      index_t value = static_cast<const constant*>(n)->value;
+      return {value, value};
+    }
+    if (visits < memo_threshold) {
+      ++visits;
+      return compute(n);
+    }
+    auto [it, inserted] = memo.try_emplace(n);
+    if (!inserted) return it->second;
+    constant_bounds result = compute(n);
+    // The recursive computation may have invalidated `it` by rehashing.
+    memo[n] = result;
+    return result;
+  }
+};
+
 }  // namespace
+
+constant_bounds constant_bounds_of(const expr& x) { return constant_bounds_evaluator().bounds(x); }
 
 bool can_evaluate(intrinsic fn) {
   switch (fn) {
@@ -2851,12 +3066,8 @@ bool can_evaluate(intrinsic fn) {
 expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
 expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
 std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
-std::optional<index_t> evaluate_constant_lower_bound(const expr& x) {
-  return as_constant(constant_evaluator().mutate(x, -1));
-}
-std::optional<index_t> evaluate_constant_upper_bound(const expr& x) {
-  return as_constant(constant_evaluator().mutate(x, 1));
-}
+std::optional<index_t> evaluate_constant_lower_bound(const expr& x) { return constant_bounds_of(x).min; }
+std::optional<index_t> evaluate_constant_upper_bound(const expr& x) { return constant_bounds_of(x).max; }
 
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {

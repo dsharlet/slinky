@@ -1389,14 +1389,15 @@ TEST(evaluate_constant_lower_bound, basic) {
   ASSERT_EQ(evaluate_constant_lower_bound(min(1, max(x, 1))), 1);
   ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3)), -2);
 
-  ASSERT_EQ(evaluate_constant_lower_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(false || x), std::nullopt);
+  // The result of a logical op is always in [0, 1].
+  ASSERT_EQ(evaluate_constant_lower_bound(x || false), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(false || x), 0);
   ASSERT_EQ(evaluate_constant_lower_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_lower_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_lower_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_lower_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_lower_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x && true), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(true && x), 0);
 }
 
 TEST(evaluate_constant_upper_bound, basic) {
@@ -1421,14 +1422,15 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) < 0), 0);
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) * 256 < 0), 0);
 
-  ASSERT_EQ(evaluate_constant_upper_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(false || x), std::nullopt);
+  // The result of a logical op is always in [0, 1].
+  ASSERT_EQ(evaluate_constant_upper_bound(x || false), 1);
+  ASSERT_EQ(evaluate_constant_upper_bound(false || x), 1);
   ASSERT_EQ(evaluate_constant_upper_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_upper_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_upper_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_upper_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x && true), 1);
+  ASSERT_EQ(evaluate_constant_upper_bound(true && x), 1);
 }
 
 TEST(evaluate_constant, basic) {
