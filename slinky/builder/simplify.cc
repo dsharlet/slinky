@@ -2512,10 +2512,53 @@ class constant_evaluator : public node_mutator {
   int sign = 0;
   bool constant_required = true;
 
+  // The expressions we are asked to evaluate are often heavily shared DAGs: interval arithmetic
+  // (e.g. `bounds_of`) reuses subexpression bounds many times. Without memoization, this visitor
+  // walks the DAG as a tree, which is exponential in the depth of the sharing. The result of this
+  // visitor depends only on the node and `sign`, so we can memoize on that. The key holds a
+  // reference to the node so a node's address cannot be reused for a different expression while the
+  // memo is alive (some visitors mutate temporary expressions that would otherwise be freed, which
+  // would allow a new node to be allocated at a memoized address).
+  struct memo_key_hash {
+    size_t operator()(const std::pair<expr, int>& k) const {
+      return std::hash<const void*>()(k.first.get()) * 31 + k.second;
+    }
+  };
+  struct memo_key_eq {
+    bool operator()(const std::pair<expr, int>& a, const std::pair<expr, int>& b) const {
+      return a.first.get() == b.first.get() && a.second == b.second;
+    }
+  };
+  //
+  // Most evaluations are of small expressions where the memo is pure overhead, so we only start
+  // memoizing after a walk has visited enough nodes to indicate the sharing might be expanding.
+  // Results are context-free, so switching to the memo mid-walk is harmless.
+  std::unordered_map<std::pair<expr, int>, expr, memo_key_hash, memo_key_eq> memo;
+  size_t visits = 0;
+  static constexpr size_t memo_threshold = 64;
+
 public:
   constant_evaluator(bool constant_required = true) : constant_required(constant_required) {}
 
   using node_mutator::mutate;
+  expr mutate(const expr& x) override {
+    const base_expr_node* n = x.get();
+    if (!n) return expr();
+    // Leaves are cheaper to just visit than to look up in the memo.
+    if (n->type == expr_node_type::variable || n->type == expr_node_type::constant) {
+      return node_mutator::mutate(x);
+    }
+    if (visits < memo_threshold) {
+      ++visits;
+      return node_mutator::mutate(x);
+    }
+    auto [it, inserted] = memo.try_emplace(std::make_pair(x, sign));
+    if (!inserted) return it->second;
+    expr result = node_mutator::mutate(x);
+    // The recursive mutation may have inserted into the memo and invalidated `it` by rehashing.
+    memo[std::make_pair(x, sign)] = result;
+    return result;
+  }
   expr mutate(const expr& x, int sign) {
     int old_sign = this->sign;
     this->sign = sign;
