@@ -34,6 +34,21 @@ std::optional<index_t> evaluate_constant(const expr& x);
 std::optional<index_t> evaluate_constant_lower_bound(const expr& x);
 std::optional<index_t> evaluate_constant_upper_bound(const expr& x);
 
+// A constant interval bound on an expression; either endpoint may be unknown.
+struct constant_bounds {
+  std::optional<index_t> min, max;
+
+  std::optional<index_t> as_point() const {
+    if (min && max && *min == *max) return *min;
+    return std::nullopt;
+  }
+};
+
+// Compute constant bounds of x in a single walk. This produces the same constant bounds as
+// `evaluate_constant_lower_bound`/`evaluate_constant_upper_bound`, but computes both at once and
+// does not construct any expressions while doing so.
+constant_bounds constant_bounds_of(const expr& x);
+
 // Attempts to determine if e can be proven to be always true or false.
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
