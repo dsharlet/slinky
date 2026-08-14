@@ -664,9 +664,9 @@ public:
     if (ec) return *ec != 0;
 
     // e is constant true if we know it has bounds that don't include zero.
-    std::optional<index_t> a = as_constant(constant_lower_bound(e));
+    std::optional<index_t> a = evaluate_constant_lower_bound(e);
     if (a && *a > 0) return true;
-    std::optional<index_t> b = as_constant(constant_upper_bound(e));
+    std::optional<index_t> b = evaluate_constant_upper_bound(e);
     return b && *b < 0;
   }
 
@@ -677,9 +677,9 @@ public:
     if (ec) return *ec == 0;
 
     // e is constant false if we know its bounds are [0, 0].
-    std::optional<index_t> a = as_constant(constant_lower_bound(e));
+    std::optional<index_t> a = evaluate_constant_lower_bound(e);
     if (!a) return false;
-    std::optional<index_t> b = as_constant(constant_upper_bound(e));
+    std::optional<index_t> b = evaluate_constant_upper_bound(e);
     if (!b) return false;
     return *a == 0 && *b == 0;
   }
