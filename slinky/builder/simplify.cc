@@ -672,10 +672,9 @@ public:
 
     // e is constant false if we know its bounds are [0, 0].
     std::optional<index_t> a = evaluate_constant_lower_bound(e);
-    if (!a) return false;
+    if (!a || *a != 0) return false;
     std::optional<index_t> b = evaluate_constant_upper_bound(e);
-    if (!b) return false;
-    return *a == 0 && *b == 0;
+    return b && *b == 0;
   }
 
   // Attempt to prove that the interval only contains true or false.
