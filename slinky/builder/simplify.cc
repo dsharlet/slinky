@@ -660,9 +660,6 @@ public:
   static bool prove_constant_true(const expr& e) {
     if (!e.defined()) return false;
 
-    std::optional<index_t> ec = evaluate_constant(e);
-    if (ec) return *ec != 0;
-
     // e is constant true if we know it has bounds that don't include zero.
     std::optional<index_t> a = evaluate_constant_lower_bound(e);
     if (a && *a > 0) return true;
@@ -672,9 +669,6 @@ public:
 
   static bool prove_constant_false(const expr& e) {
     if (!e.defined()) return false;
-
-    std::optional<index_t> ec = evaluate_constant(e);
-    if (ec) return *ec == 0;
 
     // e is constant false if we know its bounds are [0, 0].
     std::optional<index_t> a = evaluate_constant_lower_bound(e);
@@ -2481,6 +2475,8 @@ public:
   template <typename T>
   void visit_min_max(const T* op, bool take_constant) {
     expr a = mutate(op->a);
+    // If we can take a constant operand, an undefined operand doesn't make the result undefined.
+    if (!a.defined() && !take_constant) return set_result(expr{});
     expr b = mutate(op->b);
     auto ca = as_constant(a);
     auto cb = as_constant(b);
@@ -2516,8 +2512,17 @@ public:
     }
   }
 
-  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, sign)); }
-  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -sign)); }
+  template <typename T>
+  void visit_add_sub(const T* op, int b_sign) {
+    expr a = mutate(op->a);
+    if (!a.defined()) return set_result(expr{});
+    expr b = mutate(op->b, b_sign);
+    if (!b.defined()) return set_result(expr{});
+    set_binary_result(op, std::move(a), std::move(b));
+  }
+
+  void visit(const add* op) override { visit_add_sub(op, sign); }
+  void visit(const sub* op) override { visit_add_sub(op, -sign); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
@@ -2528,6 +2533,9 @@ public:
   template <typename T>
   void visit_mul_div(const T* op) {
     expr a = mutate(op->a, 0);
+    // When constant folding, an undefined operand makes the result undefined. When looking for a bound, it does not:
+    // we might still find one by mutating the operand again with a non-zero sign below.
+    if (sign == 0 && !a.defined()) return set_result(expr{});
     expr b = mutate(op->b, 0);
     if (sign == 0 || is_constant(a, 0) || is_constant(b, 0) || (as_constant(a) && as_constant(b))) {
       set_binary_result(op, std::move(a), std::move(b));
@@ -2553,8 +2561,20 @@ public:
 
   void visit(const mod* op) override {
     if (sign == 0) {
-      set_binary_result(op, mutate(op->a), mutate(op->b));
-    } else if (sign < 0) {
+      expr a = mutate(op->a);
+      if (!a.defined()) return set_result(expr{});
+      expr b = mutate(op->b);
+      if (!b.defined()) return set_result(expr{});
+      return set_binary_result(op, std::move(a), std::move(b));
+    }
+    if (auto ca = as_constant(mutate(op->a, 0))) {
+      if (auto cb = as_constant(mutate(op->b, 0))) {
+        // If both operands are constants, the bound is the exact result, unless it overflows.
+        expr result = make_or_eval_binary<mod>(*ca, *cb);
+        if (as_constant(result)) return set_result(std::move(result));
+      }
+    }
+    if (sign < 0) {
       // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
       // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
       set_result(expr(0));
@@ -2574,7 +2594,17 @@ public:
   template <typename T>
   void visit_logical(const T* op) {
     if (sign == 0) {
-      set_binary_result(op, mutate(op->a), mutate(op->b));
+      expr a = mutate(op->a);
+      if (!a.defined()) return set_result(expr{});
+      expr b = mutate(op->b);
+      if (!b.defined()) return set_result(expr{});
+      set_binary_result(op, std::move(a), std::move(b));
+    } else if (auto ca = as_constant(mutate(op->a, 0))) {
+      if (auto cb = as_constant(mutate(op->b, 0))) {
+        set_result(make_binary<T>(*ca, *cb));
+      } else {
+        set_result(expr(sign < 0 ? 0 : 1));
+      }
     } else {
       // If we don't know anything about a logical op, the result is either 0 or 1.
       set_result(expr(sign < 0 ? 0 : 1));
@@ -2591,16 +2621,22 @@ public:
     // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
     // upper bound of the rhs.
     expr a = mutate(op->a, -sign);
+    auto ca = as_constant(a);
+    if (sign != 0 && !ca) {
+      // We can only compare constants, and we don't need `b` to know the result is either 0 or 1.
+      return set_result(expr(sign < 0 ? 0 : 1));
+    } else if (!a.defined()) {
+      return set_result(expr{});
+    }
     expr b = mutate(op->b);
 
-    auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
     } else if (sign != 0) {
       // If we don't know anything about a logical op, the result is either 0 or 1.
       set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!a.defined() || !b.defined()) {
+    } else if (!b.defined()) {
       set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(expr(op));
@@ -2613,16 +2649,20 @@ public:
 
   template <typename T>
   void visit_logical_and_or(const T* op, int new_sign) {
+    constexpr bool is_and = std::is_same<T, logical_and>::value;
     expr a = strip_boolean(mutate(op->a, new_sign));
+    if (auto ca = as_constant(a)) {
+      if ((*ca != 0) != is_and) return set_result(boolean(std::move(a)));
+    }
     expr b = strip_boolean(mutate(op->b, new_sign));
 
     if (as_constant(b)) std::swap(a, b);
 
     if (auto ca = as_constant(a)) {
       if (*ca) {
-        set_result(boolean(std::is_same<T, logical_and>::value ? std::move(b) : std::move(a)));
+        set_result(boolean(is_and ? std::move(b) : std::move(a)));
       } else {
-        set_result(boolean(std::is_same<T, logical_and>::value ? std::move(a) : std::move(b)));
+        set_result(boolean(is_and ? std::move(a) : std::move(b)));
       }
     } else if (sign != 0) {
       // If we don't know anything about a logical op, the result is either 0 or 1.
@@ -2662,17 +2702,23 @@ public:
     if (auto cc = as_constant(c)) {
       set_result(mutate(*cc ? op->true_value : op->false_value));
       return;
+    } else if (!c.defined() && sign == 0) {
+      // When constant folding, we need a constant condition. When looking for a bound, we might still find one if both
+      // values are constants.
+      return set_result(expr{});
     }
 
     expr t = mutate(op->true_value);
+    if (!t.defined()) return set_result(expr{});
     expr f = mutate(op->false_value);
+    if (!f.defined()) return set_result(expr{});
     auto ct = as_constant(t);
     auto cf = as_constant(f);
     if (sign < 0 && ct && cf) {
       set_result(expr(std::min(*ct, *cf)));
     } else if (sign > 0 && ct && cf) {
       set_result(expr(std::max(*ct, *cf)));
-    } else if (!c.defined() || !t.defined() || !f.defined()) {
+    } else if (!c.defined()) {
       set_result(expr());
     } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
       set_result(op);
@@ -2698,6 +2744,9 @@ public:
       const bool is_and = op->intrinsic == intrinsic::and_then;
       const int new_sign = is_and ? std::min(sign, 0) : std::max(sign, 0);
       expr a = strip_boolean(mutate(op->args[0], new_sign));
+      if (auto ca = as_constant(a)) {
+        if ((*ca != 0) != is_and) return set_result(boolean(std::move(a)));
+      }
       expr b = strip_boolean(mutate(op->args[1], new_sign));
 
       if (auto ca = as_constant(a)) {
