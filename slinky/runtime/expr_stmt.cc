@@ -115,11 +115,11 @@ const variable* make_variable(var sym) {
 }
 
 const constant* get_constant(std::int64_t value) {
-  static const constant* zero = make_static_constant<0>();
-  static const constant* one = make_static_constant<1>();
   if (value == 0) {
+    static const constant* zero = make_static_constant<0>();
     return zero;
   } else if (value == 1) {
+    static const constant* one = make_static_constant<1>();
     return one;
   } else {
     return nullptr;
