@@ -50,8 +50,6 @@ void ensure_is_point(interval_expr& x) {
   }
 }
 
-
-
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
 stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
@@ -801,9 +799,7 @@ public:
     return x;
   }
 
-  void visit(const constant* op) override {
-    set_result(op, {point(expr(op)), {0, op->value}});
-  }
+  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -1641,8 +1637,8 @@ public:
       }
       if (all_constants) {
         raw_buffer_ptr buf = raw_buffer::make(dims.size(), 0, dims.empty() ? nullptr : dims.data());
-        set_result(block::make(
-            {std::move(before), let_stmt::make(op->sym, constant_buffer::make(std::move(buf)), std::move(body)), std::move(after)}));
+        set_result(block::make({std::move(before),
+            let_stmt::make(op->sym, constant_buffer::make(std::move(buf)), std::move(body)), std::move(after)}));
         return;
       }
     }
@@ -2452,6 +2448,13 @@ public:
   constant_evaluator(bool constant_required = true) : constant_required(constant_required) {}
 
   using node_mutator::mutate;
+  expr mutate(const expr& x) {
+    switch (x.type()) {
+    case expr_node_type::constant: return x;
+    case expr_node_type::variable: return constant_required ? expr() : x;
+    default: return node_mutator::mutate(x);
+    }
+  }
   expr mutate(const expr& x, int sign) {
     int old_sign = this->sign;
     this->sign = sign;
