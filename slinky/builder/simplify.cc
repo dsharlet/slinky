@@ -2445,7 +2445,7 @@ class constant_evaluator : public node_mutator {
   bool constant_required = true;
 
 public:
-  constant_evaluator(bool constant_required = true) : constant_required(constant_required) {}
+  constant_evaluator(int sign = 0, bool constant_required = true) : sign(sign), constant_required(constant_required) {}
 
   using node_mutator::mutate;
   expr mutate(const expr& x) {
@@ -2779,14 +2779,14 @@ public:
 
 }  // namespace
 
-expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
-expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
-std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
+expr constant_lower_bound(const expr& x) { return constant_evaluator(-1, false).mutate(x); }
+expr constant_upper_bound(const expr& x) { return constant_evaluator(1, false).mutate(x); }
+std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x)); }
 std::optional<index_t> evaluate_constant_lower_bound(const expr& x) {
-  return as_constant(constant_evaluator().mutate(x, -1));
+  return as_constant(constant_evaluator(-1).mutate(x));
 }
 std::optional<index_t> evaluate_constant_upper_bound(const expr& x) {
-  return as_constant(constant_evaluator().mutate(x, 1));
+  return as_constant(constant_evaluator(1).mutate(x));
 }
 
 std::optional<bool> attempt_to_prove(
