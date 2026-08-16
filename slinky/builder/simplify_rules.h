@@ -468,7 +468,6 @@ bool apply_less_rules(Fn&& apply) {
       apply(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       apply(x < x, false) ||
       apply(x < y + 1, x <= y) ||
-      apply(x + -1 < y, x <= y) ||
 
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
