@@ -702,9 +702,9 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
-expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
+expr align_up(expr x, const expr& a) { return ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {
-  return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1};
+  return {align_down(std::move(x.min), a), ((std::move(x.max) + a) / a) * a - 1};
 }
 
 expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
