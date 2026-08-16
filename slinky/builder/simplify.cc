@@ -2637,6 +2637,16 @@ public:
   void visit(const less* op) override { visit_less(op); }
   void visit(const less_equal* op) override { visit_less(op); }
 
+  void set_boolean_result(expr x) {
+    if (x.defined()) {
+      set_result(boolean(std::move(x)));
+    } else if (sign != 0) {
+      set_result(sign < 0 ? 0 : 1);
+    } else {
+      set_result(expr());
+    }
+  }
+
   template <typename T>
   void visit_logical_and_or(const T* op, int new_sign) {
     constexpr bool is_and = std::is_same<T, logical_and>::value;
@@ -2649,11 +2659,8 @@ public:
     if (as_constant(b)) std::swap(a, b);
 
     if (auto ca = as_constant(a)) {
-      if (*ca) {
-        set_result(boolean(is_and ? std::move(b) : std::move(a)));
-      } else {
-        set_result(boolean(is_and ? std::move(a) : std::move(b)));
-      }
+      // `a` is the identity for this op, so the result is `b`, which might be undefined.
+      set_boolean_result((*ca != 0) == is_and ? std::move(b) : std::move(a));
     } else if (sign != 0) {
       // If we don't know anything about a logical op, the result is either 0 or 1.
       set_result(expr(sign < 0 ? 0 : 1));
@@ -2740,17 +2747,11 @@ public:
       expr b = strip_boolean(mutate(op->args[1], new_sign));
 
       if (auto ca = as_constant(a)) {
-        if (*ca) {
-          set_result(boolean(is_and ? std::move(b) : std::move(a)));
-        } else {
-          set_result(boolean(is_and ? std::move(a) : std::move(b)));
-        }
+        // `a` is the identity for this op, so the result is `b`, which might be undefined.
+        set_boolean_result((*ca != 0) == is_and ? std::move(b) : std::move(a));
       } else if (auto cb = as_constant(b)) {
-        if (*cb) {
-          set_result(boolean(is_and ? std::move(a) : std::move(b)));
-        } else {
-          set_result(boolean(is_and ? std::move(b) : std::move(a)));
-        }
+        // `b` is the identity for this op, so the result is `a`, which might be undefined.
+        set_boolean_result((*cb != 0) == is_and ? std::move(a) : std::move(b));
       } else if (sign != 0) {
         // If we don't know anything about a logical op, the result is either 0 or 1.
         set_result(expr(sign < 0 ? 0 : 1));

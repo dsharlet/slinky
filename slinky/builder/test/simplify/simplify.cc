@@ -1289,14 +1289,14 @@ TEST(evaluate_constant_lower_bound, basic) {
   ASSERT_EQ(evaluate_constant_lower_bound(min(1, max(x, 1))), 1);
   ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3)), -2);
 
-  ASSERT_EQ(evaluate_constant_lower_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(false || x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x || false), false);
+  ASSERT_EQ(evaluate_constant_lower_bound(false || x), false);
   ASSERT_EQ(evaluate_constant_lower_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_lower_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_lower_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_lower_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_lower_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_lower_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(x && true), false);
+  ASSERT_EQ(evaluate_constant_lower_bound(true && x), false);
 }
 
 TEST(evaluate_constant_upper_bound, basic) {
@@ -1321,14 +1321,14 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) < 0), 0);
   ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) * 256 < 0), 0);
 
-  ASSERT_EQ(evaluate_constant_upper_bound(x || false), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(false || x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x || false), true);
+  ASSERT_EQ(evaluate_constant_upper_bound(false || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x || true), true);
   ASSERT_EQ(evaluate_constant_upper_bound(true || x), true);
   ASSERT_EQ(evaluate_constant_upper_bound(x && false), false);
   ASSERT_EQ(evaluate_constant_upper_bound(false && x), false);
-  ASSERT_EQ(evaluate_constant_upper_bound(x && true), std::nullopt);
-  ASSERT_EQ(evaluate_constant_upper_bound(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x && true), true);
+  ASSERT_EQ(evaluate_constant_upper_bound(true && x), true);
 }
 
 TEST(evaluate_constant, basic) {
