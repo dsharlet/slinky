@@ -462,10 +462,10 @@ bool apply_mod_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_less_rules(Fn&& apply) {
   return
-      apply(rewrite::positive_infinity() < x, false, is_finite(x)) ||
+      apply(rewrite::positive_infinity() < x, false) ||
+      apply(x < rewrite::negative_infinity(), false) ||
       apply(rewrite::negative_infinity() < x, true, is_finite(x)) ||
       apply(x < rewrite::positive_infinity(), true, is_finite(x)) ||
-      apply(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       apply(x < x, false) ||
       apply(x < y + 1, x <= y) ||
       apply(x + -1 < y, x <= y) ||
