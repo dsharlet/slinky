@@ -2644,7 +2644,7 @@ public:
   void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
-    expr a = strip_boolean(mutate(op->a, -sign));
+    expr a = mutate(op->a, 0);
     if (auto ca = as_constant(a)) {
       set_result(*ca != 0 ? 0 : 1);
     } else if (sign != 0) {
