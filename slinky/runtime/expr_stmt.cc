@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
 #include "slinky/runtime/stmt.h"
@@ -62,6 +63,15 @@ bool can_evaluate(intrinsic fn) {
 
 template <typename T>
 expr make_bin_op(expr a, expr b) {
+  // Here we eagerly constant fold arithmetic.
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
+  const constant* ac = a.as<constant>();
+  const constant* bc = b.as<constant>();
+  if (ac && bc && !binary_overflows<T>(ac->value, bc->value)) {
+    return make_binary<T>(ac->value, bc->value);
+  }
+
   auto n = new T();
   if (T::commutative && should_commute(a, b)) {
     // Aggressively canonicalizing the order is a big speedup by avoiding unnecessary simplifier rewrites.
@@ -166,6 +176,13 @@ expr add::make(expr a, expr b) {
 }
 expr sub::make(expr a, expr b) {
   if (is_zero(b)) return a;
+  if (auto cb = as_constant(b)) {
+    if (*cb == 0) return a;
+    if (!sub_overflows<index_t>(0, *cb)) {
+      // Canonicalize to addition with constants.
+      return add::make(std::move(a), -*cb);
+    }
+  }
   return make_bin_op<sub>(std::move(a), std::move(b));
 }
 expr mul::make(expr a, expr b) {
@@ -191,24 +208,19 @@ expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a
 expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
 expr logical_and::make(expr a, expr b) {
-  // A false operand makes the result false. A true operand is the identity, but only if the other operand is already a
-  // boolean, otherwise we'd lose the conversion of the result to 0 or 1.
-  if (is_false(a) || is_false(b)) return expr(0);
-  if (is_true(a) && is_boolean(b)) return b;
-  if (is_true(b) && is_boolean(a)) return a;
+  if (is_true(a) || is_false(b)) return boolean(b);
+  if (is_true(b) || is_false(a)) return boolean(a);
   return make_bin_op<logical_and>(std::move(a), std::move(b));
 }
 expr logical_or::make(expr a, expr b) {
-  // A true operand makes the result true. A false operand is the identity, but only if the other operand is already a
-  // boolean, otherwise we'd lose the conversion of the result to 0 or 1.
-  if (is_true(a) || is_true(b)) return expr(1);
-  if (is_false(a) && is_boolean(b)) return b;
-  if (is_false(b) && is_boolean(a)) return a;
+  if (is_true(a) || is_false(b)) return boolean(a);
+  if (is_true(b) || is_false(a)) return boolean(b);
   return make_bin_op<logical_or>(std::move(a), std::move(b));
 }
 expr logical_not::make(expr a) {
-  if (is_true(a)) return expr(0);
-  if (is_false(a)) return expr(1);
+  if (const constant* c = a.as<constant>()) {
+    return expr(make_constant(c->value == 0 ? 1 : 0));
+  }
   logical_not* n = new logical_not();
   n->a = std::move(a);
   return expr(n);
@@ -311,7 +323,8 @@ expr interval_expr::contains(expr_ref x) const {
 }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
-  if (is_point()) {
+  if (is_one(scale)) {
+  } else if (is_point()) {
     min = max = mul::make(min, scale);
   } else if (is_non_negative(scale)) {
     if (min.defined()) min = mul::make(min, scale);
@@ -329,7 +342,8 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
 }
 
 interval_expr& interval_expr::operator/=(const expr& scale) {
-  if (is_point()) {
+  if (is_one(scale)) {
+  } else if (is_point()) {
     min = max = div::make(min, scale);
   } else if (is_non_negative(scale)) {
     if (min.defined()) min = div::make(min, scale);
@@ -347,7 +361,8 @@ interval_expr& interval_expr::operator/=(const expr& scale) {
 }
 
 interval_expr& interval_expr::operator+=(const expr& offset) {
-  if (is_point()) {
+  if (is_zero(offset)) {
+  } else if (is_point()) {
     min = max = add::make(min, offset);
   } else {
     if (min.defined()) min = add::make(min, offset);
@@ -357,7 +372,8 @@ interval_expr& interval_expr::operator+=(const expr& offset) {
 }
 
 interval_expr& interval_expr::operator-=(const expr& offset) {
-  if (is_point()) {
+  if (is_zero(offset)) {
+  } else if (is_point()) {
     min = max = sub::make(min, offset);
   } else {
     if (min.defined()) min = sub::make(min, offset);
@@ -466,6 +482,17 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
+  if (!condition.defined()) return condition;
+  if (!true_value.defined() && !false_value.defined()) {
+    // We need both sides of a select to be undefined to unconditionally be undefined.
+    return true_value;
+  }
+  if (is_true(condition)) {
+    return true_value;
+  } else if (is_false(condition)) {
+    return false_value;
+  }
+
   auto n = new select();
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
@@ -478,7 +505,14 @@ expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
   n->intrinsic = i;
   n->target = std::move(target);
   n->args = std::move(args);
-  return expr(n);
+  expr result(n);
+
+  if (n->target || can_evaluate(i)) {
+    if (std::all_of(n->args.begin(), n->args.end(), [](const expr& i) { return as_constant(i); })) {
+      return evaluate(result);
+    }
+  }
+  return result;
 }
 
 expr call::make(slinky::intrinsic i, std::vector<expr> args) { return call::make(i, nullptr, std::move(args)); }
@@ -736,10 +770,14 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
 }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
-expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
-expr align_up(expr x, const expr& a) { return ((std::move(x) + (a - 1)) / a) * a; }
+expr align_down(expr x, const expr& a) { return is_one(a) ? x : (std::move(x) / a) * a; }
+expr align_up(expr x, const expr& a) { return is_one(a) ? x : ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {
-  return {align_down(std::move(x.min), a), ((std::move(x.max) + a) / a) * a - 1};
+  if (is_one(a)) {
+    return x;
+  } else {
+    return {align_down(std::move(x.min), a), ((std::move(x.max) + a) / a) * a - 1};
+  }
 }
 
 expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
@@ -807,8 +845,10 @@ const expr& dim_expr::get_field(buffer_field field) const {
   case buffer_field::max: return bounds.max;
   case buffer_field::stride: return stride;
   case buffer_field::fold_factor: return fold_factor;
-  default: SLINKY_UNREACHABLE << "buffer_field " << to_string(field) << " is not a dim field";
+  default: break;
   }
+  SLINKY_UNREACHABLE << "buffer_field " << to_string(field) << " is not a dim field";
+  return fold_factor;
 }
 
 bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }

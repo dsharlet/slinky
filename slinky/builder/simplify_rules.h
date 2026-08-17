@@ -638,9 +638,6 @@ bool apply_equal_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_and_rules(Fn&& apply) {
   return
-      apply(x && c0,
-        boolean(x), c0 != 0,
-        false) ||
       apply(x && x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
@@ -706,9 +703,6 @@ bool apply_logical_and_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_or_rules(Fn&& apply) {
   return
-      apply(x || c0,
-        boolean(x), c0 == 0,
-        true) ||
       apply(x || x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
