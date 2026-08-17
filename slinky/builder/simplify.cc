@@ -560,12 +560,12 @@ public:
     }
 
     void learn_from_less(const expr& a, const expr& b) {
-      if (const class max* r = b.as<class max>()) {
-        // a < max(x, y) ==> a < x && a < y
+      if (const class min* r = b.as<class min>()) {
+        // a < min(x, y) ==> a < x && a < y
         learn_from_less(a, r->a);
         learn_from_less(a, r->b);
-      } else if (const class min* l = a.as<class min>()) {
-        // min(x, y) < b ==> x < b && y < b
+      } else if (const class max* l = a.as<class max>()) {
+        // max(x, y) < b ==> x < b && y < b
         learn_from_less(l->a, b);
         learn_from_less(l->b, b);
       } else {
@@ -580,12 +580,12 @@ public:
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
-      if (const class max* r = b.as<class max>()) {
-        // a <= max(x, y) ==> a <= x && a <= y
+      if (const class min* r = b.as<class min>()) {
+        // a <= min(x, y) ==> a <= x && a <= y
         learn_from_less_equal(a, r->a);
         learn_from_less_equal(a, r->b);
-      } else if (const class min* l = a.as<class min>()) {
-        // min(x, y) <= b ==> x <= b && y <= b
+      } else if (const class max* l = a.as<class max>()) {
+        // max(x, y) <= b ==> x <= b && y <= b
         learn_from_less_equal(l->a, b);
         learn_from_less_equal(l->b, b);
       } else {
@@ -612,7 +612,7 @@ public:
         learn_from_less_equal(lt->a, lt->b);
       } else if (const equal* eq = c.as<equal>()) {
         learn_from_equal(eq->a, eq->b);
-      } else if (!as_constant(c) && !as_variable(c)) {
+      } else if (!as_constant(c) && is_boolean(c)) {
         // We couldn't learn anything, just add the whole expression as a fact, if it isn't a constant or variable,
         // which could rewrite the value from any x not zero to 1.
         facts.push_back({c, expr(true)});
@@ -2644,7 +2644,7 @@ public:
   void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
-    expr a = strip_boolean(mutate(op->a, -sign));
+    expr a = mutate(op->a, 0);
     if (auto ca = as_constant(a)) {
       set_result(*ca != 0 ? 0 : 1);
     } else if (sign != 0) {
@@ -2735,15 +2735,6 @@ public:
 };
 
 }  // namespace
-
-bool can_evaluate(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::negative_infinity:
-  case intrinsic::positive_infinity:
-  case intrinsic::indeterminate: return false;
-  default: return true;
-  }
-}
 
 expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
 expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }

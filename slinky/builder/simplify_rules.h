@@ -462,10 +462,10 @@ bool apply_mod_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_less_rules(Fn&& apply) {
   return
-      apply(rewrite::positive_infinity() < x, false, is_finite(x)) ||
+      apply(rewrite::positive_infinity() < x, false) ||
+      apply(x < rewrite::negative_infinity(), false) ||
       apply(rewrite::negative_infinity() < x, true, is_finite(x)) ||
       apply(x < rewrite::positive_infinity(), true, is_finite(x)) ||
-      apply(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       apply(x < x, false) ||
       apply(x < y + 1, x <= y) ||
       apply(x + -1 < y, x <= y) ||
@@ -630,24 +630,17 @@ bool apply_equal_rules(Fn&& apply) {
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
     
-      apply(max(x, c0)/c1 == c2,
+      apply(max(x, c0)/may_be<1>(c1) == c2,
         x/c1 == c2, c1 > 0 && c0/c1 < c2,
         x < (c2 + 1)*c1, c1 > 0 && c0/c1 == c2,
-        false, c1 > 0) ||
-      apply(min(x, c0)/c1 == c2,
+        false, c1 > 0 && c0/c1 > c2) ||
+      apply(min(x, c0)/may_be<1>(c1) == c2,
         x/c1 == c2, c1 > 0 && c0/c1 > c2,
         x >= c2*c1, c1 > 0 && c0/c1 == c2,
-        false, c1 > 0) ||
+        false, c1 > 0 && c0/c1 < c2) ||
 
       apply(max(x, c0) == max(x, c1), x >= eval(max(c0, c1)), c0 != c1) ||
       apply(min(x, c0) == min(x, c1), x <= eval(min(c0, c1)), c0 != c1) ||
-
-      apply(max(x, c0) == c1,
-        false, c0 > c1,
-        x == c1, c0 < c1) ||
-      apply(min(x, c0) == c1,
-        false, c0 < c1,
-        x == c1, c0 > c1) ||
 
       false;
 }

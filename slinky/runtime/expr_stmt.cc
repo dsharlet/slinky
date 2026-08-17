@@ -52,6 +52,15 @@ std::optional<var> node_context::lookup(const std::string& name) const {
   return i != name_to_sym.end() ? std::optional<var>(i->second) : std::nullopt;
 }
 
+bool can_evaluate(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::negative_infinity:
+  case intrinsic::positive_infinity:
+  case intrinsic::indeterminate: return false;
+  default: return true;
+  }
+}
+
 template <typename T>
 expr make_bin_op(expr a, expr b) {
   auto n = new T();
@@ -106,11 +115,11 @@ const variable* make_variable(var sym) {
 }
 
 const constant* get_constant(std::int64_t value) {
-  static const constant* zero = make_static_constant<0>();
-  static const constant* one = make_static_constant<1>();
   if (value == 0) {
+    static const constant* zero = make_static_constant<0>();
     return zero;
   } else if (value == 1) {
+    static const constant* one = make_static_constant<1>();
     return one;
   } else {
     return nullptr;
@@ -693,9 +702,9 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
-expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
+expr align_up(expr x, const expr& a) { return ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {
-  return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1};
+  return {align_down(std::move(x.min), a), ((std::move(x.max) + a) / a) * a - 1};
 }
 
 expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }

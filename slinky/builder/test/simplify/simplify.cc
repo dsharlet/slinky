@@ -1079,22 +1079,22 @@ TEST(simplify, knowledge) {
       matches(check::make(x % 6 == 3)));
 
   ASSERT_THAT(
-      simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})), matches(check::make(3 <= max(x, y))));
-  ASSERT_THAT(simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})),
-      matches(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})));
+      simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})), matches(check::make(3 <= min(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})),
+      matches(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})));
   ASSERT_THAT(
-      simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})), matches(check::make(3 < max(x, y))));
-  ASSERT_THAT(simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})),
-      matches(block::make({check::make(3 < min(x, y)), check::make(3 < x)})));
+      simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})), matches(check::make(3 < min(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})),
+      matches(block::make({check::make(3 < max(x, y)), check::make(3 < x)})));
 
   ASSERT_THAT(
-      simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})), matches(check::make(min(x, y) <= 4)));
-  ASSERT_THAT(simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})),
-      matches(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})));
+      simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})), matches(check::make(max(x, y) <= 4)));
+  ASSERT_THAT(simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})),
+      matches(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})));
   ASSERT_THAT(
-      simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})), matches(check::make(min(x, y) < 4)));
-  ASSERT_THAT(simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})),
-      matches(block::make({check::make(max(x, y) < 4), check::make(x < 4)})));
+      simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})), matches(check::make(max(x, y) < 4)));
+  ASSERT_THAT(simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})),
+      matches(block::make({check::make(min(x, y) < 4), check::make(x < 4)})));
 
   ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
   ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
@@ -1217,6 +1217,11 @@ TEST(simplify, bounds_of) {
 }
 
 TEST(constant_lower_bound, basic) {
+  ASSERT_THAT(constant_lower_bound(min(x, 0)), matches(min(x, 0)));
+  ASSERT_THAT(constant_lower_bound(max(x, 0)), matches(0));
+  ASSERT_THAT(constant_lower_bound(!min(x, 0)), matches(0));
+  ASSERT_THAT(constant_lower_bound(!min(x, -1)), matches(0));  // TODO: We might be able to prove this is 1
+  ASSERT_THAT(constant_lower_bound(!max(x, 0)), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
@@ -1240,6 +1245,10 @@ TEST(constant_lower_bound, basic) {
 TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
   ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
+  ASSERT_THAT(constant_upper_bound(!min(x, 0)), matches(1));
+  ASSERT_THAT(constant_upper_bound(!min(x, -1)), matches(1));  // TODO: We might be able to prove this is 0
+  ASSERT_THAT(constant_upper_bound(!max(x, 0)), matches(1));
+  ASSERT_THAT(constant_upper_bound(!max(x, 1)), matches(1));  // TODO: We might be able to prove this is 0
   ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
   ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x - 4));
   ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
