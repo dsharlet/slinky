@@ -198,6 +198,16 @@ expr simplify(const less* op, expr a, expr b) {
 }
 
 expr simplify(const less_equal* op, expr a, expr b) {
+  // Do a few quick checks before rewriting to less.
+  auto r = make_rewriter(pattern_expr{a} <= pattern_expr{b});
+  if (r(rewrite::negative_infinity() <= x, true) ||
+      r(x <= rewrite::positive_infinity(), true) || 
+      r(x <= x, true) ||
+      r(x <= y - 1, x < y) || 
+      r(x - 1 <= y, x < y)) {
+    return r.result;
+  }
+
   // Rewrite to !(b < a) and simplify that instead.
   expr result = simplify(static_cast<const logical_not*>(nullptr),
       simplify(static_cast<const less*>(nullptr), std::move(b), std::move(a)));

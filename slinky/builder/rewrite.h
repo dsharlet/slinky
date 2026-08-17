@@ -851,6 +851,66 @@ SLINKY_UNIQUE bool match(match_context& ctx, Pattern p, const Target& x) {
   return match_any_variant(p, x, ctx);
 }
 
+// The node type a target must have for `Pattern` to be able to match it, or `none` if `Pattern` can match more than one
+// node type.
+template <typename Pattern>
+struct pattern_required_type {
+  static constexpr expr_node_type value = pattern_info<Pattern>::type;
+};
+template <typename A, index_t Default>
+struct pattern_required_type<pattern_optional<A, Default>> {
+  static constexpr expr_node_type value = expr_node_type::none;
+};
+template <typename T, typename A, index_t Default, typename B>
+struct pattern_required_type<pattern_binary<T, pattern_optional<A, Default>, B>> {
+  static constexpr expr_node_type value = expr_node_type::none;
+};
+template <typename T, typename A, typename B, index_t Default>
+struct pattern_required_type<pattern_binary<T, A, pattern_optional<B, Default>>> {
+  static constexpr expr_node_type value = expr_node_type::none;
+};
+template <typename T, typename A, index_t DefaultA, typename B, index_t DefaultB>
+struct pattern_required_type<pattern_binary<T, pattern_optional<A, DefaultA>, pattern_optional<B, DefaultB>>> {
+  static constexpr expr_node_type value = expr_node_type::none;
+};
+
+// Returns false if `p` definitely cannot match `x`, using only node types known at compile time.
+template <typename Pattern, typename Target>
+SLINKY_INLINE bool could_match(const Pattern&, const Target&) {
+  // We don't know anything about this target.
+  return true;
+}
+
+SLINKY_INLINE bool could_match_type(expr_node_type required, expr_node_type actual) {
+  return required == expr_node_type::none || required == actual;
+}
+
+template <typename T, typename A, typename B>
+SLINKY_INLINE bool could_match(const pattern_binary<T, A, B>&, const pattern_binary<T, pattern_expr, pattern_expr>& x) {
+  constexpr expr_node_type a_type = pattern_required_type<A>::value;
+  constexpr expr_node_type b_type = pattern_required_type<B>::value;
+  if (a_type == expr_node_type::none && b_type == expr_node_type::none) return true;
+
+  const expr_node_type xa = x.a.e.type();
+  const expr_node_type xb = x.b.e.type();
+  if (could_match_type(a_type, xa) && could_match_type(b_type, xb)) return true;
+  // A commutative pattern is also matched with the operands swapped.
+  return pattern_info<pattern_binary<T, A, B>>::could_commute && could_match_type(a_type, xb) &&
+         could_match_type(b_type, xa);
+}
+
+template <typename C, typename T, typename F>
+SLINKY_INLINE bool could_match(
+    const pattern_select<C, T, F>&, const pattern_select<pattern_expr, pattern_expr, pattern_expr>& x) {
+  constexpr expr_node_type c_type = pattern_required_type<C>::value;
+  constexpr expr_node_type t_type = pattern_required_type<T>::value;
+  constexpr expr_node_type f_type = pattern_required_type<F>::value;
+  if (c_type == expr_node_type::none && t_type == expr_node_type::none && f_type == expr_node_type::none) return true;
+
+  return could_match_type(c_type, x.c.e.type()) && could_match_type(t_type, x.t.e.type()) &&
+         could_match_type(f_type, x.f.e.type());
+}
+
 template <typename Target>
 class base_rewriter {
   Target x;
@@ -893,6 +953,8 @@ public:
   // The last predicate is optional and defaults to true.
   template <typename Pattern, typename... ReplacementPredicate>
   SLINKY_INLINE bool operator()(Pattern p, ReplacementPredicate... r_pr) {
+    if (!could_match(p, x)) return false;
+
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
