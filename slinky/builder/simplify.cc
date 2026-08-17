@@ -2530,7 +2530,10 @@ public:
     // we might still find one by mutating the operand again with a non-zero sign below.
     if (sign == 0 && !a.defined()) return set_result(expr{});
     expr b = mutate(op->b, 0);
-    if (sign == 0 || is_constant(a, 0) || is_constant(b, 0) || (as_constant(a) && as_constant(b))) {
+    if (is_constant(a, 0) || is_constant(b, 0)) {
+      // `0*x`, `x*0`, `0/x` and `x/0` are all 0, we don't need to know anything about the other operand.
+      return set_result(expr(0));
+    } else if (sign == 0 || (as_constant(a) && as_constant(b))) {
       set_binary_result(op, std::move(a), std::move(b));
       return;
     }
@@ -2555,9 +2558,13 @@ public:
   void visit(const mod* op) override {
     if (sign == 0) {
       expr a = mutate(op->a);
-      if (!a.defined()) return set_result(expr{});
       expr b = mutate(op->b);
-      if (!b.defined()) return set_result(expr{});
+      if (is_constant(a, 0) || is_constant(b, 0) || is_constant(b, 1)) {
+        // `0%x`, `x%0` and `x%1` are all 0, we don't need to know anything about the other operand.
+        return set_result(expr(0));
+      } else if (!a.defined() || !b.defined()) {
+        return set_result(expr{});
+      }
       return set_binary_result(op, std::move(a), std::move(b));
     }
     if (auto ca = as_constant(mutate(op->a, 0))) {

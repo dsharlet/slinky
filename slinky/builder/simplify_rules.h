@@ -281,7 +281,6 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x*may_be<1>(c0) + x*may_be<1>(c1), x*eval(c0 + c1)) ||
-      apply(x + 0, x) ||
       apply(x + (x - y), x*2 - y) ||
       apply(x + (y - x), y) ||
       apply(x + x*y, x*(y + 1), !is_constant(x)) ||
@@ -317,7 +316,6 @@ bool apply_sub_rules(Fn&& apply) {
   return
       apply(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      apply(x - 0, x) ||
       apply(x*may_be<1>(c0) - x*may_be<1>(c1), x*eval(c0 - c1)) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
       apply(x - y/c0, x + y/eval(-c0), c0 <= 0) ||
@@ -386,8 +384,6 @@ bool apply_mul_rules(Fn&& apply) {
       apply(rewrite::negative_infinity()*c0,
         rewrite::negative_infinity(), c0 > 0,
         rewrite::positive_infinity(), c0 < 0) ||
-      apply(x*0, 0) ||
-      apply(x*1, x) ||
       apply((x*c0)*c1, x*eval(c0*c1)) ||
       apply((x + c0)*c1, x*c1 + eval(c0*c1)) ||
       apply((c0 - x)*c1, x*eval(-c1) + eval(c0*c1)) ||
@@ -410,9 +406,6 @@ bool apply_div_rules(Fn&& apply) {
       apply(rewrite::negative_infinity()/c0,
         rewrite::negative_infinity(), c0 > 0,
         rewrite::positive_infinity(), c0 < 0) ||
-      apply(x/0, 0) ||
-      apply(0/x, 0) ||
-      apply(x/1, x) ||
       apply(x/-1, -x) ||
       apply(x/x, x != 0) ||
 
@@ -447,8 +440,6 @@ bool apply_div_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_mod_rules(Fn&& apply) {
   return
-      apply(x%1, 0) ||
-      apply(x%0, 0) ||
       apply(x%x, 0) ||
 
       apply((x + c0)%c1, (x + eval(c0%c1))%c1, c0%c1 != c0) ||

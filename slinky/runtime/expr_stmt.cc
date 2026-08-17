@@ -13,7 +13,6 @@
 #include "slinky/runtime/print.h"
 #include "slinky/runtime/stmt.h"
 
-
 namespace slinky {
 
 var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(name)) {}
@@ -160,20 +159,56 @@ expr constant_buffer::make(const_raw_buffer_ptr value) {
   return expr(n);
 }
 
-expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
-expr sub::make(expr a, expr b) { return make_bin_op<sub>(std::move(a), std::move(b)); }
-expr mul::make(expr a, expr b) { return make_bin_op<mul>(std::move(a), std::move(b)); }
-expr div::make(expr a, expr b) { return make_bin_op<div>(std::move(a), std::move(b)); }
-expr mod::make(expr a, expr b) { return make_bin_op<mod>(std::move(a), std::move(b)); }
+expr add::make(expr a, expr b) {
+  if (is_zero(a)) return b;
+  if (is_zero(b)) return a;
+  return make_bin_op<add>(std::move(a), std::move(b));
+}
+expr sub::make(expr a, expr b) {
+  if (is_zero(b)) return a;
+  return make_bin_op<sub>(std::move(a), std::move(b));
+}
+expr mul::make(expr a, expr b) {
+  if (is_zero(a) || is_one(b)) return a;
+  if (is_zero(b) || is_one(a)) return b;
+  return make_bin_op<mul>(std::move(a), std::move(b));
+}
+expr div::make(expr a, expr b) {
+  // Division by zero is defined to be zero.
+  if (is_zero(a) || is_one(b)) return a;
+  if (is_zero(b)) return b;
+  return make_bin_op<div>(std::move(a), std::move(b));
+}
+expr mod::make(expr a, expr b) {
+  // `0%x`, `x%0` and `x%1` are all zero.
+  if (is_zero(a) || is_zero(b) || is_one(b)) return expr(0);
+  return make_bin_op<mod>(std::move(a), std::move(b));
+}
 expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)); }
 expr max::make(expr a, expr b) { return make_bin_op<max>(std::move(a), std::move(b)); }
 expr equal::make(expr a, expr b) { return make_bin_op<equal>(std::move(a), std::move(b)); }
 expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a), std::move(b)); }
 expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
-expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)); }
-expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)); }
+expr logical_and::make(expr a, expr b) {
+  // A false operand makes the result false. A true operand is the identity, but only if the other operand is already a
+  // boolean, otherwise we'd lose the conversion of the result to 0 or 1.
+  if (is_false(a) || is_false(b)) return expr(0);
+  if (is_true(a) && is_boolean(b)) return b;
+  if (is_true(b) && is_boolean(a)) return a;
+  return make_bin_op<logical_and>(std::move(a), std::move(b));
+}
+expr logical_or::make(expr a, expr b) {
+  // A true operand makes the result true. A false operand is the identity, but only if the other operand is already a
+  // boolean, otherwise we'd lose the conversion of the result to 0 or 1.
+  if (is_true(a) || is_true(b)) return expr(1);
+  if (is_false(a) && is_boolean(b)) return b;
+  if (is_false(b) && is_boolean(a)) return a;
+  return make_bin_op<logical_or>(std::move(a), std::move(b));
+}
 expr logical_not::make(expr a) {
+  if (is_true(a)) return expr(0);
+  if (is_false(a)) return expr(1);
   logical_not* n = new logical_not();
   n->a = std::move(a);
   return expr(n);
@@ -446,15 +481,14 @@ expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
   return expr(n);
 }
 
-expr call::make(slinky::intrinsic i, std::vector<expr> args) {
-  return call::make(i, nullptr, std::move(args));
-}
+expr call::make(slinky::intrinsic i, std::vector<expr> args) { return call::make(i, nullptr, std::move(args)); }
 
 expr call::make(callable target, std::vector<expr> args) {
   return call::make(intrinsic::none, std::move(target), std::move(args));
 }
 
-stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs) {
+stmt call_stmt::make(
+    call_stmt::callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs) {
   auto n = new call_stmt();
   n->target = std::move(target);
   n->inputs = std::move(inputs);
@@ -464,7 +498,8 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   return stmt(n);
 }
 
-stmt copy_stmt::make(copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad) {
+stmt copy_stmt::make(
+    copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad) {
   auto n = new copy_stmt();
   n->src = src;
   n->src_x = std::move(src_x);
