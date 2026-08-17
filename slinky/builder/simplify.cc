@@ -2581,7 +2581,7 @@ public:
     } else {
       expr equiv = max(0, max(-op->b, op->b) - 1);
       expr result = mutate(equiv);
-      if (!equiv.same_as(result)) {
+      if (!equiv.same_as(result) || as_constant(result)) {
         set_result(std::move(result));
       } else if (constant_required) {
         set_result(expr());
