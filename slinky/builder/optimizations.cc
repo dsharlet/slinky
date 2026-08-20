@@ -427,7 +427,7 @@ class copy_aliaser : public stmt_mutator {
           // This dimension must have stride 0, or we can't alias an implicit broadcast.
           return false;
         }
-      } else {
+      } else if (alloc_dims[d].stride.defined()) {
         // There are strides on both the allocation and the target, they must be equal.
         if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
           // This alias would violate a constraint on the stride of the buffer.
