@@ -547,9 +547,7 @@ TEST_P(concatenated_output, pipeline) {
   const int N = 20;
   const int C1 = 4;
   const int C2 = 7;
-  auto make_dims = [&](index_t c) {
-    return concat_dim == 0 ? std::vector<index_t>{c, N} : std::vector<index_t>{N, c};
-  };
+  auto make_dims = [&](index_t c) { return concat_dim == 0 ? std::vector<index_t>{c, N} : std::vector<index_t>{N, c}; };
   buffer<short, 2> in1_buf(make_dims(C1));
   buffer<short, 2> in2_buf(make_dims(C2));
   init_random(in1_buf);
@@ -913,20 +911,20 @@ TEST_P(broadcasted_elementwise, constant) {
   // }
 }
 
-class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool, bool>> {};
+class constrained_transpose : public testing::TestWithParam<std::tuple<bool, int, int, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(fixed, constrained_transpose,
-    testing::Combine(testing::Bool(), testing::Bool(), testing::Bool(), testing::Values(false)),
+    testing::Combine(testing::Bool(), testing::Values(0, 1, 3), testing::Values(0, 1, 3), testing::Values(false)),
     test_params_to_string<constrained_transpose::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(with_loops, constrained_transpose,
-    testing::Combine(testing::Values(false), testing::Values(false), testing::Values(false), testing::Values(true)),
+    testing::Combine(testing::Values(false), testing::Values(0), testing::Values(0), testing::Values(true)),
     test_params_to_string<constrained_transpose::ParamType>);
 
 TEST_P(constrained_transpose, pipeline) {
   const bool no_alias_buffers = std::get<0>(GetParam());
-  const bool intm1_fixed = std::get<1>(GetParam());
-  const bool intm2_fixed = std::get<2>(GetParam());
+  const int intm1_fixed_rank = std::get<1>(GetParam());
+  const int intm2_fixed_rank = std::get<2>(GetParam());
   // Make the pipeline
   node_context ctx;
 
@@ -936,16 +934,12 @@ TEST_P(constrained_transpose, pipeline) {
   auto intm1 = buffer_expr::make(ctx, "intm1", 3, sizeof(short));
   auto intm2 = buffer_expr::make(ctx, "intm2", 3, sizeof(short));
 
-  if (intm1_fixed) {
-    intm1->dim(0).stride = sizeof(short);
-    intm1->dim(1).stride = sizeof(short) * in->dim(0).extent();
-    intm1->dim(2).stride = sizeof(short) * in->dim(0).extent() * in->dim(0).extent();
-  }
-  if (intm2_fixed) {
-    intm2->dim(0).stride = sizeof(short);
-    intm2->dim(1).stride = sizeof(short) * out->dim(0).extent();
-    intm2->dim(2).stride = sizeof(short) * out->dim(0).extent() * out->dim(0).extent();
-  }
+  if (0 < intm1_fixed_rank) intm1->dim(0).stride = sizeof(short);
+  if (1 < intm1_fixed_rank) intm1->dim(1).stride = sizeof(short) * in->dim(0).extent();
+  if (2 < intm1_fixed_rank) intm1->dim(2).stride = sizeof(short) * in->dim(0).extent() * in->dim(1).extent();
+  if (0 < intm2_fixed_rank) intm2->dim(0).stride = sizeof(short);
+  if (1 < intm2_fixed_rank) intm2->dim(1).stride = sizeof(short) * out->dim(0).extent();
+  if (2 < intm2_fixed_rank) intm2->dim(2).stride = sizeof(short) * out->dim(0).extent() * out->dim(1).extent();
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -988,8 +982,9 @@ TEST_P(constrained_transpose, pipeline) {
   }
 
   if (!no_alias_buffers) {
-    if (intm1_fixed && intm2_fixed) {
-      // Both the intermediates have stride constraints, we can't alias anything.
+    if (intm2_fixed_rank == 3 && intm1_fixed_rank >= 1) {
+      // intm2 has all stride constraints and intm1 has at least one stride constraint,
+      // so we cannot alias due to conflicting transposed strides.
       ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
     } else {
       ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
