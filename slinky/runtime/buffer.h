@@ -424,30 +424,13 @@ public:
   std::optional<std::size_t> init_strides(index_t alignment = 1) {
     assert(alignment > 0);
     assert(is_power_of_two(alignment));
-    static_assert(dim::auto_stride >= 0, "");
-    if (rank == 0 || (rank == 1 && dims[0].fold_factor() == dim::unfolded && dims[0].stride() >= 0)) {
-      // Fast path for rank 0 or simple (unfolded, non-negative stride) buffers.
-      // elem_size is unsigned; a value that doesn't fit in a (signed) index_t is an overflow.
+    if (rank == 0) {
+      // Fast path for rank 0 buffers
       const index_t elem_size = static_cast<index_t>(this->elem_size);
       bool overflow = elem_size < 0;
       index_t size = 0;
-      if (rank == 1) {
-        slinky::dim& d = dims[0];
-        index_t stride = d.stride();
-        if (stride == dim::auto_stride) {
-          stride = elem_size;
-          d.set_stride(stride);
-        }
-        // `std::max` guards empty buffers (max < min).
-        overflow = overflow || sub_with_overflow(d.max(), d.min(), size);
-        overflow = overflow || mul_with_overflow(std::max<index_t>(size, 0), stride, size);
-      }
-
-      overflow = overflow || add_with_overflow(size, elem_size, size);
-      overflow = overflow || add_with_overflow(size, alignment - 1, size);
+      overflow = overflow || add_with_overflow(elem_size, alignment - 1, size);
       if (overflow) return std::nullopt;
-
-      assert(size >= 0);
       return static_cast<std::size_t>(size & ~(alignment - 1));
     }
     return init_strides_impl(alignment);
