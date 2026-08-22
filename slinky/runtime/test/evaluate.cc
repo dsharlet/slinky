@@ -69,7 +69,7 @@ TEST(evaluate, buffer_fields) {
 
   ASSERT_EQ(evaluate(buffer_rank(x), context), 1);
   ASSERT_EQ(evaluate(buffer_elem_size(x), context), 4);
-  ASSERT_EQ(evaluate(variable::make(x, buffer_field::size_bytes), context), 40);
+  ASSERT_EQ(evaluate(buffer_size_bytes(x), context), 40);
   ASSERT_EQ(evaluate(buffer_min(x, 0), context), 0);
   ASSERT_EQ(evaluate(buffer_max(x, 0), context), 9);
   ASSERT_EQ(evaluate(buffer_stride(x, 0), context), 4);

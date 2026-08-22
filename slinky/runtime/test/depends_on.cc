@@ -59,6 +59,7 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(buffer_min(x, 0), x), (depends_on_result{.buffer_dims = true, .buffer_bounds = true}));
   ASSERT_EQ(depends_on(buffer_stride(x, 0), x), (depends_on_result{.buffer_dims = true}));
   ASSERT_EQ(depends_on(buffer_elem_size(x), x), (depends_on_result{.var = true}));
+  ASSERT_EQ(depends_on(buffer_size_bytes(x), x), (depends_on_result{.var = true}));
 
   stmt loop_x = loop::make(x, loop::serial, {y, z}, 1, check::make(x && z));
   ASSERT_EQ(depends_on(loop_x, x), depends_on_result{});
@@ -114,6 +115,7 @@ TEST(depends_on, is_pure) {
   ASSERT_TRUE(is_pure(x + y));
   ASSERT_TRUE(is_pure(abs(x)));
   ASSERT_FALSE(is_pure(buffer_min(x, 0)));
+  ASSERT_FALSE(is_pure(buffer_size_bytes(x)));
   ASSERT_FALSE(is_pure(y + buffer_min(x, 0)));
 }
 

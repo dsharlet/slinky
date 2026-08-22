@@ -173,7 +173,6 @@ inline index_t eval(const variable* op, eval_context& ctx) {
   case buffer_field::none: return value;
   case buffer_field::rank: return buf->rank;
   case buffer_field::elem_size: return buf->elem_size;
-  case buffer_field::size_bytes: return buf->size_bytes();
   case buffer_field::min: return buf->dim(op->dim).min();
   case buffer_field::max: return buf->dim(op->dim).max();
   case buffer_field::stride: return buf->dim(op->dim).stride();
@@ -324,6 +323,13 @@ inline index_t eval_validate_buffer(const call* op, eval_context& ctx) {
   return validate_buffer(*buf) ? 1 : 0;
 }
 
+inline index_t eval_buffer_size_bytes(const call* op, eval_context& ctx) {
+  assert(op->args.size() == 1);
+  var sym = *as_variable(op->args[0]);
+  const raw_buffer* buf = ctx.lookup_buffer(sym);
+  return buf ? buf->size_bytes() : 0;
+}
+
 inline index_t eval_wait_for(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
   for (expr_ref i : op->args) {
@@ -355,6 +361,7 @@ SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx) {
   case intrinsic::or_else: return eval_short_circuit_op(op, ctx);
 
   case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op, ctx));
+  case intrinsic::buffer_size_bytes: return eval_buffer_size_bytes(op, ctx);
 
   case intrinsic::semaphore_init: return eval_semaphore_init(op, ctx);
   case intrinsic::semaphore_signal: return eval_semaphore_signal(op, ctx);

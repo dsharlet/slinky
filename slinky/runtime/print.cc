@@ -23,7 +23,6 @@ const char* to_string(buffer_field m) {
   switch (m) {
   case buffer_field::rank: return "rank";
   case buffer_field::elem_size: return "elem_size";
-  case buffer_field::size_bytes: return "size_bytes";
   case buffer_field::min: return "min";
   case buffer_field::max: return "max";
   case buffer_field::stride: return "stride";
@@ -42,6 +41,7 @@ const char* to_string(intrinsic fn) {
   case intrinsic::and_then: return "and_then";
   case intrinsic::or_else: return "or_else";
   case intrinsic::buffer_at: return "buffer_at";
+  case intrinsic::buffer_size_bytes: return "buffer_size_bytes";
   case intrinsic::semaphore_init: return "semaphore_init";
   case intrinsic::semaphore_signal: return "semaphore_signal";
   case intrinsic::semaphore_wait: return "semaphore_wait";
@@ -233,7 +233,6 @@ public:
     case buffer_field::none: *this << v->sym; return;
     case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
     case buffer_field::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
-    case buffer_field::size_bytes: *this << "buffer_size_bytes(" << v->sym << ")"; return;
     case buffer_field::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
