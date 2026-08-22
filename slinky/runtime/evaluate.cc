@@ -231,14 +231,12 @@ inline void* eval_buffer_at(const call* op, eval_context& ctx) {
   const raw_buffer* buf = ctx.lookup_buffer(*sym);
   assert(buf);
   void* result = buf->base;
+  if (!result) return nullptr;
   for (std::size_t d = 0; d < std::min(buf->rank, op->args.size() - 1); ++d) {
     if (op->args[d + 1].defined()) {
       index_t at = eval(op->args[d + 1], ctx);
-      if (result && buf->dims[d].contains(at)) {
-        result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
-      } else {
-        result = nullptr;
-      }
+      if (!buf->dims[d].contains(at)) return nullptr;
+      result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
     }
   }
   return result;
