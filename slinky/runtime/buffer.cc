@@ -175,15 +175,31 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
     overflow = overflow || mul_with_overflow(stride, extent, dim_stride);
 
     init_stride_dim d(stride, dim_stride);
-    init_stride_dim* at = std::lower_bound(dims, dims_end, d);
-    internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
-    *at = d;
-
     index_t diff;
     overflow = overflow || sub_with_overflow(d.dim_stride, d.stride, diff);
     overflow = overflow || add_with_overflow(flat_max, diff, flat_max);
 
-    ++dims_end;
+    init_stride_dim* at = std::lower_bound(dims, dims_end, d);
+    const bool merge_prev = at > dims && (at - 1)->dim_stride == d.stride;
+    const bool merge_next = at < dims_end && d.dim_stride == at->stride;
+
+    if (merge_prev && merge_next) {
+      // This new dimension can be fused with both the previous and next dimensions.
+      (at - 1)->dim_stride = at->dim_stride;
+      internal::copy_small_n(at + 1, dims_end - (at + 1), at);
+      --dims_end;
+    } else if (merge_prev) {
+      // This new dimension can be fused with the previous dimension.
+      (at - 1)->dim_stride = d.dim_stride;
+    } else if (merge_next) {
+      // This new dimension can be fused with the next dimension.
+      at->stride = d.stride;
+    } else {
+      // This new dimension can't be fused with any existing dimension.
+      internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
+      *at = d;
+      ++dims_end;
+    }
   };
 
   std::size_t unknown_begin = rank;
