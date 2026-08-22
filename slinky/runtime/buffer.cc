@@ -476,30 +476,35 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
   internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
-  raw_buffer src_opt = src;
-  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
-  internal::copy_small_n(src.dims, src.rank, src_opt.dims);
+  if (src.rank > 0) {
+    raw_buffer src_opt = src;
+    src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
+    internal::copy_small_n(src.dims, src.rank, src_opt.dims);
 
-  // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
-  if (src_opt.rank > 0 && pad.base) {
-    assert(dst_opt.elem_size == pad.elem_size);
+    if (pad.base) {
+      assert(dst_opt.elem_size == pad.elem_size);
 
-    raw_buffer pad_opt = pad;
-    pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
-    internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
+      raw_buffer pad_opt = pad;
+      pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
+      internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
 
-    optimize_dims(dst_opt, src_opt, pad_opt);
+      optimize_dims(dst_opt, src_opt, pad_opt);
 
-    // Implement the padding in all but the first dimension.
-    pad_impl(src_opt, dst_opt, pad_opt);
-    if (src_opt.base == dst_opt.base) {
-      // This is an in-place padded copy, we're done.
-      return;
+      // Implement the padding in all but the first dimension.
+      pad_impl(src_opt, dst_opt, pad_opt);
+      if (src_opt.base == dst_opt.base) {
+        // This is an in-place padded copy, we're done.
+        return;
+      }
+    } else {
+      optimize_dims(dst_opt, src_opt);
     }
+    copy_impl(src_opt, dst_opt);
   } else {
-    optimize_dims(dst_opt, src_opt);
+    // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
+    optimize_dims(dst_opt);
+    copy_impl(const_cast<raw_buffer&>(src), dst_opt);
   }
-  copy_impl(src_opt, dst_opt);
 }
 
 void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
