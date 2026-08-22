@@ -164,6 +164,8 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_
 std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
+  // Initialize one past the end of dims to a sentinel value.
+  dims->stride = dims->dim_stride = elem_size;
   init_stride_dim* dims_end = dims;
   // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
   index_t flat_max = 0;
@@ -226,35 +228,63 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
     }
   }
 
-  for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
-    slinky::dim& dim_i = this->dims[i];
-    if (dim_i.stride() != dim::auto_stride) continue;
+  if (dims + 1 >= dims_end && dims->stride == elem_size) {
+    // All unknown strides can be contiguously assigned.
+    index_t stride = dims->dim_stride;
 
-    const index_t alloc_extent_i = alloc_extent(dim_i);
-    assert(alloc_extent_i > 1);
+    for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
+      slinky::dim& dim_i = this->dims[i];
+      if (dim_i.stride() != dim::auto_stride) continue;
 
-    span<const init_stride_dim> known_dims{dims, dims_end};
-    if (is_stride_ok(elem_size, alloc_extent_i, known_dims, overflow)) {
-      // This dimension can have stride elem_size, no other stride could be better.
-      dim_i.set_stride(elem_size);
-      learn_dim(elem_size, alloc_extent_i);
-      continue;
-    }
+      const index_t alloc_extent_i = alloc_extent(dim_i);
+      assert(alloc_extent_i > 1);
 
-    // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
-    for (const init_stride_dim& dim_j : known_dims) {
-      index_t padded_candidate = 0;
-      overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
-      index_t candidate = padded_candidate & ~(alignment - 1);
-
-      if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
-        dim_i.set_stride(candidate);
-        learn_dim(candidate, alloc_extent_i);
-        // The dims are sorted, so no subsequent candidate will be better.
-        break;
+      if (stride != elem_size) {
+        index_t padded_stride = 0;
+        overflow = overflow || add_with_overflow(stride, alignment - 1, padded_stride);
+        stride = padded_stride & ~(alignment - 1);
       }
+      dim_i.set_stride(stride);
+
+      index_t dim_stride = 0;
+      overflow = overflow || mul_with_overflow(stride, alloc_extent_i, dim_stride);
+      index_t diff = 0;
+      overflow = overflow || sub_with_overflow(dim_stride, stride, diff);
+      overflow = overflow || add_with_overflow(flat_max, diff, flat_max);
+      stride = dim_stride;
     }
-    assert(dim_i.stride() != dim::auto_stride);
+  } else {
+    // An unknown stride might be assigned to fill a "hole" in the buffer.
+    for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
+      slinky::dim& dim_i = this->dims[i];
+      if (dim_i.stride() != dim::auto_stride) continue;
+
+      const index_t alloc_extent_i = alloc_extent(dim_i);
+      assert(alloc_extent_i > 1);
+
+      span<const init_stride_dim> known_dims{dims, dims_end};
+      if (is_stride_ok(elem_size, alloc_extent_i, known_dims, overflow)) {
+        // This dimension can have stride elem_size, no other stride could be better.
+        dim_i.set_stride(elem_size);
+        learn_dim(elem_size, alloc_extent_i);
+        continue;
+      }
+
+      // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
+      for (const init_stride_dim& dim_j : known_dims) {
+        index_t padded_candidate = 0;
+        overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
+        index_t candidate = padded_candidate & ~(alignment - 1);
+
+        if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
+          dim_i.set_stride(candidate);
+          learn_dim(candidate, alloc_extent_i);
+          // The dims are sorted, so no subsequent candidate will be better.
+          break;
+        }
+      }
+      assert(dim_i.stride() != dim::auto_stride);
+    }
   }
 
   index_t size = 0;
