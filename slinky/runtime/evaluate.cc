@@ -536,8 +536,13 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   ctx.reserve(op->sym.id + 1);
   index_t old_value = ctx.set(op->sym, 0);
   index_t result = 0;
-  for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
-    ctx.set(op->sym, i);
+  if (step > 0) {
+    for (index_t i = bounds.min; result == 0 && i <= bounds.max; i += step) {
+      ctx.set(op->sym, i);
+      result = eval(op->body, ctx);
+    }
+  } else {
+    ctx.set(op->sym, bounds.min);
     result = eval(op->body, ctx);
   }
   ctx.set(op->sym, old_value);
