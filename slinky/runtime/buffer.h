@@ -543,7 +543,9 @@ private:
       if (src) {
         internal::copy_small_n(src, rank, dims);
       } else {
-        new (dims) slinky::dim[rank];
+        for (std::size_t i = 0; i < rank; ++i) {
+          new (&dims[i]) slinky::dim();
+        }
       }
     } else {
       dims = nullptr;
