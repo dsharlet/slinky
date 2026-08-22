@@ -614,6 +614,11 @@ inline index_t eval(const copy_stmt* op, eval_context& ctx) {
   SLINKY_UNREACHABLE << "copy_stmt should have been implemented by calls to copy/pad.";
 }
 
+SLINKY_NO_INLINE index_t allocate_failed(const allocate* op, eval_context& ctx) {
+  std::cerr << "allocate of " << op->sym << " failed." << std::endl;
+  return -1;
+}
+
 // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
 inline index_t eval(const allocate* op, eval_context& ctx) {
   allocated_buffer buffer;
@@ -661,13 +666,17 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
 
   index_t result;
   if (!buffer.base && buffer.elem_count() > 0) {
-    std::cerr << "allocate of " << op->sym << " failed." << std::endl;
-    result = -1;
+    result = allocate_failed(op, ctx);
   } else {
     result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
   ctx.config->free(op->sym, &buffer, buffer.allocation);
   return result;
+}
+
+SLINKY_NO_INLINE index_t make_buffer_failed(const make_buffer* op, eval_context& ctx) {
+  std::cerr << "make_buffer of " << op->sym << " failed." << std::endl;
+  return -1;
 }
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_context& ctx) {
@@ -702,8 +711,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   }
 
   if (!validate_buffer(buffer)) {
-    std::cerr << "make_buffer of " << op->sym << " failed." << std::endl;
-    return -1;
+    return make_buffer_failed(op, ctx);
   }
 
   return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
