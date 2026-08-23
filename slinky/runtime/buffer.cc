@@ -28,7 +28,6 @@ index_t alloc_extent(const dim& dim) {
 bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min, index_t& flat_max) {
   flat_min = 0;
   flat_max = 0;
-  bool overflow = false;
 
   for (std::size_t i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
@@ -41,18 +40,17 @@ bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min,
     }
 
     index_t stride = dims[i].stride();
-    overflow |= (stride == dim::auto_stride && extent > 1);
-
     index_t extent_minus_1;
-    index_t term_min;
-    index_t term_max;
-    overflow = overflow || sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1);
-    overflow = overflow || mul_with_overflow(extent_minus_1, std::min<index_t>(0, stride), term_min);
-    overflow = overflow || add_with_overflow(flat_min, term_min, flat_min);
-    overflow = overflow || mul_with_overflow(extent_minus_1, std::max<index_t>(0, stride), term_max);
-    overflow = overflow || add_with_overflow(flat_max, term_max, flat_max);
+    if (sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1)) return false;
+    index_t dim_stride;
+    if (mul_with_overflow(extent_minus_1, stride, dim_stride)) return false;
+    if (stride < 0) {
+      if (add_with_overflow(flat_min, dim_stride, flat_min)) return false;
+    } else {
+      if (add_with_overflow(flat_max, dim_stride, flat_max)) return false;
+    }
   }
-  return !overflow;
+  return true;
 }
 
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
