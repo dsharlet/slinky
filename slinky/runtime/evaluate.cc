@@ -688,8 +688,8 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   raw_buffer buffer;
   buffer.elem_size = eval(op->elem_size, 0, ctx);
   // The base is very likely a buffer_at call, try to skip the eval overhead.
-  if (const call* c = op->base.as<call>()) {
-    buffer.base = reinterpret_cast<void*>(eval(c, ctx));
+  if (const call* c = as_intrinsic(op->base, intrinsic::buffer_at)) {
+    buffer.base = reinterpret_cast<void*>(eval_buffer_at(c, ctx));
   } else {
     buffer.base = reinterpret_cast<void*>(eval(op->base, 0, ctx));
   }
