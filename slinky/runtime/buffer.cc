@@ -185,7 +185,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
     if (merge_prev && merge_next) {
       // This new dimension can be fused with both the previous and next dimensions.
       (at - 1)->dim_stride = at->dim_stride;
-      internal::copy_small_n(at + 1, dims_end - (at + 1), at);
+      std::copy(at + 1, dims_end, at);
       --dims_end;
     } else if (merge_prev) {
       // This new dimension can be fused with the previous dimension.
@@ -195,7 +195,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       at->stride = stride;
     } else {
       // This new dimension can't be fused with any existing dimension.
-      internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
+      std::copy_backward(at, dims_end, dims_end + 1);
       *at = {stride, dim_stride};
       ++dims_end;
     }
@@ -212,8 +212,8 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       if (stride_i == dim::auto_stride) dim_i.set_stride(elem_size);
     } else if (dim_i.stride() != dim::auto_stride) {
       if (stride_i < 0) {
-	overflow |= stride_i == std::numeric_limits<index_t>::min();
-	stride_i = -stride_i;
+        overflow |= stride_i == std::numeric_limits<index_t>::min();
+        stride_i = -stride_i;
       }
       learn_dim(stride_i, alloc_extent_i);
     }
