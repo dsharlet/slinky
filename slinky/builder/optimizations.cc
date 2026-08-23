@@ -227,8 +227,8 @@ public:
   void visit(const call_stmt* op) override {
     if (op->attrs.name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
         is_a_and_b(op->inputs[0], op->outputs[0])) {
-      expr input_size = variable::make(op->inputs[0], buffer_field::size_bytes);
-      expr output_size = variable::make(op->outputs[0], buffer_field::size_bytes);
+      expr input_size = buffer_size_bytes(op->inputs[0]);
+      expr output_size = buffer_size_bytes(op->outputs[0]);
       set_result(check::make(input_size == output_size));
     } else {
       set_result(op);
@@ -2137,6 +2137,11 @@ public:
       // Assume we are both producing and consuming this buffer.
       consumed.insert(lookup_alias(*buf));
       produced.insert(lookup_alias(*buf));
+    } else if (in_check && (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::validate_buffer)) {
+      assert(op->args.size() == 1);
+      if (auto buf = as_variable(op->args[0])) {
+        produced.insert(lookup_alias(*buf));
+      }
     }
     barrier = barrier || is_barrier(op->intrinsic);
   }

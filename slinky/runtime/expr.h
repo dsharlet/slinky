@@ -104,6 +104,8 @@ enum class intrinsic {
   // This function returns the address of the element x in (buf, x_0, x_1, ...). x can be any rank, including 0.
   buffer_at,
 
+  buffer_size_bytes,
+
   // These functions implement counting semaphores.
   // The first argument of all of these semaphore helpers is a pointer to an index_t that will be used as the semaphore,
   // and the second argument is a count.
@@ -134,7 +136,6 @@ enum class buffer_field : unsigned {
 
   rank,
   elem_size,
-  size_bytes,
 
   min,
   max,
@@ -727,6 +728,7 @@ expr buffer_extent(var buf, int dim);
 expr buffer_stride(var buf, int dim);
 expr buffer_fold_factor(var buf, int dim);
 expr validate_buffer(var buf);
+expr buffer_size_bytes(expr buf);
 
 interval_expr buffer_bounds(var buf, int dim);
 dim_expr buffer_dim(var buf, int dim);

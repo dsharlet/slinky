@@ -173,7 +173,6 @@ inline index_t eval(const variable* op, eval_context& ctx) {
   case buffer_field::none: return value;
   case buffer_field::rank: return buf->rank;
   case buffer_field::elem_size: return buf->elem_size;
-  case buffer_field::size_bytes: return buf->size_bytes();
   case buffer_field::min: return buf->dim(op->dim).min();
   case buffer_field::max: return buf->dim(op->dim).max();
   case buffer_field::stride: return buf->dim(op->dim).stride();
@@ -232,14 +231,12 @@ inline void* eval_buffer_at(const call* op, eval_context& ctx) {
   const raw_buffer* buf = ctx.lookup_buffer(*sym);
   assert(buf);
   void* result = buf->base;
+  if (!result) return nullptr;
   for (std::size_t d = 0; d < std::min(buf->rank, op->args.size() - 1); ++d) {
     if (op->args[d + 1].defined()) {
       index_t at = eval(op->args[d + 1], ctx);
-      if (result && buf->dims[d].contains(at)) {
-        result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
-      } else {
-        result = nullptr;
-      }
+      if (!buf->dims[d].contains(at)) return nullptr;
+      result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
     }
   }
   return result;
@@ -324,6 +321,13 @@ inline index_t eval_validate_buffer(const call* op, eval_context& ctx) {
   return validate_buffer(*buf) ? 1 : 0;
 }
 
+inline index_t eval_buffer_size_bytes(const call* op, eval_context& ctx) {
+  assert(op->args.size() == 1);
+  var sym = *as_variable(op->args[0]);
+  const raw_buffer* buf = ctx.lookup_buffer(sym);
+  return buf ? buf->size_bytes() : 0;
+}
+
 inline index_t eval_wait_for(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
   for (expr_ref i : op->args) {
@@ -355,6 +359,7 @@ SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx) {
   case intrinsic::or_else: return eval_short_circuit_op(op, ctx);
 
   case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op, ctx));
+  case intrinsic::buffer_size_bytes: return eval_buffer_size_bytes(op, ctx);
 
   case intrinsic::semaphore_init: return eval_semaphore_init(op, ctx);
   case intrinsic::semaphore_signal: return eval_semaphore_signal(op, ctx);
@@ -536,8 +541,13 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   ctx.reserve(op->sym.id + 1);
   index_t old_value = ctx.set(op->sym, 0);
   index_t result = 0;
-  for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
-    ctx.set(op->sym, i);
+  if (step > 0) {
+    for (index_t i = bounds.min; result == 0 && i <= bounds.max; i += step) {
+      ctx.set(op->sym, i);
+      result = eval(op->body, ctx);
+    }
+  } else {
+    ctx.set(op->sym, bounds.min);
     result = eval(op->body, ctx);
   }
   ctx.set(op->sym, old_value);
@@ -609,6 +619,11 @@ inline index_t eval(const copy_stmt* op, eval_context& ctx) {
   SLINKY_UNREACHABLE << "copy_stmt should have been implemented by calls to copy/pad.";
 }
 
+SLINKY_NO_INLINE index_t allocate_failed(const allocate* op, eval_context& ctx) {
+  std::cerr << "allocate of " << op->sym << " failed." << std::endl;
+  return -1;
+}
+
 // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
 inline index_t eval(const allocate* op, eval_context& ctx) {
   allocated_buffer buffer;
@@ -656,8 +671,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
 
   index_t result;
   if (!buffer.base && buffer.elem_count() > 0) {
-    std::cerr << "allocate of " << op->sym << " failed." << std::endl;
-    result = -1;
+    result = allocate_failed(op, ctx);
   } else {
     result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
@@ -665,12 +679,17 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
   return result;
 }
 
+SLINKY_NO_INLINE index_t make_buffer_failed(const make_buffer* op, eval_context& ctx) {
+  std::cerr << "make_buffer of " << op->sym << " failed." << std::endl;
+  return -1;
+}
+
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_context& ctx) {
   raw_buffer buffer;
   buffer.elem_size = eval(op->elem_size, 0, ctx);
   // The base is very likely a buffer_at call, try to skip the eval overhead.
-  if (const call* c = op->base.as<call>()) {
-    buffer.base = reinterpret_cast<void*>(eval(c, ctx));
+  if (const call* c = as_intrinsic(op->base, intrinsic::buffer_at)) {
+    buffer.base = reinterpret_cast<void*>(eval_buffer_at(c, ctx));
   } else {
     buffer.base = reinterpret_cast<void*>(eval(op->base, 0, ctx));
   }
@@ -697,8 +716,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   }
 
   if (!validate_buffer(buffer)) {
-    std::cerr << "make_buffer of " << op->sym << " failed." << std::endl;
-    return -1;
+    return make_buffer_failed(op, ctx);
   }
 
   return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);

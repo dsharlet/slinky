@@ -28,7 +28,6 @@ index_t alloc_extent(const dim& dim) {
 bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min, index_t& flat_max) {
   flat_min = 0;
   flat_max = 0;
-  bool overflow = false;
 
   for (std::size_t i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
@@ -41,18 +40,17 @@ bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min,
     }
 
     index_t stride = dims[i].stride();
-    overflow |= (stride == dim::auto_stride && extent > 1);
-
     index_t extent_minus_1;
-    index_t term_min;
-    index_t term_max;
-    overflow = overflow || sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1);
-    overflow = overflow || mul_with_overflow(extent_minus_1, std::min<index_t>(0, stride), term_min);
-    overflow = overflow || add_with_overflow(flat_min, term_min, flat_min);
-    overflow = overflow || mul_with_overflow(extent_minus_1, std::max<index_t>(0, stride), term_max);
-    overflow = overflow || add_with_overflow(flat_max, term_max, flat_max);
+    if (sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1)) return false;
+    index_t dim_stride;
+    if (mul_with_overflow(extent_minus_1, stride, dim_stride)) return false;
+    if (stride < 0) {
+      if (add_with_overflow(flat_min, dim_stride, flat_min)) return false;
+    } else {
+      if (add_with_overflow(flat_max, dim_stride, flat_max)) return false;
+    }
   }
-  return !overflow;
+  return true;
 }
 
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
@@ -137,8 +135,6 @@ struct init_stride_dim {
 
   init_stride_dim() : stride(0), dim_stride(0) {}
   init_stride_dim(index_t stride, index_t dim_stride) : stride(stride), dim_stride(dim_stride) {}
-
-  bool operator<(const init_stride_dim& r) const { return dim_stride < r.dim_stride; }
 };
 
 SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims, bool& overflow) {
@@ -161,9 +157,11 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_
 
 }  // namespace
 
-std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
+SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
+  // Initialize one past the end of dims to a sentinel value.
+  dims->stride = dims->dim_stride = elem_size;
   init_stride_dim* dims_end = dims;
   // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
   index_t flat_max = 0;
@@ -174,71 +172,109 @@ std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
     index_t dim_stride = 0;
     overflow = overflow || mul_with_overflow(stride, extent, dim_stride);
 
-    init_stride_dim d(stride, dim_stride);
-    init_stride_dim* at = std::lower_bound(dims, dims_end, d);
-    internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
-    *at = d;
+    // dim_stride - stride cannot overflow if the above multiplication did not overflow.
+    overflow = overflow || add_with_overflow(flat_max, dim_stride - stride, flat_max);
 
-    index_t diff;
-    overflow = overflow || sub_with_overflow(d.dim_stride, d.stride, diff);
-    overflow = overflow || add_with_overflow(flat_max, diff, flat_max);
+    init_stride_dim* at = dims;
+    while (at < dims_end && at->dim_stride < dim_stride) {
+      ++at;
+    }
+    const bool merge_prev = at > dims && (at - 1)->dim_stride == stride;
+    const bool merge_next = at < dims_end && dim_stride == at->stride;
 
-    ++dims_end;
+    if (merge_prev && merge_next) {
+      // This new dimension can be fused with both the previous and next dimensions.
+      (at - 1)->dim_stride = at->dim_stride;
+      std::copy(at + 1, dims_end, at);
+      --dims_end;
+    } else if (merge_prev) {
+      // This new dimension can be fused with the previous dimension.
+      (at - 1)->dim_stride = dim_stride;
+    } else if (merge_next) {
+      // This new dimension can be fused with the next dimension.
+      at->stride = stride;
+    } else {
+      // This new dimension can't be fused with any existing dimension.
+      std::copy_backward(at, dims_end, dims_end + 1);
+      *at = {stride, dim_stride};
+      ++dims_end;
+    }
   };
 
-  std::size_t unknown_begin = rank;
-  std::size_t unknown_end = 0;
   for (std::size_t i = 0; i < rank; ++i) {
     slinky::dim& dim_i = this->dims[i];
-    if (dim_i.stride() == 0) continue;
+    index_t stride_i = dim_i.stride();
+    if (stride_i == 0) continue;
 
     index_t alloc_extent_i = alloc_extent(dim_i);
     if (alloc_extent_i <= 1) {
       // The buffer is empty or has extent 1, we don't care about the stride.
-      if (dim_i.stride() == dim::auto_stride) dim_i.set_stride(elem_size);
+      if (stride_i == dim::auto_stride) dim_i.set_stride(elem_size);
     } else if (dim_i.stride() != dim::auto_stride) {
-      index_t stride_val = dim_i.stride();
-      if (stride_val == std::numeric_limits<index_t>::min()) {
-        overflow = true;
-        stride_val = 0;
+      if (stride_i < 0) {
+        overflow |= stride_i == std::numeric_limits<index_t>::min();
+        stride_i = -stride_i;
       }
-      learn_dim(std::abs(stride_val), alloc_extent_i);
-    } else {
-      // Track the range of dimensions we need to find the stride of.
-      unknown_begin = std::min(unknown_begin, i);
-      unknown_end = i + 1;
+      learn_dim(stride_i, alloc_extent_i);
     }
   }
 
-  for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
-    slinky::dim& dim_i = this->dims[i];
-    if (dim_i.stride() != dim::auto_stride) continue;
+  if (dims + 1 >= dims_end && dims->stride == elem_size) {
+    // All unknown strides can be contiguously assigned.
+    index_t stride = dims->dim_stride;
 
-    const index_t alloc_extent_i = alloc_extent(dim_i);
-    assert(alloc_extent_i > 1);
+    for (std::size_t i = 0; i < rank; ++i) {
+      slinky::dim& dim_i = this->dims[i];
+      if (dim_i.stride() != dim::auto_stride) continue;
 
-    span<const init_stride_dim> known_dims{dims, dims_end};
-    if (is_stride_ok(elem_size, alloc_extent_i, known_dims, overflow)) {
-      // This dimension can have stride elem_size, no other stride could be better.
-      dim_i.set_stride(elem_size);
-      learn_dim(elem_size, alloc_extent_i);
-      continue;
-    }
+      const index_t alloc_extent_i = alloc_extent(dim_i);
+      assert(alloc_extent_i > 1);
 
-    // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
-    for (const init_stride_dim& dim_j : known_dims) {
-      index_t padded_candidate = 0;
-      overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
-      index_t candidate = padded_candidate & ~(alignment - 1);
-
-      if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
-        dim_i.set_stride(candidate);
-        learn_dim(candidate, alloc_extent_i);
-        // The dims are sorted, so no subsequent candidate will be better.
-        break;
+      if (stride != elem_size) {
+        index_t padded_stride = 0;
+        overflow = overflow || add_with_overflow(stride, alignment - 1, padded_stride);
+        stride = padded_stride & ~(alignment - 1);
       }
+      dim_i.set_stride(stride);
+
+      index_t dim_stride = 0;
+      overflow = overflow || mul_with_overflow(stride, alloc_extent_i, dim_stride);
+      // dim_stride - stride cannot overflow if the above multiplication did not overflow.
+      overflow = overflow || add_with_overflow(flat_max, dim_stride - stride, flat_max);
+      stride = dim_stride;
     }
-    assert(dim_i.stride() != dim::auto_stride);
+  } else {
+    // An unknown stride might be assigned to fill a "hole" in the buffer.
+    for (std::size_t i = 0; i < rank; ++i) {
+      slinky::dim& dim_i = this->dims[i];
+      if (dim_i.stride() != dim::auto_stride) continue;
+
+      const index_t alloc_extent_i = alloc_extent(dim_i);
+      assert(alloc_extent_i > 1);
+
+      span<const init_stride_dim> known_dims{dims, dims_end};
+      if (is_stride_ok(elem_size, alloc_extent_i, known_dims, overflow)) {
+        // This dimension can have stride elem_size, no other stride could be better.
+        dim_i.set_stride(elem_size);
+        learn_dim(elem_size, alloc_extent_i);
+        continue;
+      }
+
+      // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
+      for (const init_stride_dim& dim_j : known_dims) {
+        index_t padded_candidate = 0;
+        overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
+        index_t candidate = padded_candidate & ~(alignment - 1);
+
+        if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
+          dim_i.set_stride(candidate);
+          learn_dim(candidate, alloc_extent_i);
+          // The dims are sorted, so no subsequent candidate will be better.
+          break;
+        }
+      }
+      assert(dim_i.stride() != dim::auto_stride);
+    }
   }
 
   index_t size = 0;
@@ -430,33 +466,38 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
   internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
-  raw_buffer src_opt = src;
-  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
-  internal::copy_small_n(src.dims, src.rank, src_opt.dims);
+  if (src.rank > 0) {
+    raw_buffer src_opt = src;
+    src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
+    internal::copy_small_n(src.dims, src.rank, src_opt.dims);
 
-  // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
-  if (src_opt.rank > 0 && pad.base) {
-    assert(dst_opt.elem_size == pad.elem_size);
+    if (pad.base) {
+      assert(dst_opt.elem_size == pad.elem_size);
 
-    raw_buffer pad_opt = pad;
-    pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
-    internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
+      raw_buffer pad_opt = pad;
+      pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
+      internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
 
-    optimize_dims(dst_opt, src_opt, pad_opt);
+      optimize_dims(dst_opt, src_opt, pad_opt);
 
-    // Implement the padding in all but the first dimension.
-    pad_impl(src_opt, dst_opt, pad_opt);
-    if (src_opt.base == dst_opt.base) {
-      // This is an in-place padded copy, we're done.
-      return;
+      // Implement the padding in all but the first dimension.
+      pad_impl(src_opt, dst_opt, pad_opt);
+      if (src_opt.base == dst_opt.base) {
+        // This is an in-place padded copy, we're done.
+        return;
+      }
+    } else {
+      optimize_dims(dst_opt, src_opt);
     }
+    copy_impl(src_opt, dst_opt);
   } else {
-    optimize_dims(dst_opt, src_opt);
+    // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
+    optimize_dims(dst_opt);
+    copy_impl(const_cast<raw_buffer&>(src), dst_opt);
   }
-  copy_impl(src_opt, dst_opt);
 }
 
-void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
+SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
   assert(dst.elem_size == pad.elem_size);
   if (dst.rank == 0) {
     return;

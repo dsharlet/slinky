@@ -78,8 +78,7 @@ public:
       case buffer_field::stride:
       case buffer_field::fold_factor: deps->buffer_dims = true; break;
       case buffer_field::rank:
-      case buffer_field::elem_size:
-      case buffer_field::size_bytes: deps->var = true; break;
+      case buffer_field::elem_size: deps->var = true; break;
       }
     }
   }
@@ -99,6 +98,9 @@ public:
         if (op->args[i].defined()) op->args[i].accept(this);
       }
     } else {
+      if (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::validate_buffer) {
+        is_pure = false;
+      }
       recursive_node_visitor::visit(op);
     }
   }
@@ -448,6 +450,7 @@ public:
     case intrinsic::and_then:
     case intrinsic::or_else:
     case intrinsic::buffer_at:
+    case intrinsic::buffer_size_bytes:
     case intrinsic::validate_buffer: break;
     };
 
