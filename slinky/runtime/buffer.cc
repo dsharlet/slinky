@@ -203,19 +203,19 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
 
   for (std::size_t i = 0; i < rank; ++i) {
     slinky::dim& dim_i = this->dims[i];
-    if (dim_i.stride() == 0) continue;
+    index_t stride_i = dim_i.stride();
+    if (stride_i == 0) continue;
 
     index_t alloc_extent_i = alloc_extent(dim_i);
     if (alloc_extent_i <= 1) {
       // The buffer is empty or has extent 1, we don't care about the stride.
-      if (dim_i.stride() == dim::auto_stride) dim_i.set_stride(elem_size);
+      if (stride_i == dim::auto_stride) dim_i.set_stride(elem_size);
     } else if (dim_i.stride() != dim::auto_stride) {
-      index_t stride_val = dim_i.stride();
-      if (stride_val == std::numeric_limits<index_t>::min()) {
-        overflow = true;
-        stride_val = 0;
+      if (stride_i < 0) {
+	overflow |= stride_i == std::numeric_limits<index_t>::min();
+	stride_i = -stride_i;
       }
-      learn_dim(std::abs(stride_val), alloc_extent_i);
+      learn_dim(stride_i, alloc_extent_i);
     }
   }
 
