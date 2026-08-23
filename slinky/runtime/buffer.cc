@@ -135,8 +135,6 @@ struct init_stride_dim {
 
   init_stride_dim() : stride(0), dim_stride(0) {}
   init_stride_dim(index_t stride, index_t dim_stride) : stride(stride), dim_stride(dim_stride) {}
-
-  bool operator<(const init_stride_dim& r) const { return dim_stride < r.dim_stride; }
 };
 
 SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims, bool& overflow) {
@@ -174,13 +172,15 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
     index_t dim_stride = 0;
     overflow = overflow || mul_with_overflow(stride, extent, dim_stride);
 
-    init_stride_dim d(stride, dim_stride);
-    // d.dim_stride - d.stride cannot overflow if the above multiplication did not overflow.
-    overflow = overflow || add_with_overflow(flat_max, d.dim_stride - d.stride, flat_max);
+    // dim_stride - stride cannot overflow if the above multiplication did not overflow.
+    overflow = overflow || add_with_overflow(flat_max, dim_stride - stride, flat_max);
 
-    init_stride_dim* at = std::lower_bound(dims, dims_end, d);
-    const bool merge_prev = at > dims && (at - 1)->dim_stride == d.stride;
-    const bool merge_next = at < dims_end && d.dim_stride == at->stride;
+    init_stride_dim* at = dims;
+    while (at < dims_end && at->dim_stride < dim_stride) {
+      ++at;
+    }
+    const bool merge_prev = at > dims && (at - 1)->dim_stride == stride;
+    const bool merge_next = at < dims_end && dim_stride == at->stride;
 
     if (merge_prev && merge_next) {
       // This new dimension can be fused with both the previous and next dimensions.
@@ -189,20 +189,18 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       --dims_end;
     } else if (merge_prev) {
       // This new dimension can be fused with the previous dimension.
-      (at - 1)->dim_stride = d.dim_stride;
+      (at - 1)->dim_stride = dim_stride;
     } else if (merge_next) {
       // This new dimension can be fused with the next dimension.
-      at->stride = d.stride;
+      at->stride = stride;
     } else {
       // This new dimension can't be fused with any existing dimension.
       internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
-      *at = d;
+      *at = {stride, dim_stride};
       ++dims_end;
     }
   };
 
-  std::size_t unknown_begin = rank;
-  std::size_t unknown_end = 0;
   for (std::size_t i = 0; i < rank; ++i) {
     slinky::dim& dim_i = this->dims[i];
     if (dim_i.stride() == 0) continue;
@@ -218,10 +216,6 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
         stride_val = 0;
       }
       learn_dim(std::abs(stride_val), alloc_extent_i);
-    } else {
-      // Track the range of dimensions we need to find the stride of.
-      unknown_begin = std::min(unknown_begin, i);
-      unknown_end = i + 1;
     }
   }
 
@@ -229,7 +223,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
     // All unknown strides can be contiguously assigned.
     index_t stride = dims->dim_stride;
 
-    for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
+    for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim_i = this->dims[i];
       if (dim_i.stride() != dim::auto_stride) continue;
 
@@ -251,7 +245,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
     }
   } else {
     // An unknown stride might be assigned to fill a "hole" in the buffer.
-    for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
+    for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim_i = this->dims[i];
       if (dim_i.stride() != dim::auto_stride) continue;
 
