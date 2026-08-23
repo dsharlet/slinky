@@ -161,7 +161,7 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_
 
 }  // namespace
 
-std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
+SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   // Initialize one past the end of dims to a sentinel value.
@@ -507,7 +507,7 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   }
 }
 
-void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
+SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
   assert(dst.elem_size == pad.elem_size);
   if (dst.rank == 0) {
     return;
