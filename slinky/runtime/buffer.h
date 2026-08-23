@@ -86,7 +86,7 @@ public:
   index_t max() const { return max_; }
   index_t begin() const { return min_; }
   index_t end() const { return max_ + 1; }
-  index_t extent() const { return end() > begin() ? end() - begin() : 0; }
+  index_t extent() const { return max_ >= min_ ? max_ - min_ + 1 : 0; }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
   bool empty() const { return max_ < min_; }
