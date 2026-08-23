@@ -175,9 +175,8 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
     overflow = overflow || mul_with_overflow(stride, extent, dim_stride);
 
     init_stride_dim d(stride, dim_stride);
-    index_t diff;
-    overflow = overflow || sub_with_overflow(d.dim_stride, d.stride, diff);
-    overflow = overflow || add_with_overflow(flat_max, diff, flat_max);
+    // d.dim_stride - d.stride cannot overflow if the above multiplication did not overflow.
+    overflow = overflow || add_with_overflow(flat_max, d.dim_stride - d.stride, flat_max);
 
     init_stride_dim* at = std::lower_bound(dims, dims_end, d);
     const bool merge_prev = at > dims && (at - 1)->dim_stride == d.stride;
@@ -246,9 +245,8 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
 
       index_t dim_stride = 0;
       overflow = overflow || mul_with_overflow(stride, alloc_extent_i, dim_stride);
-      index_t diff = 0;
-      overflow = overflow || sub_with_overflow(dim_stride, stride, diff);
-      overflow = overflow || add_with_overflow(flat_max, diff, flat_max);
+      // dim_stride - stride cannot overflow if the above multiplication did not overflow.
+      overflow = overflow || add_with_overflow(flat_max, dim_stride - stride, flat_max);
       stride = dim_stride;
     }
   } else {
