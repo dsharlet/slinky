@@ -11,6 +11,7 @@
 #include <optional>
 
 #include "slinky/base/test/seeded_test.h"
+#include "slinky/runtime/print.h"
 
 namespace slinky {
 
@@ -815,8 +816,8 @@ void test_for_each_contiguous_slice_add(Rng& rng) {
         }
       },
       a, b);
-  for_each_index(dst,
-      [&](const auto i) { ASSERT_EQ(dst(i), add_sat<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
+  for_each_index(
+      dst, [&](const auto i) { ASSERT_EQ(dst(i), add_sat<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
@@ -950,8 +951,7 @@ TEST(buffer, for_each_element_fuzz) {
       buf.allocate();
     }
     for_each_element([](const void*, const void*, const void*) {}, bufs[0], bufs[1], bufs[2]);
-    for_each_contiguous_slice(
-        bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
+    for_each_contiguous_slice(bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
   }
 }
 
@@ -1030,9 +1030,137 @@ TEST(buffer, copy_empty_src) {
   }
 }
 
-TEST(can_fuse, empty) { ASSERT_FALSE(can_fuse(dim{0, -1, 0}, dim::broadcast())); }
-TEST(can_fuse, non_broadcast_extent_1) { ASSERT_TRUE(can_fuse(dim{0, 3, 1}, dim{0, 0, 4, dim::unfolded})); }
-TEST(can_fuse, broadcast_extent_1) { ASSERT_FALSE(can_fuse(dim{0, 3, 1}, dim{0, 0, 0, dim::unfolded})); }
+TEST(can_fuse, empty) {
+  // We only care that if we do fuse an empty dimension, that the result is empty.
+  std::pair<dim, dim> empty_cases[] = {
+      {dim{0, -1, 0}, dim::broadcast()},
+      {dim::broadcast(), dim{0, -1, 0}},
+      {dim{0, -1, 0}, dim{0, -1, 0}},
+      {dim{0, -1, 1}, dim{0, 3, 1}},
+      {dim{0, 3, 1}, dim{0, -1, 4}},
+  };
+  for (const auto& [d0, d1] : empty_cases) {
+    if (can_fuse(d0, d1)) {
+      EXPECT_TRUE(fuse(d0, d1).empty());
+    }
+  }
+}
+
+TEST(can_fuse, contiguous_dense) {
+  // 1D to 2D contiguous dense dimensions.
+  EXPECT_TRUE(can_fuse(dim{0, 9, 1}, dim{0, 4, 10}));
+  EXPECT_TRUE(can_fuse(dim{0, 9, 2}, dim{0, 4, 20}));
+
+  // Non-contiguous stride mismatch.
+  EXPECT_FALSE(can_fuse(dim{0, 9, 1}, dim{0, 4, 11}));
+  EXPECT_FALSE(can_fuse(dim{0, 9, 1}, dim{0, 4, 9}));
+  EXPECT_FALSE(can_fuse(dim{0, 9, 2}, dim{0, 4, 10}));
+}
+
+TEST(can_fuse, extent_1) {
+  // Outer dimension extent 1: any stride matches since outer takes only 1 index.
+  EXPECT_TRUE(can_fuse(dim{0, 9, 1}, dim{0, 0, 100}));
+  EXPECT_TRUE(can_fuse(dim{0, 9, 1}, dim{0, 0, 0}));
+  EXPECT_TRUE(can_fuse(dim{0, 9, 2}, dim{0, 0, 5}));
+
+  // Inner dimension extent 1: outer stride must match inner.stride * 1.
+  EXPECT_TRUE(can_fuse(dim{0, 0, 10}, dim{0, 4, 10}));
+  EXPECT_FALSE(can_fuse(dim{0, 0, 10}, dim{0, 4, 20}));
+
+  // Both extent 1.
+  EXPECT_TRUE(can_fuse(dim{0, 0, 5}, dim{0, 0, 100}));
+}
+
+TEST(can_fuse, broadcast) {
+  // Both broadcast.
+  EXPECT_TRUE(can_fuse(dim{0, 9, 0}, dim{0, 4, 0}));
+
+  // Inner broadcast, outer non-broadcast.
+  EXPECT_FALSE(can_fuse(dim{0, 9, 0}, dim{0, 4, 5}));
+
+  // Outer broadcast (extent > 1), inner non-broadcast.
+  EXPECT_FALSE(can_fuse(dim{0, 9, 1}, dim{0, 4, 0}));
+
+  // dim::broadcast() helper (extent 1, stride 0).
+  EXPECT_TRUE(can_fuse(dim{0, 9, 1}, dim::broadcast()));
+  EXPECT_FALSE(can_fuse(dim::broadcast(), dim{0, 9, 1}));
+  EXPECT_TRUE(can_fuse(dim::broadcast(), dim::broadcast()));
+}
+
+TEST(can_fuse, folded) {
+  // Folded outer dimension contiguous.
+  EXPECT_TRUE(can_fuse(dim{0, 9, 1}, dim{0, 9, 10, /*fold_factor=*/5}));
+  EXPECT_FALSE(can_fuse(dim{0, 9, 1}, dim{0, 9, 15, /*fold_factor=*/5}));
+
+  // Folded outer dimension with non-zero offset alignment.
+  EXPECT_FALSE(can_fuse(dim{0, 9, 1}, dim{2, 2, 5, /*fold_factor=*/3}));
+  EXPECT_TRUE(can_fuse(dim{0, 9, 1}, dim{2, 2, 10, /*fold_factor=*/3}));
+
+  // Folded inner dimension is not supported.
+  EXPECT_FALSE(can_fuse(dim{0, 9, 1, /*fold_factor=*/5}, dim{0, 4, 10}));
+  EXPECT_FALSE(can_fuse(dim{0, 2, 1, /*fold_factor=*/5}, dim{0, 4, 3}));
+}
+
+TEST(can_fuse, non_zero_bounds) {
+  // Positive non-zero bounds.
+  EXPECT_TRUE(can_fuse(dim{10, 19, 3}, dim{5, 8, 30}));
+  EXPECT_FALSE(can_fuse(dim{10, 19, 3}, dim{5, 8, 25}));
+
+  // Negative bounds.
+  EXPECT_TRUE(can_fuse(dim{-5, 4, 2}, dim{-3, 3, 20}));
+  EXPECT_FALSE(can_fuse(dim{-5, 4, 2}, dim{-3, 3, 15}));
+}
+
+TEST(can_fuse, negative_strides) {
+  EXPECT_TRUE(can_fuse(dim{0, 9, -2}, dim{0, 4, -20}));
+  EXPECT_FALSE(can_fuse(dim{0, 9, -2}, dim{0, 4, 20}));
+  EXPECT_FALSE(can_fuse(dim{0, 9, 2}, dim{0, 4, -20}));
+}
+
+constexpr int max_stride = 3;
+
+bool can_fuse_oracle(const dim& d0, const dim& d1) {
+  dim fused;
+  fused.set_range(d1.begin() * d0.extent(), d1.end() * d0.extent());
+  fused.set_stride(d0.stride());
+  if (d1.fold_factor() != dim::unfolded) {
+    fused.set_fold_factor(d1.fold_factor() * d0.extent());
+  }
+
+  for (int i = d0.min(); i <= d0.max(); ++i) {
+    for (int j = d1.min(); j <= d1.max(); ++j) {
+      int fused_i = (j - d1.min()) * d0.extent() + i - d0.min() + fused.min();
+      if (fused.flat_offset_bytes(fused_i) != d0.flat_offset_bytes(i) + d1.flat_offset_bytes(j)) return false;
+    }
+  }
+  return true;
+}
+
+TEST(can_fuse, all) {
+  const int all_bounds[] = {0, 1, 2, 3, 4};
+  const int all_strides[] = {0, 1, 2, 3, 4};
+  for (int min0 : all_bounds) {
+    for (int max0 : all_bounds) {
+      if (max0 < min0) continue;
+      for (int stride0 : all_strides) {
+        for (int min1 : all_bounds) {
+          for (int max1 : all_bounds) {
+            if (max1 < min1) continue;
+            for (int stride1 : all_strides) {
+              dim d0(min0, max0, stride0);
+              dim d1(min1, max1, stride1);
+              if (can_fuse_oracle(d0, d1)) {
+                ASSERT_TRUE(can_fuse(d0, d1)) << "d0=" << d0 << ", d1=" << d1;
+              } else {
+                ASSERT_FALSE(can_fuse(d0, d1)) << "d0=" << d0 << ", d1=" << d1;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 TEST(fuse_contiguous_dims, fuse0) {
   buffer<int, 1> a({}), b({});
@@ -1118,15 +1246,13 @@ TEST(fuse_contiguous_dims, fuse_broadcasted) {
   b.mutable_dim(1) = dim::broadcast();
   b.mutable_dim(2) = dim::broadcast();
 
-  ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
-  ASSERT_EQ(a.rank, 2);
-  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(fuse_contiguous_dims(a, b), 2);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
   ASSERT_EQ(a.dim(0).extent(), 6);
   ASSERT_EQ(a.dim(0).stride(), 4);
-  ASSERT_EQ(a.dim(1).stride(), 0);
   ASSERT_EQ(b.dim(0).extent(), 6);
   ASSERT_EQ(b.dim(0).stride(), 4);
-  ASSERT_EQ(b.dim(1).stride(), 0);
 }
 
 TEST(fuse_contiguous_dims, fuse_bounded_and_unbounded_broadcasts) {
@@ -1141,8 +1267,8 @@ TEST(fuse_contiguous_dims, fuse_bounded_and_unbounded_broadcasts) {
   ASSERT_EQ(fuse_contiguous_dims(a, b), 1);
   ASSERT_EQ(a.rank, 1);
   ASSERT_EQ(b.rank, 1);
-  ASSERT_EQ(a.dim(0), dim::broadcast());
-  ASSERT_EQ(b.dim(0), dim::broadcast());
+  ASSERT_EQ(a.dim(0), dim(0, 5, 0));
+  ASSERT_EQ(b.dim(0), dim(0, 5, 0));
 }
 
 TEST(fuse_contiguous_dims, fuse_implicit_broadcasted) {
