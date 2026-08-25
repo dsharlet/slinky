@@ -891,36 +891,22 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context&
 }
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context& ctx) {
-  if (op->sym == op->src && op->is_truncate()) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
-    assert(src_buf);
+  const raw_buffer* src_buf = reinterpret_cast<const raw_buffer*>(ctx.lookup(op->src));
+  assert(src_buf);
 
-    // In-place truncate, all we need to do is set the rank (and restore it).
-    std::size_t old_rank = src_buf->rank;
-    src_buf->rank = op->dims.size();
-    index_t result = eval(op->body, ctx);
-    src_buf->rank = old_rank;
-    return result;
-  } else {
-    const raw_buffer* src_buf = reinterpret_cast<const raw_buffer*>(ctx.lookup(op->src));
-    assert(src_buf);
+  // Make the transposed dims.
+  raw_buffer sym_buf;
+  sym_buf.base = src_buf->base;
+  sym_buf.elem_size = src_buf->elem_size;
+  sym_buf.rank = op->dims.size();
+  sym_buf.dims = SLINKY_ALLOCA(dim, op->dims.size());
 
-    // Make the transposed dims.
-    dim* dims = SLINKY_ALLOCA(dim, op->dims.size());
-    for (std::size_t i = 0; i < op->dims.size(); ++i) {
-      dims[i] = src_buf->dim(op->dims[i]);
-    }
-
-    raw_buffer sym_buf;
-    sym_buf.base = src_buf->base;
-    sym_buf.elem_size = src_buf->elem_size;
-    sym_buf.rank = op->dims.size();
-    sym_buf.dims = dims;
-
-    remove_trailing_broadcasts(sym_buf);
-
-    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  for (std::size_t i = 0; i < op->dims.size(); ++i) {
+    sym_buf.dims[i] = src_buf->dim(op->dims[i]);
   }
+  remove_trailing_broadcasts(sym_buf);
+
+  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {
