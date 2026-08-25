@@ -747,29 +747,24 @@ bool validate_buffer(const raw_buffer& buf);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (inner.empty()) return false;
-  if (outer.min() == outer.max() && outer.stride() != 0) return true;
+  if (inner.empty() || inner.fold_factor() > 1) return false;
 
-  index_t next_stride = inner.stride() * (inner.max() - inner.min() + 1);
-  if (next_stride != outer.stride()) return false;
+  const index_t next_stride = inner.stride() * inner.extent();
+  if (next_stride == outer.stride()) return true;
 
-  return next_stride == 0 || inner.fold_factor() == dim::unfolded;
+  return outer.min() == outer.max() && outer.fold_factor() <= 1;
 }
 
 // Fuse two dimensions of a buffer.
 inline slinky::dim fuse(slinky::dim inner, const slinky::dim& outer) {
   assert(can_fuse(inner, outer));
-  if (outer.is_broadcast()) {
-    return outer;
-  } else {
-    const index_t inner_extent = inner.extent();
-    if (outer.fold_factor() != dim::unfolded) {
-      assert(!inner.is_folded());
-      inner.set_fold_factor(outer.fold_factor() * inner_extent);
-    }
-    inner.set_range(outer.begin() * inner_extent, outer.end() * inner_extent);
-    return inner;
+  const index_t inner_extent = inner.extent();
+  if (outer.fold_factor() > 0) {
+    assert(!inner.is_folded());
+    inner.set_fold_factor(outer.fold_factor() * inner_extent);
   }
+  inner.set_range(outer.begin() * inner_extent, outer.end() * inner_extent);
+  return inner;
 }
 
 enum class fuse_type {
@@ -816,37 +811,34 @@ namespace internal {
 
 inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.max() == b.max(); }
 
-// Returns true if all buffers have the same bounds in dimension d.
-inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
-template <typename... Bufs>
-bool same_bounds(std::size_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
-  return (buf0.rank <= d || buf1.rank <= d || same_bounds(buf0.dims[d], buf1.dims[d])) && same_bounds(d, buf0, bufs...);
-}
-
-// Returns true if two dimensions of all buffers can be fused.
-inline bool can_fuse(std::ptrdiff_t, std::ptrdiff_t) { return true; }
-template <typename... Bufs>
-bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf, const Bufs&... bufs) {
-  return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
+inline bool can_fuse(
+    std::size_t inner, std::size_t outer, const dim& inner_dim, const dim& outer_dim, const raw_buffer& b) {
+  if (b.rank <= inner) return true;
+  if (!same_bounds(b.dims[inner], inner_dim)) return false;
+  if (inner_dim.max() > inner_dim.min()) {
+    if (b.rank <= outer || !same_bounds(b.dims[outer], outer_dim)) return false;
+  }
+  return can_fuse(b.dims[inner], b.dim(outer));
 }
 
 // Fuse two dimensions of all buffers.
-template <fuse_type type>
-void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer) {}
 template <fuse_type type, typename... Bufs>
-void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
+SLINKY_INLINE void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   slinky::fuse<type>(inner, outer, buf);
-  fuse<type>(inner, outer, bufs...);
+  (slinky::fuse<type>(inner, outer, bufs), ...);
 }
 
 template <typename... Bufs>
 SLINKY_INLINE bool attempt_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
-  if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
-    fuse<fuse_type::remove>(inner, outer, buf, bufs...);
-    return true;
-  } else {
-    return false;
-  }
+  assert(inner >= 0);
+  assert(outer > inner);
+  assert(outer < static_cast<std::ptrdiff_t>(buf.rank));
+  const dim& inner_dim = buf.dims[inner];
+  const dim& outer_dim = buf.dims[outer];
+  if (!can_fuse(inner_dim, outer_dim)) return false;
+  if (!(can_fuse(inner, outer, inner_dim, outer_dim, bufs) && ...)) return false;
+  fuse<fuse_type::remove>(inner, outer, buf, bufs...);
+  return true;
 }
 
 template <typename... Bufs>
@@ -863,7 +855,7 @@ inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap
 template <typename... Bufs>
 void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
   swap_dims(i, j, buf);
-  swap_dims(i, j, bufs...);
+  (swap_dims(i, j, bufs), ...);
 }
 
 template <typename... Args>
