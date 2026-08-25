@@ -184,7 +184,8 @@ inline index_t eval(const variable* op, eval_context& ctx) {
 inline index_t eval(const constant* op) { return op->value; }
 inline index_t eval(const constant_buffer* op) { return reinterpret_cast<index_t>(op->value.get()); }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let* op, eval_context& ctx) {
+template <typename T>
+SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx) {
   // This is a bit ugly but we really want to avoid heap allocations here.
   const size_t size = op->lets.size();
   index_t* old_values = SLINKY_ALLOCA(index_t, size);
@@ -204,6 +205,10 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let* op, eval_context& ctx) 
     ctx.set(op->lets[i].first, old_values[i]);
   }
   return result;
+}
+
+inline index_t eval(const let* op, eval_context& ctx) {
+  return eval_let(op, ctx);
 }
 
 inline index_t eval(const logical_not* op, eval_context& ctx) { return eval(op->a, ctx) == 0; }
@@ -415,27 +420,8 @@ SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   }
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let_stmt* op, eval_context& ctx) {
-  // This is a bit ugly but we really want to avoid heap allocations here.
-  const size_t size = op->lets.size();
-  index_t* old_values = SLINKY_ALLOCA(index_t, size);
-
-  std::size_t context_size = 0;
-  for (const auto& let : op->lets) {
-    context_size = std::max(context_size, let.first.id);
-  }
-  ctx.reserve(context_size + 1);
-
-  for (size_t i = 0; i < size; ++i) {
-    const auto& let = op->lets[i];
-    old_values[i] = ctx.set(let.first, eval(let.second, ctx));
-  }
-  index_t result = eval(op->body, ctx);
-  for (size_t i = 0; i < size; ++i) {
-    const auto& let = op->lets[i];
-    ctx.set(let.first, old_values[i]);
-  }
-  return result;
+inline index_t eval(const let_stmt* op, eval_context& ctx) {
+  return eval_let(op, ctx);
 }
 
 inline index_t eval(const block* op, eval_context& ctx) {
