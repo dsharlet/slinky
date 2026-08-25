@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <numeric>
 #include <optional>
+#include <utility>
 
 #include "slinky/base/test/seeded_test.h"
 #include "slinky/runtime/print.h"
@@ -1116,8 +1117,6 @@ TEST(can_fuse, negative_strides) {
   EXPECT_FALSE(can_fuse(dim{0, 9, -2}, dim{0, 4, 20}));
   EXPECT_FALSE(can_fuse(dim{0, 9, 2}, dim{0, 4, -20}));
 }
-
-constexpr int max_stride = 3;
 
 bool can_fuse_oracle(const dim& d0, const dim& d1) {
   dim fused;

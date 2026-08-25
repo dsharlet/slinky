@@ -207,7 +207,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx
   return result;
 }
 
-inline index_t eval(const let* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) {
   return eval_let(op, ctx);
 }
 
@@ -420,7 +420,7 @@ SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   }
 }
 
-inline index_t eval(const let_stmt* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx) {
   return eval_let(op, ctx);
 }
 
