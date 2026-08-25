@@ -184,7 +184,8 @@ inline index_t eval(const variable* op, eval_context& ctx) {
 inline index_t eval(const constant* op) { return op->value; }
 inline index_t eval(const constant_buffer* op) { return reinterpret_cast<index_t>(op->value.get()); }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let* op, eval_context& ctx) {
+template <typename T>
+SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx) {
   // This is a bit ugly but we really want to avoid heap allocations here.
   const size_t size = op->lets.size();
   index_t* old_values = SLINKY_ALLOCA(index_t, size);
@@ -204,6 +205,10 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let* op, eval_context& ctx) 
     ctx.set(op->lets[i].first, old_values[i]);
   }
   return result;
+}
+
+SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) {
+  return eval_let(op, ctx);
 }
 
 inline index_t eval(const logical_not* op, eval_context& ctx) { return eval(op->a, ctx) == 0; }
@@ -415,27 +420,8 @@ SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   }
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const let_stmt* op, eval_context& ctx) {
-  // This is a bit ugly but we really want to avoid heap allocations here.
-  const size_t size = op->lets.size();
-  index_t* old_values = SLINKY_ALLOCA(index_t, size);
-
-  std::size_t context_size = 0;
-  for (const auto& let : op->lets) {
-    context_size = std::max(context_size, let.first.id);
-  }
-  ctx.reserve(context_size + 1);
-
-  for (size_t i = 0; i < size; ++i) {
-    const auto& let = op->lets[i];
-    old_values[i] = ctx.set(let.first, eval(let.second, ctx));
-  }
-  index_t result = eval(op->body, ctx);
-  for (size_t i = 0; i < size; ++i) {
-    const auto& let = op->lets[i];
-    ctx.set(let.first, old_values[i]);
-  }
-  return result;
+SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx) {
+  return eval_let(op, ctx);
 }
 
 inline index_t eval(const block* op, eval_context& ctx) {
@@ -748,8 +734,11 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_shadowed(const crop_buffer* op, ev
     old_bounds[d].min = old_min;
     old_bounds[d].max = old_max;
 
-    interval bounds = eval(op->bounds[d], {old_min, old_max}, ctx);
-    buffer->crop(d, bounds.min, bounds.max);
+    const interval_expr& bounds_d = op->bounds[d];
+    if (bounds_d.min.defined() || bounds_d.max.defined()) {
+      interval bounds = eval(bounds_d, {old_min, old_max}, ctx);
+      buffer->crop(d, bounds.min, bounds.max);
+    }
   }
 
   index_t result = eval(op->body, ctx);
@@ -772,8 +761,12 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_buffer* op, 
   // Dims beyond rank are broadcasts; cropping them is a no-op.
   for (std::size_t d = 0; d < std::min(op->bounds.size(), src_buf->rank); ++d) {
     const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dims[d];
-    interval bounds = eval(op->bounds[d], {dim.min(), dim.max()}, ctx);
-    sym_buf.crop(d, bounds.min, bounds.max);
+
+    const interval_expr& bounds_d = op->bounds[d];
+    if (bounds_d.min.defined() || bounds_d.max.defined()) {
+      interval bounds = eval(bounds_d, {dim.min(), dim.max()}, ctx);
+      sym_buf.crop(d, bounds.min, bounds.max);
+    }
   }
 
   return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
@@ -891,36 +884,22 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context&
 }
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context& ctx) {
-  if (op->sym == op->src && op->is_truncate()) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
-    assert(src_buf);
+  const raw_buffer* src_buf = reinterpret_cast<const raw_buffer*>(ctx.lookup(op->src));
+  assert(src_buf);
 
-    // In-place truncate, all we need to do is set the rank (and restore it).
-    std::size_t old_rank = src_buf->rank;
-    src_buf->rank = op->dims.size();
-    index_t result = eval(op->body, ctx);
-    src_buf->rank = old_rank;
-    return result;
-  } else {
-    const raw_buffer* src_buf = reinterpret_cast<const raw_buffer*>(ctx.lookup(op->src));
-    assert(src_buf);
+  // Make the transposed dims.
+  raw_buffer sym_buf;
+  sym_buf.base = src_buf->base;
+  sym_buf.elem_size = src_buf->elem_size;
+  sym_buf.rank = op->dims.size();
+  sym_buf.dims = SLINKY_ALLOCA(dim, op->dims.size());
 
-    // Make the transposed dims.
-    dim* dims = SLINKY_ALLOCA(dim, op->dims.size());
-    for (std::size_t i = 0; i < op->dims.size(); ++i) {
-      dims[i] = src_buf->dim(op->dims[i]);
-    }
-
-    raw_buffer sym_buf;
-    sym_buf.base = src_buf->base;
-    sym_buf.elem_size = src_buf->elem_size;
-    sym_buf.rank = op->dims.size();
-    sym_buf.dims = dims;
-
-    remove_trailing_broadcasts(sym_buf);
-
-    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  for (std::size_t i = 0; i < op->dims.size(); ++i) {
+    sym_buf.dims[i] = src_buf->dim(op->dims[i]);
   }
+  remove_trailing_broadcasts(sym_buf);
+
+  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {

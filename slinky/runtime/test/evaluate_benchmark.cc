@@ -105,9 +105,9 @@ BENCHMARK(BM_block)->RangeMultiplier(2)->Range(2, 16);
 
 void BM_crop_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = crop_dim::make(dst, state.range(0) ? src : dst, 0, {1, 10}, make_call_counter(calls));
+  stmt c = crop_dim::make(state.range(0) ? src : dst, src, 0, {1, 10}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
+  stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
     evaluate(body);
@@ -120,9 +120,9 @@ BENCHMARK(BM_crop_dim)->DenseRange(0, 1);
 
 void BM_crop_buffer(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = crop_buffer::make(dst, state.range(0) ? src : dst, {{1, 10}, {}, {2, 20}}, make_call_counter(calls));
+  stmt c = crop_buffer::make(state.range(0) ? src : dst, src, {{1, 10}, {}, {2, 20}}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
+  stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
     evaluate(body);
@@ -135,9 +135,9 @@ BENCHMARK(BM_crop_buffer)->DenseRange(0, 1);
 
 void BM_slice_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = slice_dim::make(dst, state.range(0) ? src : dst, 1, 10, make_call_counter(calls));
+  stmt c = slice_dim::make(state.range(0) ? src : dst, src, 1, 10, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
+  stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
     evaluate(body);
@@ -150,9 +150,9 @@ BENCHMARK(BM_slice_dim)->DenseRange(0, 1);
 
 void BM_slice_buffer(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = slice_buffer::make(dst, state.range(0) ? src : dst, {10, {}, 20}, make_call_counter(calls));
+  stmt c = slice_buffer::make(state.range(0) ? src : dst, src, {10, {}, 20}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
+  stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
     evaluate(body);
@@ -165,9 +165,9 @@ BENCHMARK(BM_slice_buffer)->DenseRange(0, 1);
 
 void BM_transpose(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = transpose::make(dst, state.range(0) ? src : dst, {2, 1, 0}, make_call_counter(calls));
+  stmt c = transpose::make(state.range(0) ? src : dst, src, {0, 1, 2}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
+  stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
     evaluate(body);
