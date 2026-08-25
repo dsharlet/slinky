@@ -748,8 +748,11 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_shadowed(const crop_buffer* op, ev
     old_bounds[d].min = old_min;
     old_bounds[d].max = old_max;
 
-    interval bounds = eval(op->bounds[d], {old_min, old_max}, ctx);
-    buffer->crop(d, bounds.min, bounds.max);
+    const interval_expr& bounds_d = op->bounds[d];
+    if (bounds_d.min.defined() || bounds_d.max.defined()) {
+      interval bounds = eval(bounds_d, {old_min, old_max}, ctx);
+      buffer->crop(d, bounds.min, bounds.max);
+    }
   }
 
   index_t result = eval(op->body, ctx);
@@ -772,8 +775,12 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_buffer* op, 
   // Dims beyond rank are broadcasts; cropping them is a no-op.
   for (std::size_t d = 0; d < std::min(op->bounds.size(), src_buf->rank); ++d) {
     const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dims[d];
-    interval bounds = eval(op->bounds[d], {dim.min(), dim.max()}, ctx);
-    sym_buf.crop(d, bounds.min, bounds.max);
+
+    const interval_expr& bounds_d = op->bounds[d];
+    if (bounds_d.min.defined() || bounds_d.max.defined()) {
+      interval bounds = eval(bounds_d, {dim.min(), dim.max()}, ctx);
+      sym_buf.crop(d, bounds.min, bounds.max);
+    }
   }
 
   return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
