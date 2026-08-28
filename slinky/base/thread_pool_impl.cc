@@ -129,29 +129,27 @@ bool work_on_task(thread_pool_impl::task_impl* t, Args... args) {
 }  // namespace
 
 ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
-  for (auto i = task_queue_.begin(); i != task_queue_.end();) {
+  for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
     ref_count<task_impl>& loop = *i;
     if (loop->all_work_started()) {
       // No more threads can start working on this loop.
-      i = task_queue_.erase(i);
+      worker = -1;
     } else if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
       // Don't run the same loop multiple times on the same thread.
-      ++i;
+      continue;
     } else {
       // We want to work on this loop, find out which worker we will be.
       worker = loop->allocate_worker();
-      if (worker < 0) {
-        // No more threads can start working on this loop.
-        i = task_queue_.erase(i);
-      } else if (worker == 0) {
-        // This is the last worker for this loop.
-        auto result = std::move(loop);
-        i = task_queue_.erase(i);
-        return result;
-      } else {
+      if (worker > 0) {
+        // More threads can still start working on this loop, leave it in the queue.
         return loop;
+      } else {
+        // Either we're the last worker for this loop, or no more threads can start working on it.
       }
     }
+    ref_count<task_impl> result = std::move(loop);
+    task_queue_.erase(i);
+    return result;
   }
   return nullptr;
 }
@@ -167,8 +165,9 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
     if (auto task = dequeue(worker)) {
       l.unlock();
 
-      // Run the task.
-      bool completed = work_on_task(task, worker);
+      // Run the task if we were given a worker index.
+      bool completed = worker >= 0 && work_on_task(task, worker);
+      task = nullptr;
 
       // We did a task, reset the spin counter.
       spins = spin_count;
@@ -195,8 +194,9 @@ void thread_pool_impl::work_until_idle() {
   while (auto task = dequeue(worker)) {
     l.unlock();
 
-    // Run the task.
-    bool completed = work_on_task(task, worker);
+    // Run the task if we were given a worker index.
+    bool completed = worker >= 0 && work_on_task(task, worker);
+    task = nullptr;
 
     l.lock();
 
