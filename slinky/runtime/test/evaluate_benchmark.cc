@@ -76,7 +76,11 @@ BENCHMARK(BM_call);
 
 void BM_let(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  std::vector<std::pair<var, expr>> values = {{y, x}, {z, y}, {w, z}};
+  std::vector<std::pair<var, expr>> values = {
+      {y, constant_buffer::make(raw_buffer::make(1, 1))},
+      {z, constant_buffer::make(raw_buffer::make(1, 1))},
+      {w, constant_buffer::make(raw_buffer::make(1, 1))},
+  };
   values.resize(state.range(0));
   stmt body = make_loop(let_stmt::make(values, make_call_counter(calls)));
 
