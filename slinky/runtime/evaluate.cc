@@ -96,20 +96,57 @@ inline index_t eval(const transpose* op, eval_context& ctx);
 SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx);
 inline index_t eval(const check* op, eval_context& ctx);
 
-// Assume `e` is defined, evaluate it and return the result.
+SLINKY_INLINE index_t eval_buffer_field(index_t value, buffer_field field, int d) {
+  const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
+  switch (field) {
+  case buffer_field::none: return value;
+  case buffer_field::rank: return buf->rank;
+  case buffer_field::elem_size: return buf->elem_size;
+  case buffer_field::min: return buf->dim(d).min();
+  case buffer_field::max: return buf->dim(d).max();
+  case buffer_field::stride: return buf->dim(d).stride();
+  case buffer_field::fold_factor: return buf->dim(d).fold_factor();
+  default: SLINKY_UNREACHABLE << "unkonwn var field " << to_string(field);
+  }
+}
+
 SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
   // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
   // we handle common node types here, and call a non-inlined handler for the less common nodes below.
   switch (e.type()) {
   case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
   case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
-  case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()));
   default: return eval_non_inlined(e, ctx);
   }
 }
 
+// Assume `e` is defined, evaluate it and return the result, optimized assuming that this expression is a buffer field.
+template <buffer_field Field>
+SLINKY_INLINE index_t eval_field(expr_ref e, eval_context& ctx) {
+  switch (e.type()) {
+  case expr_node_type::constant: return static_cast<const constant*>(e.get())->value;
+  case expr_node_type::variable: {
+    const variable* op = static_cast<const variable*>(e.get());
+    index_t value = ctx.lookup(op->sym);
+    if (op->field == buffer_field::none) return value;
+    if (op->field == Field) return eval_buffer_field(value, Field, op->dim);
+    break;
+  }
+  default: break;
+  }
+  return eval_non_inlined(e, ctx);
+}
+
+template <buffer_field Field>
+SLINKY_INLINE index_t eval_field(expr_ref e, index_t def, eval_context& ctx) {
+  return e.defined() ? eval_field<Field>(e, ctx) : def;
+}
+
 SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
   switch (e.type()) {
+  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
+  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
+  case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()));
   case expr_node_type::call: return eval(static_cast<const call*>(e.get()), ctx);
   case expr_node_type::let: return eval(static_cast<const let*>(e.get()), ctx);
   case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()), ctx);
@@ -150,39 +187,36 @@ SLINKY_INLINE index_t eval(expr_ref e, index_t def, eval_context& ctx) {
 }
 
 SLINKY_INLINE interval eval(const interval_expr& x, eval_context& ctx) {
-  index_t min = eval(x.min, ctx);
+  index_t min = eval_field<buffer_field::min>(x.min, ctx);
   if (x.is_point()) {
     return {min, min};
   } else {
-    return {min, eval(x.max, ctx)};
+    return {min, eval_field<buffer_field::max>(x.max, ctx)};
   }
 }
 SLINKY_INLINE interval eval(const interval_expr& x, interval def, eval_context& ctx) {
   if (x.is_point()) {
-    index_t result = eval(x.min, ctx);
+    index_t result = eval_field<buffer_field::min>(x.min, ctx);
     return {result, result};
   } else {
-    return {eval(x.min, def.min, ctx), eval(x.max, def.max, ctx)};
+    return {eval_field<buffer_field::min>(x.min, def.min, ctx), eval_field<buffer_field::max>(x.max, def.max, ctx)};
   }
 }
 
 inline index_t eval(const variable* op, eval_context& ctx) {
-  index_t value = ctx.lookup(op->sym);
-  const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
-  switch (op->field) {
-  case buffer_field::none: return value;
-  case buffer_field::rank: return buf->rank;
-  case buffer_field::elem_size: return buf->elem_size;
-  case buffer_field::min: return buf->dim(op->dim).min();
-  case buffer_field::max: return buf->dim(op->dim).max();
-  case buffer_field::stride: return buf->dim(op->dim).stride();
-  case buffer_field::fold_factor: return buf->dim(op->dim).fold_factor();
-  default: SLINKY_UNREACHABLE << "unkonwn var field " << to_string(op->field);
-  }
+  return eval_buffer_field(ctx.lookup(op->sym), op->field, op->dim);
 }
 
 inline index_t eval(const constant* op) { return op->value; }
 inline index_t eval(const constant_buffer* op) { return reinterpret_cast<index_t>(op->value.get()); }
+
+SLINKY_INLINE index_t eval_let_value(expr_ref e, eval_context& ctx) {
+  // The simplifier should substitute constant and variable let values, so we don't bother with inlining them here.
+  if (e.type() == expr_node_type::constant_buffer) {
+    return reinterpret_cast<index_t>(static_cast<const constant_buffer*>(e.get())->value.get());
+  }
+  return eval_non_inlined(e, ctx);
+}
 
 template <typename T>
 SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx) {
@@ -198,7 +232,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx
 
   for (size_t i = 0; i < size; ++i) {
     const auto& let = op->lets[i];
-    old_values[i] = ctx.set(let.first, eval(let.second, ctx));
+    old_values[i] = ctx.set(let.first, eval_let_value(let.second, ctx));
   }
   index_t result = eval(op->body, ctx);
   for (size_t i = 0; i < size; ++i) {
@@ -207,9 +241,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx
   return result;
 }
 
-SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) {
-  return eval_let(op, ctx);
-}
+SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) { return eval_let(op, ctx); }
 
 inline index_t eval(const logical_not* op, eval_context& ctx) { return eval(op->a, ctx) == 0; }
 
@@ -382,20 +414,28 @@ SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx) {
   }
 }
 
-SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) {
-  // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
-  // we handle common node types here, and call a non-inlined handler for the less common nodes below.
-  switch (op.type()) {
-  case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()), ctx);
-  case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()), ctx);
-  default: return eval_non_inlined(op, ctx);
-  }
+template <typename T>
+SLINKY_INLINE bool eval_if(stmt_ref op, eval_context& ctx, index_t& result) {
+  if (op.type() != T::static_type) return false;
+  result = eval(reinterpret_cast<const T*>(op.get()), ctx);
+  return true;
 }
 
+// evaluate a stmt, inlining the evaluation of `Ts` node types.
+template <typename... Ts>
+SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) {
+  index_t result = 0;
+  if ((eval_if<Ts>(op, ctx, result) || ...)) return result;
+  return eval_non_inlined(op, ctx);
+}
+
+SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) { return eval<call_stmt>(op, ctx); }
+
+template <typename... Ts>
 SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_context& ctx) {
   ctx.reserve(sym.id + 1);
   index_t old_value = ctx.set(sym, value);
-  index_t result = eval(op, ctx);
+  index_t result = eval<Ts...>(op, ctx);
   // ctx might have grown and invalidated the ctx_value reference.
   ctx.set(sym, old_value);
   return result;
@@ -403,6 +443,8 @@ SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_
 
 SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   switch (op.type()) {
+  case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()), ctx);
+  case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()), ctx);
   case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()), ctx);
   case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()), ctx);
   case stmt_node_type::block: return eval(reinterpret_cast<const block*>(op.get()), ctx);
@@ -420,13 +462,11 @@ SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   }
 }
 
-SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx) {
-  return eval_let(op, ctx);
-}
+SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx) { return eval_let(op, ctx); }
 
 inline index_t eval(const block* op, eval_context& ctx) {
   for (const auto& s : op->stmts) {
-    index_t result = eval(s, ctx);
+    index_t result = eval<call_stmt>(s, ctx);
     if (result) return result;
   }
   return 0;
@@ -474,7 +514,7 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
   }
 
   if (n == 1) {
-    return eval_with_value(body, op->sym, bounds.min, ctx);
+    return eval_with_value<block, crop_dim>(body, op->sym, bounds.min, ctx);
   } else {
     ctx.reserve(op->sym.id + 1);
 
@@ -503,7 +543,7 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
 
       context.set(state.sym, i * state.step + state.min);
       // Evaluate the parallel loop body with our copy of the context.
-      index_t result_i = eval(state.body, context);
+      index_t result_i = eval<block, crop_dim>(state.body, context);
       if (result_i != 0) {
         index_t zero = 0;
         state.result.compare_exchange_strong(zero, result_i);
@@ -530,11 +570,11 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   if (step > 0) {
     for (index_t i = bounds.min; result == 0 && i <= bounds.max; i += step) {
       ctx.set(op->sym, i);
-      result = eval(op->body, ctx);
+      result = eval<block, crop_dim>(op->body, ctx);
     }
   } else {
     ctx.set(op->sym, bounds.min);
-    result = eval(op->body, ctx);
+    result = eval<block, crop_dim>(op->body, ctx);
   }
   ctx.set(op->sym, old_value);
   return result;
@@ -613,7 +653,7 @@ SLINKY_NO_INLINE index_t allocate_failed(const allocate* op, eval_context& ctx) 
 // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
 inline index_t eval(const allocate* op, eval_context& ctx) {
   allocated_buffer buffer;
-  buffer.elem_size = eval(op->elem_size, ctx);
+  buffer.elem_size = eval_field<buffer_field::elem_size>(op->elem_size, ctx);
   std::size_t rank = op->dims.size();
   buffer.dims = SLINKY_ALLOCA(dim, rank);
 
@@ -626,8 +666,8 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
     dim& buf_d = buffer.dims[d];
     interval bounds = eval(op_d.bounds, ctx);
     buf_d.set_bounds(bounds.min, bounds.max);
-    buf_d.set_stride(eval(op_d.stride, dim::auto_stride, ctx));
-    buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded, ctx));
+    buf_d.set_stride(eval_field<buffer_field::stride>(op_d.stride, dim::auto_stride, ctx));
+    buf_d.set_fold_factor(eval_field<buffer_field::fold_factor>(op_d.fold_factor, dim::unfolded, ctx));
     if (trailing) {
       if (buf_d.is_broadcast()) {
         buffer.rank = d;
@@ -649,7 +689,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
       buffer.base = SLINKY_ALLOCA(char, *size + alignment - 1);
       buffer.base = align_up(buffer.base, alignment);
       buffer.allocation = nullptr;
-      return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
+      return eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
     } else {
       buffer.allocation = ctx.config->allocate(op->sym, &buffer);
     }
@@ -659,7 +699,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
   if (!buffer.base && buffer.elem_count() > 0) {
     result = allocate_failed(op, ctx);
   } else {
-    result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
+    result = eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
   ctx.config->free(op->sym, &buffer, buffer.allocation);
   return result;
@@ -672,12 +712,12 @@ SLINKY_NO_INLINE index_t make_buffer_failed(const make_buffer* op, eval_context&
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_context& ctx) {
   raw_buffer buffer;
-  buffer.elem_size = eval(op->elem_size, 0, ctx);
+  buffer.elem_size = eval_field<buffer_field::elem_size>(op->elem_size, 0, ctx);
   // The base is very likely a buffer_at call, try to skip the eval overhead.
   if (const call* c = as_intrinsic(op->base, intrinsic::buffer_at)) {
     buffer.base = reinterpret_cast<void*>(eval_buffer_at(c, ctx));
   } else {
-    buffer.base = reinterpret_cast<void*>(eval(op->base, 0, ctx));
+    buffer.base = reinterpret_cast<void*>(eval_field<buffer_field::none>(op->base, 0, ctx));
   }
   std::size_t rank = op->dims.size();
   buffer.dims = SLINKY_ALLOCA(dim, rank);
@@ -690,8 +730,8 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
     dim& buf_d = buffer.dims[d];
     interval bounds = eval(op_d.bounds, ctx);
     buf_d.set_bounds(bounds.min, bounds.max);
-    buf_d.set_stride(eval(op_d.stride, ctx));
-    buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded, ctx));
+    buf_d.set_stride(eval_field<buffer_field::stride>(op_d.stride, ctx));
+    buf_d.set_fold_factor(eval_field<buffer_field::fold_factor>(op_d.fold_factor, dim::unfolded, ctx));
     if (trailing) {
       if (buf_d.is_broadcast()) {
         buffer.rank = d;
@@ -705,7 +745,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
     return make_buffer_failed(op, ctx);
   }
 
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
 }
 
 inline index_t eval(const clone_buffer* op, eval_context& ctx) {
@@ -715,7 +755,7 @@ inline index_t eval(const clone_buffer* op, eval_context& ctx) {
   raw_buffer clone = *src_buf;
   clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
   internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&clone), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&clone), ctx);
 }
 
 // For these evaluators, it's easier to assume the op is always shadowed.
@@ -741,7 +781,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_shadowed(const crop_buffer* op, ev
     }
   }
 
-  index_t result = eval(op->body, ctx);
+  index_t result = eval<call_stmt>(op->body, ctx);
 
   buffer->base = old_base;
   for (std::size_t d = 0; d < crop_rank; ++d) {
@@ -769,7 +809,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_buffer* op, 
     }
   }
 
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 inline index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
@@ -778,7 +818,7 @@ inline index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
 
   if (op->dim >= static_cast<int>(buffer->rank)) {
     // Cropping a broadcast dimension is a no-op.
-    return eval(op->body, ctx);
+    return eval<call_stmt>(op->body, ctx);
   }
 
   slinky::dim& dim = buffer->dims[op->dim];
@@ -788,7 +828,7 @@ inline index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
 
   interval bounds = eval(op->bounds, {old_min, old_max}, ctx);
   buffer->crop(op->dim, bounds.min, bounds.max);
-  index_t result = eval(op->body, ctx);
+  index_t result = eval<call_stmt>(op->body, ctx);
 
   buffer->base = old_base;
   dim.set_bounds(old_min, old_max);
@@ -809,7 +849,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_dim* op, eva
   interval bounds = eval(op->bounds, {dim.min(), dim.max()}, ctx);
   sym_buf.crop(op->dim, bounds.min, bounds.max);
 
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 template <typename T>
@@ -845,7 +885,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_buffer* op, eval_conte
     }
   }
 
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context& ctx) {
@@ -858,7 +898,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context&
     raw_buffer sym_buf = *src_buf;
     sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
-    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+    return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
   }
 
   raw_buffer sym_buf;
@@ -880,7 +920,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context&
     sym_buf.dims[d] = src_buf->dims[d + 1];
   }
 
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context& ctx) {
@@ -899,7 +939,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context&
   }
   remove_trailing_broadcasts(sym_buf);
 
-  return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
+  return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
 SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {

@@ -50,8 +50,8 @@ class eval_context {
 public:
   eval_context();
 
-  void reserve(std::size_t size) {
-    if (size > values_.size()) {
+  SLINKY_INLINE void reserve(std::size_t size) {
+    if (SLINKY_UNLIKELY(size > values_.size())) {
       values_.resize(std::max(values_.size() * 2, size));
     }
   }
