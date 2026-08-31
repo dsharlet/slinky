@@ -514,7 +514,7 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
   }
 
   if (n == 1) {
-    return eval_with_value<call_stmt, crop_dim>(body, op->sym, bounds.min, ctx);
+    return eval_with_value<block, crop_dim>(body, op->sym, bounds.min, ctx);
   } else {
     ctx.reserve(op->sym.id + 1);
 
@@ -543,7 +543,7 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
 
       context.set(state.sym, i * state.step + state.min);
       // Evaluate the parallel loop body with our copy of the context.
-      index_t result_i = eval<call_stmt, crop_dim>(state.body, context);
+      index_t result_i = eval<block, crop_dim>(state.body, context);
       if (result_i != 0) {
         index_t zero = 0;
         state.result.compare_exchange_strong(zero, result_i);
@@ -570,11 +570,11 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   if (step > 0) {
     for (index_t i = bounds.min; result == 0 && i <= bounds.max; i += step) {
       ctx.set(op->sym, i);
-      result = eval<call_stmt, crop_dim>(op->body, ctx);
+      result = eval<block, crop_dim>(op->body, ctx);
     }
   } else {
     ctx.set(op->sym, bounds.min);
-    result = eval<call_stmt, crop_dim>(op->body, ctx);
+    result = eval<block, crop_dim>(op->body, ctx);
   }
   ctx.set(op->sym, old_value);
   return result;
