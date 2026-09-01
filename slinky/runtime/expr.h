@@ -24,9 +24,9 @@ class expr;
 
 class var {
 public:
-  using type = std::size_t;
+  using type = std::uint32_t;
 
-  static constexpr type invalid = static_cast<size_t>(-1);
+  static constexpr type invalid = static_cast<type>(-1);
 
   type id;
 
@@ -132,7 +132,7 @@ enum class intrinsic {
 // True if `fn` can be evaluated if its arguments are constants.
 bool can_evaluate(intrinsic fn);
 
-enum class buffer_field : unsigned {
+enum class buffer_field : std::uint8_t {
   none = 0,
 
   rank,
@@ -406,7 +406,7 @@ public:
   buffer_field field;
 
   // If `field` is a per-dimension field, which dimension being referenced.
-  int dim;
+  std::int16_t dim;
 
   void accept(expr_visitor* v) const override;
 
