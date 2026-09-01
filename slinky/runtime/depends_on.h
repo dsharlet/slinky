@@ -35,15 +35,15 @@ struct depends_on_result {
 };
 
 // Check if the node depends on a symbol or set of symbols.
-void depends_on(expr_ref e, span<const std::pair<var, depends_on_result&>> var_deps);
-void depends_on(stmt_ref s, span<const std::pair<var, depends_on_result&>> var_deps);
+void depends_on(expr_ref e, span<std::pair<var, depends_on_result&>> var_deps);
+void depends_on(stmt_ref s, span<std::pair<var, depends_on_result&>> var_deps);
 void depends_on(expr_ref e, var x, depends_on_result& deps);
 void depends_on(stmt_ref s, var x, depends_on_result& deps);
 depends_on_result depends_on(expr_ref e, var x);
 depends_on_result depends_on(const interval_expr& e, var x);
 depends_on_result depends_on(stmt_ref s, var x);
-depends_on_result depends_on(expr_ref e, span<const var> xs);
-depends_on_result depends_on(stmt_ref s, span<const var> xs);
+depends_on_result depends_on(expr_ref e, span<var> xs);
+depends_on_result depends_on(stmt_ref s, span<var> xs);
 
 // Check if buffer can be safely substituted.
 bool can_substitute_buffer(const depends_on_result& r);

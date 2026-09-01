@@ -33,7 +33,7 @@ stmt make_call_counter(std::atomic<int>& calls) {
         ++calls;
         return 0;
       },
-      {}, {}, {}, {});
+      span<var>{}, span<var>{}, {}, {});
 }
 stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size) {
   return call_stmt::make(
@@ -43,7 +43,7 @@ stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size) {
         while (clock::now() < end) {}
         return 0;
       },
-      {}, {}, {}, {});
+      span<var>{}, span<var>{}, {}, {});
 }
 
 stmt make_loop(stmt body) { return loop::make(x, loop::serial, range(0, iterations), 1, body); }

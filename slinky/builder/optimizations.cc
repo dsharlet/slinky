@@ -100,7 +100,7 @@ bool is_linear(const expr& y, var x, expr& a, expr& b) {
 
 // Checks if the copy operands `src_x` and `dst_x[dst_d]` represent a simple copy that can be handled by slinky::copy.
 // dst_x dimensions other than `dst_d` are assumed to be handled by a different `is_copy` call.
-bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
+bool is_copy(var src, expr src_x, int src_d, var dst, span<var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
     expr at_t;
@@ -266,7 +266,7 @@ bool dim_has_stride(const dim_expr& d) {
   }
   return d.stride.defined();
 }
-bool any_stride_defined(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
+bool any_stride_defined(span<dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
 
 class copy_aliaser : public stmt_mutator {
   node_context& ctx;
@@ -500,7 +500,7 @@ public:
   }
 
   void visit(const allocate* op) override {
-    auto s = set_value_in_scope(buffers, op->sym, buffer_info(op->dims, op->elem_size));
+    auto s = set_value_in_scope(buffers, op->sym, buffer_info(to_vector(op->dims), op->elem_size));
     stmt body = mutate(op->body);
 
     scoped_trace trace("visit(const allocate*)");
@@ -722,7 +722,7 @@ public:
 
     alias_info a;
     a.target = op->src;
-    a.at = op->src_x;
+    a.at = to_vector(op->src_x);
     a.permutation.assign(info->dims.size(), transpose::new_dim);
     a.dims.resize(info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
@@ -831,7 +831,7 @@ public:
   }
 
   void merge_buffer_info(symbol_map<buffer_info>& old_buffers, var sym, var src,
-      function_ref<void(alias_info&)> handler, span<const int> dim_map) {
+      function_ref<void(alias_info&)> handler, span<int> dim_map) {
     // Build sub_dims to substitute buffer metadata of sym with the corresponding src dimensions.
     // dim_map remaps dimensions: sym.dim[d] corresponds to src.dim[dim_map[d]].
     std::vector<dim_expr> sub_dims(dim_map.size());
@@ -897,7 +897,7 @@ public:
   }
 
   template <typename T>
-  void visit_buffer_mutator(const T* op, function_ref<void(alias_info&)> handler, span<const int> dim_map) {
+  void visit_buffer_mutator(const T* op, function_ref<void(alias_info&)> handler, span<int> dim_map) {
     // We need to know which alias candidates are added inside this mutator.
     symbol_map<buffer_info> old_buffers(buffers.size());
     std::swap(old_buffers, buffers);
@@ -1050,7 +1050,7 @@ public:
     }
   }
 
-  bool fold_factors_strides_same(const std::vector<dim_expr>& alloc_dims, const std::vector<dim_expr>& alias_dims) {
+  bool fold_factors_strides_same(span<dim_expr> alloc_dims, span<dim_expr> alias_dims) {
     if (alloc_dims.size() > alias_dims.size()) {
       return !(std::any_of(alloc_dims.begin(), alloc_dims.end(),
           [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); }));
@@ -1064,7 +1064,7 @@ public:
   }
 
   void visit(const allocate* op) override {
-    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym, op->dims, loop_level});
+    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym, to_vector(op->dims), loop_level});
     auto set_back = set_value_in_scope(backward, op->sym, var());
     auto set_fwd = set_value_in_scope(forward, op->sym, var());
     auto set_used = set_value_in_scope(use_count, op->sym, 0);
@@ -1221,7 +1221,7 @@ stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs) 
 namespace {
 
 template <typename T>
-bool match(span<const T> a, span<const T> b) {
+bool match(span<T> a, span<T> b) {
   if (a.size() != b.size()) return false;
   for (std::size_t i = 0; i < a.size(); ++i) {
     if (!match(a[i], b[i])) return false;
@@ -1321,6 +1321,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   var dst = ctx.insert_unique(ctx.name(op->dst) + ".sliced");
   call_stmt::attributes copy_attrs;
   copy_attrs.name = "copy";
+  var args[] = {op->src, dst, op->pad};
   stmt result = call_stmt::make(
       [impl = op->impl](const call_stmt* op, const eval_context& ctx) -> index_t {
         // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
@@ -1334,10 +1335,10 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         impl(*src_buf, *dst_buf, *pad_buf);
         return 0;
       },
-      {}, {op->src, dst, op->pad}, {}, std::move(copy_attrs));
+      span<var>{}, args, {}, std::move(copy_attrs));
 
-  std::vector<expr> src_x = op->src_x;
-  std::vector<var> dst_x = op->dst_x;
+  std::vector<expr> src_x = to_vector(op->src_x);
+  std::vector<var> dst_x = to_vector(op->dst_x);
   std::vector<dim_expr> src_dims;
 
   // If we just leave these two arrays alone, the copy will be correct, but slow.
@@ -1534,7 +1535,7 @@ class pure_dims_remover : public stmt_mutator {
   static bool is_extent_one(const dim_expr& d) { return is_extent_one(d.bounds); }
 
   template <typename T>
-  static sliceable_dims find_sliceable(const std::vector<T>& dims) {
+  static sliceable_dims find_sliceable(span<T> dims) {
     sliceable_dims result = {};
     for (std::size_t i = 0; i < dims.size(); ++i) {
       if (is_extent_one(dims[i])) {
@@ -2257,7 +2258,7 @@ public:
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(allocate::make(op->sym, op->storage, std::move(op->elem_size), std::move(op->dims), std::move(body)));
+      set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, std::move(body)));
     }
   }
 

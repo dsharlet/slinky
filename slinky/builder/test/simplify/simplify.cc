@@ -60,7 +60,7 @@ auto _ = []() {
 MATCHER_P(matches, x, "") { return match(arg, x); }
 
 stmt dummy_call(std::vector<var> inputs, std::vector<var> outputs, call_stmt::attributes attrs = {}) {
-  return call_stmt::make(nullptr, std::move(inputs), std::move(outputs), {}, std::move(attrs));
+  return call_stmt::make(nullptr, inputs, outputs, std::vector<expr>{}, std::move(attrs));
 }
 
 }  // namespace
@@ -231,8 +231,9 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select((y <= 0), select((x <= 0), z, x), z)), matches(select(0 < x && y <= 0, x, z)));
 
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
-  ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
-  ASSERT_THAT(simplify(slice_buffer::make(y, x, {}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
+  ASSERT_THAT(
+      simplify(crop_buffer::make(y, x, std::vector<interval_expr>{}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
+  ASSERT_THAT(simplify(slice_buffer::make(y, x, std::vector<expr>{}, dummy_call({}, {y}))), matches(dummy_call({}, {x})));
 
   ASSERT_THAT(simplify(max(select(z <= 0, -1, select(1 <= y, min(x, z + -1), 0)) + 1, select((1 <= y), z, 0))),
       matches(select((1 <= y), max(z, 0), (0 < z))));
@@ -570,7 +571,7 @@ TEST(simplify, buffer_bounds) {
     return allocate::make(buf, memory_type::heap, 1, dims, body);
   };
   auto use_buffer = [](var b) { return dummy_call({}, {b}); };
-  auto use_buffers = [](std::vector<var> bs) { return call_stmt::make(nullptr, {}, std::move(bs), {}, {}); };
+  auto use_buffers = [](std::vector<var> bs) { return call_stmt::make(nullptr, span<var>{}, bs, {}, {}); };
   ASSERT_THAT(simplify(decl_bounds(b0, {buffer_bounds(b1, 0)},
                   crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), use_buffer(b2)))),
       matches(decl_bounds(b0, {{buffer_bounds(b1, 0)}}, crop_dim::make(b2, b0, 0, bounds(x, y), use_buffer(b2)))));
@@ -666,8 +667,8 @@ TEST(simplify, clone) {
   ASSERT_THAT(simplify(clone_buffer::make(b1, b0, clone_buffer::make(b2, b1, check::make(b0 && b2)))),
       matches(check::make(b0)));
 
-  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, dummy_call({}, {b0, b2})))),
-      matches(transpose::make(b2, b0, {1, 0}, dummy_call({}, {b0, b2}))));
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, std::vector<int>{1, 0}, dummy_call({}, {b0, b2})))),
+      matches(transpose::make(b2, b0, std::vector<int>{1, 0}, dummy_call({}, {b0, b2}))));
 
   // Clone should be substituted.
   ASSERT_THAT(simplify(clone_buffer::make(y, x, crop_dim::make(z, y, 0, {0, 0}, dummy_call({w}, {z})))),
@@ -761,7 +762,7 @@ TEST(simplify, slice_of_crop) {
       matches(slice_dim::make(b3, b0, 1, 0, body)));
 
   // Test support for slice_buffer.
-  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_buffer::make(b3, b1, {{}, 0}, body))),
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_buffer::make(b3, b1, std::vector<expr>{{}, 0}, body))),
       matches(slice_dim::make(b3, b0, 1, 0, body)));
 
   // Test support for slicing multiple dimensions.
@@ -769,15 +770,15 @@ TEST(simplify, slice_of_crop) {
       matches(slice_buffer::make(b3, b0, {{1}, {0}}, body)));
 
   // Slice entries beyond the known source rank are broadcast and can be trimmed.
-  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}},
                   slice_buffer::make(b1, b0, {y, z}, dummy_call({b1}, {})))),
       matches(allocate::make(
-          b0, memory_type::heap, 1, {{bounds(0, x)}}, slice_dim::make(b1, b0, 0, y, dummy_call({b1}, {})))));
+          b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}}, slice_dim::make(b1, b0, 0, y, dummy_call({b1}, {})))));
 
   // Slice of only broadcast dimensions is a no-op.
-  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}},
                   slice_buffer::make(b1, b0, {expr(), z}, dummy_call({b1}, {})))),
-      matches(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}}, dummy_call({b0}, {}))));
+      matches(allocate::make(b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}}, dummy_call({b0}, {}))));
 
   // Slicing a dimension known to be broadcast is a no-op.
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {dim::broadcast(), {bounds(0, x), 1, expr()}},
@@ -842,15 +843,15 @@ TEST(simplify, crop) {
       })));
 
   // Bounds beyond the known source rank are broadcast and can be trimmed.
-  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}},
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}},
                   crop_buffer::make(b1, b0, {{y, z}, {w, u}}, dummy_call({}, {b1})))),
       matches(allocate::make(
-          b0, memory_type::heap, 1, {{bounds(0, x)}}, crop_dim::make(b1, b0, 0, {y, z}, dummy_call({}, {b1})))));
+          b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}}, crop_dim::make(b1, b0, 0, {y, z}, dummy_call({}, {b1})))));
 
   // Crop of a dimension beyond the known rank is a no-op.
   ASSERT_THAT(simplify(allocate::make(
-                  b0, memory_type::heap, 1, {{bounds(0, x)}}, crop_dim::make(b1, b0, 1, {y, z}, dummy_call({}, {b1})))),
-      matches(allocate::make(b0, memory_type::heap, 1, {{bounds(0, x)}}, dummy_call({}, {b0}))));
+                  b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}}, crop_dim::make(b1, b0, 1, {y, z}, dummy_call({}, {b1})))),
+      matches(allocate::make(b0, memory_type::heap, 1, std::vector<dim_expr>{{bounds(0, x)}}, dummy_call({}, {b0}))));
 
   // Cropping a dimension known to be broadcast is a no-op.
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 1, {dim::broadcast(), {bounds(0, x), 1, expr()}},
@@ -932,27 +933,27 @@ TEST(simplify, make_buffer) {
 
   // Transpose
   ASSERT_THAT(simplify(make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 2)}, body)),
-      matches(transpose::make(b1, b0, {2}, body)));
+      matches(transpose::make(b1, b0, std::vector<int>{2}, body)));
   ASSERT_THAT(simplify(make_buffer::make(
                   b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 2)}, body)),
-      matches(transpose::make(b1, b0, {0, 2}, body)));
+      matches(transpose::make(b1, b0, std::vector<int>{0, 2}, body)));
 
   ASSERT_THAT(simplify(make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
                   {buffer_dim(b0, 0), dim::broadcast(), buffer_dim(b0, 2)}, body)),
-      matches(transpose::make(b1, b0, {0, transpose::new_dim, 2}, body)));
+      matches(transpose::make(b1, b0, std::vector<int>{0, transpose::new_dim, 2}, body)));
 
   ASSERT_THAT(
       simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
           make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
               {{{0, 10}, buffer_stride(b0, 0), {}}, {{0, 20}, buffer_stride(b0, 1), {}}}, dummy_call({}, {b0, b1})))),
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
-          transpose::make(b1, b0, {0, 1}, dummy_call({}, {b0, b1})))));
+          transpose::make(b1, b0, std::vector<int>{0, 1}, dummy_call({}, {b0, b1})))));
 
   // Truncating a constant buffer.
   const dim const_dims[] = {dim::broadcast(), dim::broadcast()};
   auto const_buffer = slinky::raw_buffer::make(/*rank=*/2, /*elem_size=*/1, const_dims);
   ASSERT_THAT(
-      simplify(let_stmt::make(b0, constant_buffer::make(const_buffer), make_buffer::make(b1, buffer_at(b0, 0, 0), 1, {}, body))),
+      simplify(let_stmt::make(b0, constant_buffer::make(const_buffer), make_buffer::make(b1, buffer_at(b0, 0, 0), 1, std::vector<dim_expr>{}, body))),
       matches(let_stmt::make(b0, constant_buffer::make(const_buffer), transpose::make_truncate(b1, b0, 0, body))));
 
   // The same buffer
@@ -970,72 +971,72 @@ TEST(simplify, make_buffer) {
                   make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
                       {{{0, 0}, buffer_stride(b0, 1), {}}, {{0, 0}, buffer_stride(b0, 0)}}, dummy_call({}, {b1})))),
       matches(allocate::make(
-          b0, memory_type::heap, 4, {{{0, 0}, 0}, {{0, 0}, {}}}, transpose::make(b1, b0, {1}, dummy_call({}, {b1})))));
+          b0, memory_type::heap, 4, {{{0, 0}, 0}, {{0, 0}, {}}}, transpose::make(b1, b0, std::vector<int>{1}, dummy_call({}, {b1})))));
 }
 
 TEST(simplify, transpose) {
-  ASSERT_THAT(simplify(transpose::make(b1, b0, {2, 1, 0}, transpose::make(b2, b1, {2, 1, 0}, dummy_call({}, {b2})))),
-      matches(transpose::make(b2, b0, {0, 1, 2}, dummy_call({}, {b2}))));
-  ASSERT_THAT(simplify(transpose::make(b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, dummy_call({}, {b2})))),
-      matches(transpose::make(b2, b0, {2, 3}, dummy_call({}, {b2}))));
+  ASSERT_THAT(simplify(transpose::make(b1, b0, std::vector<int>{2, 1, 0}, transpose::make(b2, b1, std::vector<int>{2, 1, 0}, dummy_call({}, {b2})))),
+      matches(transpose::make(b2, b0, std::vector<int>{0, 1, 2}, dummy_call({}, {b2}))));
+  ASSERT_THAT(simplify(transpose::make(b1, b0, std::vector<int>{3, 2, 1}, transpose::make(b2, b1, std::vector<int>{1, 0}, dummy_call({}, {b2})))),
+      matches(transpose::make(b2, b0, std::vector<int>{2, 3}, dummy_call({}, {b2}))));
 
   ASSERT_THAT(
-      simplify(transpose::make(b1, b0, {2, 3},
-          transpose::make(b2, b1, {0, transpose::new_dim, 1}, check::make(buffer_min(b2, 2) == buffer_min(b0, 3))))),
+      simplify(transpose::make(b1, b0, std::vector<int>{2, 3},
+          transpose::make(b2, b1, std::vector<int>{0, transpose::new_dim, 1}, check::make(buffer_min(b2, 2) == buffer_min(b0, 3))))),
       matches(
-          transpose::make(b2, b0, {2, transpose::new_dim, 3}, check::make(buffer_min(b2, 2) == buffer_min(b0, 3)))));
+          transpose::make(b2, b0, std::vector<int>{2, transpose::new_dim, 3}, check::make(buffer_min(b2, 2) == buffer_min(b0, 3)))));
 
   // Make sure that an intermediate transpose that drops dimensions is not skipped.
-  ASSERT_THAT(simplify(transpose::make(b1, b0, {2, 1, 0},
-                  transpose::make(b2, b1, {}, transpose::make(b3, b2, {0, 1}, dummy_call({}, {b3}))))),
-      matches(transpose::make(b3, b0, {transpose::new_dim, transpose::new_dim}, dummy_call({}, {b3}))));
+  ASSERT_THAT(simplify(transpose::make(b1, b0, std::vector<int>{2, 1, 0},
+                  transpose::make(b2, b1, std::vector<int>{}, transpose::make(b3, b2, std::vector<int>{0, 1}, dummy_call({}, {b3}))))),
+      matches(transpose::make(b3, b0, std::vector<int>{transpose::new_dim, transpose::new_dim}, dummy_call({}, {b3}))));
 
   ASSERT_THAT(
       simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))),
       matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, dummy_call({}, {b2})))));
 
   ASSERT_THAT(simplify(crop_buffer::make(
-                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 0) <= w)))),
+                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, std::vector<int>{1, 0}, check::make(buffer_max(b2, 0) <= w)))),
       matches(stmt()));
   ASSERT_THAT(simplify(crop_buffer::make(
-                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))),
+                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, std::vector<int>{1, 0}, check::make(buffer_max(b2, 1) <= w)))),
       matches(crop_buffer::make(
-          b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))));
+          b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, std::vector<int>{1, 0}, check::make(buffer_max(b2, 1) <= w)))));
 
   // Outer dim index exceeds the inner transpose's dims size; out-of-bounds dims become new_dim.
-  ASSERT_THAT(simplify(transpose::make(b1, b0, {1, 0}, transpose::make(b2, b1, {0, 2, 1}, dummy_call({}, {b2})))),
-      matches(transpose::make(b2, b0, {1, transpose::new_dim, 0}, dummy_call({}, {b2}))));
+  ASSERT_THAT(simplify(transpose::make(b1, b0, std::vector<int>{1, 0}, transpose::make(b2, b1, std::vector<int>{0, 2, 1}, dummy_call({}, {b2})))),
+      matches(transpose::make(b2, b0, std::vector<int>{1, transpose::new_dim, 0}, dummy_call({}, {b2}))));
 
   // A new_dim where the src dimension is provably a broadcast can use the src dimension instead, which makes this
   // transpose a no-op.
   ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}, {{0, 30}, {}, {}}},
-                  transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
+                  transpose::make(b1, b0, std::vector<int>{0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
       matches(allocate::make(
           b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}, {{0, 30}, {}, {}}}, dummy_call({}, {b0}))));
 
   // The same, but the new_dim is the last dimension, so the transpose is a no-op instead of a truncate. The allocate
   // then drops the trailing broadcast dimension it no longer needs.
-  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 0}, 0, {}}},
-                  transpose::make(b1, b0, {0, transpose::new_dim}, dummy_call({}, {b1})))),
-      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}}, dummy_call({}, {b0}))));
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, std::vector<dim_expr>{{{0, 10}, {}, {}}, {{0, 0}, 0, {}}},
+                  transpose::make(b1, b0, std::vector<int>{0, transpose::new_dim}, dummy_call({}, {b1})))),
+      matches(allocate::make(b0, memory_type::heap, 4, std::vector<dim_expr>{{{0, 10}, {}, {}}}, dummy_call({}, {b0}))));
 
   // The src dimension is not provably a broadcast, so the new_dim must be kept.
   ASSERT_THAT(
       simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
-          transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
+          transpose::make(b1, b0, std::vector<int>{0, transpose::new_dim, 2}, dummy_call({}, {b1})))),
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
-          transpose::make(b1, b0, {0, transpose::new_dim, 2}, dummy_call({}, {b1})))));
+          transpose::make(b1, b0, std::vector<int>{0, transpose::new_dim, 2}, dummy_call({}, {b1})))));
 
   // Transposes that put trailing broadcasts at the end of the buffer should be dropped.
   ASSERT_THAT(simplify(block::make(
-                  {check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0, 3, 2}, dummy_call({}, {b1}))})),
+                  {check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, std::vector<int>{1, 4, 0, 3, 2}, dummy_call({}, {b1}))})),
       matches(
-          block::make({check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, {1, 4, 0}, dummy_call({}, {b1}))})));
+          block::make({check::make(buffer_rank(b0) == 2), transpose::make(b1, b0, std::vector<int>{1, 4, 0}, dummy_call({}, {b1}))})));
 
   // We want to say that we don't allow shadowing in the simplifier. However, the simplifier does generate self-shadowed
   // transposes. This test case covers an issue where such self-shadowed transposes produced an infinite loop.
-  ASSERT_THAT(simplify(transpose::make(b0, b0, {}, transpose::make(b0, b0, {}, dummy_call({}, {b0})))),
-      matches(transpose::make(b0, b0, {}, transpose::make(b0, b0, {}, dummy_call({}, {b0})))));
+  ASSERT_THAT(simplify(transpose::make(b0, b0, std::vector<int>{}, transpose::make(b0, b0, std::vector<int>{}, dummy_call({}, {b0})))),
+      matches(transpose::make(b0, b0, std::vector<int>{}, transpose::make(b0, b0, std::vector<int>{}, dummy_call({}, {b0})))));
 }
 
 TEST(simplify, knowledge) {

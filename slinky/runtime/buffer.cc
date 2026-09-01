@@ -137,7 +137,7 @@ struct init_stride_dim {
   init_stride_dim(index_t stride, index_t dim_stride) : stride(stride), dim_stride(dim_stride) {}
 };
 
-SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims, bool& overflow) {
+SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<init_stride_dim> dims, bool& overflow) {
   index_t dim_stride;
   if (mul_with_overflow(stride, extent, dim_stride)) {
     overflow = true;
@@ -252,7 +252,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       const index_t alloc_extent_i = alloc_extent(dim_i);
       assert(alloc_extent_i > 1);
 
-      span<const init_stride_dim> known_dims{dims, dims_end};
+      span<init_stride_dim> known_dims{dims, dims_end};
       if (is_stride_ok(elem_size, alloc_extent_i, known_dims, overflow)) {
         // This dimension can have stride elem_size, no other stride could be better.
         dim_i.set_stride(elem_size);

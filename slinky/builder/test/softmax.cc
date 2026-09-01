@@ -210,8 +210,8 @@ TEST_P(softmax, pipeline) {
   add_1(ref_buf.cast<const float>(), ref_buf.cast<float>());
 
   for (index_t b = 0; b < B; ++b) {
-    auto out_b = span<const float>(&out_buf(0, b), D);
-    auto ref_b = span<const float>(&ref_buf(0, b), D);
+    auto out_b = span<float>(&out_buf(0, b), D);
+    auto ref_b = span<float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
   }
 

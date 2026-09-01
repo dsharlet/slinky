@@ -18,7 +18,7 @@ SLINKY_INLINE bool match(index_t a, var b) { return false; }
 bool match(stmt_ref a, stmt_ref b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
-bool match(const box_expr& a, const box_expr& b);
+bool match(span<interval_expr> a, span<interval_expr> b);
 
 // Compute a sort ordering of two nodes based on their structure (not their values).
 int compare(const var& a, const var& b);
@@ -88,7 +88,7 @@ interval_expr substitute_buffer(
 dim_expr substitute_buffer(const dim_expr& e, var buffer, const std::vector<dim_expr>& dims, var def = var());
 
 // Helpers to make dims for use with `substitute_buffer` for bounds.
-std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds);
+std::vector<dim_expr> make_dims_from_bounds(span<interval_expr> bounds);
 std::vector<dim_expr> make_dims_from_bounds(int dim, const interval_expr& bounds);
 
 // Find `target` and replace it with `replacement`. Does not respect shadowing or implicit buffer metadata.

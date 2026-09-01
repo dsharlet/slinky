@@ -19,7 +19,7 @@ public:
 
   stmt body;
 
-  using scalars = span<const index_t>;
+  using scalars = span<index_t>;
   using buffers = span<const raw_buffer*>;
 
   // Set up the context to run the pipeline, but do not run it.

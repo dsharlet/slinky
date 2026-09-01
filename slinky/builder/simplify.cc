@@ -1466,8 +1466,8 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    call_stmt::symbol_list inputs = op->inputs;
-    call_stmt::symbol_list outputs = op->outputs;
+    call_stmt::symbol_list inputs = to_vector(op->inputs);
+    call_stmt::symbol_list outputs = to_vector(op->outputs);
     bool changed = false;
     auto visit_symbol_list = [&, this](call_stmt::symbol_list& list) {
       for (var& i : list) {
@@ -1481,7 +1481,7 @@ public:
     visit_symbol_list(inputs);
     visit_symbol_list(outputs);
 
-    std::vector<expr> scalars = op->scalars;
+    std::vector<expr> scalars = to_vector(op->scalars);
     for (expr& i : scalars) {
       expr new_i = mutate(i);
       if (!new_i.same_as(i)) {
@@ -2057,7 +2057,7 @@ public:
         }
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
-        op_bounds = c->bounds & op_bounds;
+        op_bounds = to_vector(c->bounds) & op_bounds;
         op_src = c->src;
         info = get_buffer_info(op_src);
         op = nullptr;
@@ -2163,7 +2163,7 @@ public:
 
   void visit(const crop_buffer* op) override {
     var src = visit_symbol(op->src);
-    visit_crop(src == op->src ? op : nullptr, op->sym, src, op->bounds, op->body);
+    visit_crop(src == op->src ? op : nullptr, op->sym, src, to_vector(op->bounds), op->body);
   }
 
   void visit(const crop_dim* op) override {
@@ -2173,7 +2173,7 @@ public:
     visit_crop(src == op->src ? op : nullptr, op->sym, src, std::move(bounds), op->body);
   }
 
-  bool prove_slice_unaffected_by_crop(const std::vector<interval_expr>& bounds, const std::vector<expr>& at) {
+  bool prove_slice_unaffected_by_crop(span<interval_expr> bounds, span<expr> at) {
     for (size_t dim = at.size(); dim < bounds.size(); ++dim) {
       if (bounds[dim].min.defined() || bounds[dim].max.defined()) {
         return false;
@@ -2187,12 +2187,12 @@ public:
     return true;
   }
 
-  bool prove_slice_unaffected_by_crop(int dim, interval_expr bounds, const std::vector<expr>& at) {
+  bool prove_slice_unaffected_by_crop(int dim, interval_expr bounds, span<expr> at) {
     return dim >= static_cast<int>(at.size()) ? !(bounds.min.defined() || bounds.max.defined())
                                               : prove_true(bounds.contains(at[dim]));
   }
 
-  void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
+  void visit_slice(const base_stmt_node* op, var op_sym, var op_src, span<expr> op_at, stmt op_body) {
     std::vector<expr> at(op_at.size());
     std::optional<buffer_info> info = buffers[op_src];
 
@@ -2292,7 +2292,7 @@ public:
     const std::optional<buffer_info>* src_info = &buffers[op->src];
 
     var src = visit_symbol(op->src);
-    std::vector<int> dims = op->dims;
+    std::vector<int> dims = to_vector(op->dims);
     while (src_info && *src_info) {
       if (const transpose* t = (*src_info)->decl.as<transpose>()) {
         if (t->sym == src) {
@@ -2302,7 +2302,7 @@ public:
             break;
           }
           // This is a transpose of another transpose. Rewrite this to directly transpose the parent.
-          dims = permute(dims, t->dims, transpose::new_dim);
+          dims = permute(dims, to_vector(t->dims), transpose::new_dim);
           src = t->src;
           src_info = &buffers[src];
           continue;
@@ -2358,7 +2358,8 @@ public:
         return body;
       } else if (!deps.buffer_dims) {
         return substitute(body, op->sym, src);
-      } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
+      } else if (body.same_as(op->body) && src == op->src &&
+                 std::equal(dims.begin(), dims.end(), op->dims.begin(), op->dims.end())) {
         return stmt(op);
       } else {
         return transpose::make(op->sym, src, dims, std::move(body));

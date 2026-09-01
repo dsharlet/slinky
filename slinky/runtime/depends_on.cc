@@ -32,7 +32,7 @@ public:
   dependencies() {}
   dependencies(std::map<var, depends_on_result>& unknown_deps) : unknown_deps(&unknown_deps) {}
   dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
-  dependencies(span<const std::pair<var, depends_on_result&>> deps) {
+  dependencies(span<std::pair<var, depends_on_result&>> deps) {
     var_deps.reserve(deps.size());
     for (const auto& i : deps) {
       var_deps.push_back({i.first, &i.second});
@@ -290,13 +290,13 @@ public:
 
 }  // namespace
 
-void depends_on(expr_ref e, span<const std::pair<var, depends_on_result&>> var_deps) {
+void depends_on(expr_ref e, span<std::pair<var, depends_on_result&>> var_deps) {
   if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (e.defined()) e.accept(&v);
 }
 
-void depends_on(stmt_ref s, span<const std::pair<var, depends_on_result&>> var_deps) {
+void depends_on(stmt_ref s, span<std::pair<var, depends_on_result&>> var_deps) {
   scoped_trace trace("depends_on");
   if (var_deps.empty()) return;
   dependencies v(var_deps);
@@ -332,7 +332,7 @@ depends_on_result depends_on(stmt_ref s, var x) {
   return r;
 }
 
-depends_on_result depends_on(expr_ref e, span<const var> xs) {
+depends_on_result depends_on(expr_ref e, span<var> xs) {
   depends_on_result r;
   std::vector<std::pair<var, depends_on_result&>> var_deps;
   for (var x : xs) {
@@ -342,7 +342,7 @@ depends_on_result depends_on(expr_ref e, span<const var> xs) {
   return r;
 }
 
-depends_on_result depends_on(stmt_ref s, span<const var> xs) {
+depends_on_result depends_on(stmt_ref s, span<var> xs) {
   depends_on_result r;
   std::vector<std::pair<var, depends_on_result&>> var_deps;
   for (var x : xs) {
