@@ -60,3 +60,13 @@ cc_test(
     args=["--benchmark_min_time=1x"],
     size = "small",
 )
+
+cc_test(
+    name = "memory_pool",
+    srcs = ["memory_pool.cc"],
+    deps = [
+        "//slinky/runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)

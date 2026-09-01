@@ -6,6 +6,8 @@
 #include "slinky/base/chrome_trace.h"
 #include "slinky/base/thread_pool_impl.h"
 #include "slinky/runtime/buffer.h"
+#include "slinky/runtime/evaluate.h"
+#include "slinky/runtime/expr.h"
 
 namespace slinky {
 
@@ -38,12 +40,12 @@ void setup_tracing(eval_config& cfg, const std::string& filename) {
 test_context::test_context() {
   static thread_pool_impl threads;
 
-  config.allocate = [this](var, raw_buffer* b) {
+  config.allocate = [this](eval_context&, var, raw_buffer* b) {
     void* allocation = b->allocate();
     heap.track_allocate(b->size_bytes());
     return allocation;
   };
-  config.free = [this](var, raw_buffer* b, void* allocation) {
+  config.free = [this](eval_context&, var, raw_buffer* b, void* allocation) {
     ::free(allocation);
     heap.track_free(b->size_bytes());
   };

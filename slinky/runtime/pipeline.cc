@@ -25,16 +25,21 @@ void pipeline::setup(scalars args, buffers inputs, buffers outputs, eval_context
 
 void pipeline::setup(buffers inputs, buffers outputs, eval_context& ctx) const { setup({}, inputs, outputs, ctx); }
 
-index_t pipeline::evaluate(eval_context& ctx) const { return slinky::evaluate(body, ctx); }
+index_t pipeline::evaluate(eval_context& ctx) const {
+  index_t result = slinky::evaluate(body, ctx);
+  // Heap blocks are reused within an evaluation, but not kept between evaluations.
+  ctx.pool.trim();
+  return result;
+}
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
   setup(args, inputs, outputs, ctx);
-  return slinky::evaluate(body, ctx);
+  return evaluate(ctx);
 }
 
 index_t pipeline::evaluate(buffers inputs, buffers outputs, eval_context& ctx) const {
   setup(inputs, outputs, ctx);
-  return slinky::evaluate(body, ctx);
+  return evaluate(ctx);
 }
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs) const {

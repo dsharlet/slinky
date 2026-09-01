@@ -40,6 +40,15 @@ void dump_context_for_expr(
   }
 }
 
+void* default_allocate(eval_context& ctx, var sym, raw_buffer* buf) {
+  std::optional<std::size_t> size = buf->init_strides(ctx.config->stride_alignment);
+  if (!size) return nullptr;
+  buf->base = ctx.pool.allocate(*size, ctx.config->base_alignment);
+  return buf->base;
+}
+
+void default_free(eval_context& ctx, var sym, raw_buffer* buf, void* allocation) { ctx.pool.free(allocation); }
+
 eval_context::eval_context() {
   static eval_config default_config;
   config = &default_config;
@@ -345,7 +354,7 @@ inline index_t eval_free(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   var sym = *as_variable(op->args[0]);
   allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(ctx.lookup(sym));
-  ctx.config->free(sym, buf, buf->allocation);
+  ctx.config->free(ctx, sym, buf, buf->allocation);
   buf->allocation = nullptr;
   return 1;
 }
@@ -678,7 +687,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
   }
 
   if (op->storage == memory_type::heap) {
-    buffer.allocation = ctx.config->allocate(op->sym, &buffer);
+    buffer.allocation = ctx.config->allocate(ctx, op->sym, &buffer);
   } else {
     std::optional<std::size_t> size = buffer.init_strides(ctx.config->stride_alignment);
     if (!size) {
@@ -691,7 +700,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
       buffer.allocation = nullptr;
       return eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
     } else {
-      buffer.allocation = ctx.config->allocate(op->sym, &buffer);
+      buffer.allocation = ctx.config->allocate(ctx, op->sym, &buffer);
     }
   }
 
@@ -701,7 +710,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
   } else {
     result = eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
-  ctx.config->free(op->sym, &buffer, buffer.allocation);
+  ctx.config->free(ctx, op->sym, &buffer, buffer.allocation);
   return result;
 }
 

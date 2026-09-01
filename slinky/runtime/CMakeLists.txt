@@ -3,6 +3,7 @@ add_library(slinky_runtime
     depends_on.cc
     evaluate.cc
     expr_stmt.cc
+    memory_pool.cc
     pipeline.cc
     print.cc
 )
