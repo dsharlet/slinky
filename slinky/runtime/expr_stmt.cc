@@ -238,6 +238,8 @@ expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return expr(make_variable(sym)); }
 expr variable::make(var sym, buffer_field field, int dim) {
+  assert(dim >= std::numeric_limits<std::int16_t>::min());
+  assert(dim <= std::numeric_limits<std::int16_t>::max());
   variable* n = new variable();
   n->sym = sym;
   n->field = field;

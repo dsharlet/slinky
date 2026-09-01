@@ -413,7 +413,7 @@ public:
 
   ~transpose();
 
-  static constexpr int new_dim = std::numeric_limits<int>::max();
+  static constexpr int new_dim = max_rank;
 
   static bool is_truncate(span<int> dims);
   bool is_truncate() const;

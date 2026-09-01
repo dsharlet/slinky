@@ -19,6 +19,9 @@
 
 namespace slinky {
 
+// The maximum dimension index we support.
+static constexpr int max_rank = 64;
+
 class node_context;
 class expr;
 
