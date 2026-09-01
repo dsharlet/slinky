@@ -7,6 +7,7 @@
 #include <initializer_list>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <string>
 #include <vector>
@@ -23,9 +24,9 @@ class expr;
 
 class var {
 public:
-  using type = std::size_t;
+  using type = std::uint32_t;
 
-  static constexpr type invalid = static_cast<size_t>(-1);
+  static constexpr type invalid = static_cast<type>(-1);
 
   type id;
 
@@ -131,7 +132,7 @@ enum class intrinsic {
 // True if `fn` can be evaluated if its arguments are constants.
 bool can_evaluate(intrinsic fn);
 
-enum class buffer_field : unsigned {
+enum class buffer_field : std::uint8_t {
   none = 0,
 
   rank,
@@ -167,7 +168,12 @@ public:
     }
   }
 
-  static void destroy(base_node* p) { delete p; }
+  virtual void destroy() { delete this; }
+  static void destroy(base_node* p) { p->destroy(); }
+
+  // Nodes are allocated with trailing storage for the arrays they own, so they must not be freed by a
+  // deallocation function that assumes the size of the node.
+  static void operator delete(void* p) { ::operator delete(p); }
 };
 
 using base_expr_node = base_node<expr_node_type, expr_visitor>;
@@ -376,12 +382,15 @@ class let : public expr_node<let> {
 public:
   // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
   // list can use the values defined by earlier lets in the list.
-  std::vector<std::pair<var, expr>> lets;
+  span<std::pair<var, expr>> lets;
   expr body;
+
+  ~let();
 
   void accept(expr_visitor* v) const override;
 
   static expr make(std::vector<std::pair<var, expr>> lets, expr body);
+  static expr make(span<std::pair<var, expr>> lets, expr body);
 
   static expr make(var sym, expr value, expr body);
 
@@ -397,7 +406,7 @@ public:
   buffer_field field;
 
   // If `field` is a per-dimension field, which dimension being referenced.
-  int dim;
+  std::int16_t dim;
 
   void accept(expr_visitor* v) const override;
 
@@ -545,7 +554,9 @@ public:
   callable target;
 
   // Arguments to the function.
-  std::vector<expr> args;
+  span<expr> args;
+
+  ~call();
 
   void accept(expr_visitor* v) const override;
 
@@ -735,8 +746,8 @@ dim_expr buffer_dim(var buf, int dim);
 std::vector<dim_expr> buffer_dims(var buf, int rank);
 std::vector<dim_expr> buffer_dims(const raw_buffer& buf);
 
-expr buffer_at(expr buf, span<const expr> at);
-expr buffer_at(expr buf, span<const var> at);
+expr buffer_at(expr buf, span<expr> at);
+expr buffer_at(expr buf, span<var> at);
 expr buffer_at(expr buf);
 
 template <typename... Args>
@@ -745,13 +756,13 @@ expr buffer_at(expr buf, expr at0, Args... at) {
   return buffer_at(buf, args);
 }
 
-box_expr dims_bounds(span<const dim_expr> dims);
+box_expr dims_bounds(span<dim_expr> dims);
 
 expr semaphore_init(expr sem, expr count = expr());
 expr semaphore_signal(expr sem, expr count = expr());
-expr semaphore_signal(span<const expr> sems, span<const expr> counts = {});
+expr semaphore_signal(span<expr> sems, span<expr> counts = {});
 expr semaphore_wait(expr sem, expr count = expr());
-expr semaphore_wait(span<const expr> sems, span<const expr> counts = {});
+expr semaphore_wait(span<expr> sems, span<expr> counts = {});
 
 expr wait_for(expr task);
 expr wait_for(std::vector<expr> tasks);

@@ -455,15 +455,15 @@ public:
 };
 
 template <int matched>
-SLINKY_UNIQUE bool match_tuple(const std::tuple<>& t, const std::vector<expr>& x, match_context& ctx) {
+SLINKY_UNIQUE bool match_tuple(const std::tuple<>& t, span<expr> x, match_context& ctx) {
   return true;
 }
 template <int matched, typename A>
-SLINKY_UNIQUE bool match_tuple(const std::tuple<A>& t, const std::vector<expr>& x, match_context& ctx) {
+SLINKY_UNIQUE bool match_tuple(const std::tuple<A>& t, span<expr> x, match_context& ctx) {
   return match<matched>(std::get<0>(t), x[0], ctx);
 }
 template <int matched, typename A, typename B>
-SLINKY_UNIQUE bool match_tuple(const std::tuple<A, B>& t, const std::vector<expr>& x, match_context& ctx) {
+SLINKY_UNIQUE bool match_tuple(const std::tuple<A, B>& t, span<expr> x, match_context& ctx) {
   return match<matched>(std::get<0>(t), x[0], ctx) &&
          match<matched | pattern_info<A>::matched>(std::get<1>(t), x[1], ctx);
 }

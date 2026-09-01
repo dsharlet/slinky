@@ -62,51 +62,51 @@ stmt dummy_call(std::vector<var> inputs, std::vector<var> outputs, call_stmt::at
 }  // namespace
 
 TEST(optimizations, fuse_siblings) {
-  auto use_buffer = [](var x) { return call_stmt::make(nullptr, {}, {x}, {}, {}); };
+  auto use_buffer = [](var x) { return call_stmt::make(nullptr, span<var>{}, span<var>{&x, 1}, {}, {}); };
 
   ASSERT_THAT(fuse_siblings(block::make({
-                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
-                  allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+                  allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
+                  allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y)),
               })),
-      matches(allocate::make(
-          x, memory_type::heap, 1, {}, block::make({use_buffer(x), clone_buffer::make(y, x, use_buffer(y))}))));
+      matches(allocate::make(x, memory_type::heap, 1, span<dim_expr>{},
+          block::make({use_buffer(x), clone_buffer::make(y, x, use_buffer(y))}))));
 
   ASSERT_THAT(fuse_siblings(block::make({
-                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
-                  allocate::make(y, memory_type::heap, 2, {}, use_buffer(y)),
+                  allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
+                  allocate::make(y, memory_type::heap, 2, span<dim_expr>{}, use_buffer(y)),
               })),
       matches(fuse_siblings(block::make({
-          allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
-          allocate::make(y, memory_type::heap, 2, {}, use_buffer(y)),
+          allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
+          allocate::make(y, memory_type::heap, 2, span<dim_expr>{}, use_buffer(y)),
       }))));
 
   ASSERT_THAT(fuse_siblings(block::make({
-                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
-                  allocate::make(y, memory_type::stack, 1, {}, use_buffer(y)),
+                  allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
+                  allocate::make(y, memory_type::stack, 1, span<dim_expr>{}, use_buffer(y)),
               })),
       matches(fuse_siblings(block::make({
-          allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
-          allocate::make(y, memory_type::stack, 1, {}, use_buffer(y)),
+          allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
+          allocate::make(y, memory_type::stack, 1, span<dim_expr>{}, use_buffer(y)),
       }))));
 
   ASSERT_THAT(fuse_siblings(block::make({
-                  allocate::make(x, memory_type::heap, 1, {{}}, use_buffer(x)),
-                  allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+                  allocate::make(x, memory_type::heap, 1, std::vector<dim_expr>{{}}, use_buffer(x)),
+                  allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y)),
               })),
       matches(fuse_siblings(block::make({
-          allocate::make(x, memory_type::heap, 1, {{}}, use_buffer(x)),
-          allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+          allocate::make(x, memory_type::heap, 1, std::vector<dim_expr>{{}}, use_buffer(x)),
+          allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y)),
       }))));
 
   ASSERT_THAT(fuse_siblings(block::make({
-                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+                  allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
                   use_buffer(z),
-                  allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+                  allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y)),
               })),
       matches(block::make({
-          allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+          allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
           use_buffer(z),
-          allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+          allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y)),
       })));
   ASSERT_THAT(fuse_siblings(block::make({
                   crop_dim::make(x, y, 0, {0, 10}, crop_dim::make(z, x, 1, {0, 10}, use_buffer(z))),
@@ -215,7 +215,9 @@ TEST(optimizations, remove_pure_dims) {
 }
 
 TEST(optimizations, optimize_symbols) {
-  auto make_dummy_decl = [](var x, stmt body) { return allocate::make(x, memory_type::heap, 1, {}, body); };
+  auto make_dummy_decl = [](var x, stmt body) {
+    return allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, body);
+  };
 
   {
     // We don't know about x, we can't mutate it.
@@ -420,12 +422,10 @@ TEST(optimizations, lift_constants) {
   // Constants inside inner blocks or loops or lets get lifted to root let_stmt.
   stmt s = loop::make(x, loop::serial, {0, 10}, expr(),
       let_stmt::make(y, constant_buffer::make(buf1),
-          let_stmt::make(z, x + 1,
-              let_stmt::make(w, constant_buffer::make(buf2), dummy_call({y, w, z}, {})))));
+          let_stmt::make(z, x + 1, let_stmt::make(w, constant_buffer::make(buf2), dummy_call({y, w, z}, {})))));
 
   stmt expected = let_stmt::make({{y, constant_buffer::make(buf1)}, {w, constant_buffer::make(buf2)}},
-      loop::make(x, loop::serial, {0, 10}, expr(),
-          let_stmt::make(z, x + 1, dummy_call({y, w, z}, {}))));
+      loop::make(x, loop::serial, {0, 10}, expr(), let_stmt::make(z, x + 1, dummy_call({y, w, z}, {}))));
 
   ASSERT_THAT(lift_constants(s), matches(expected));
 

@@ -43,7 +43,7 @@ void merge_crop(std::optional<box_expr>& bounds, int d, const interval_expr& new
   bounds_d = simplify_intersection(std::move(bounds_d), new_bounds);
 }
 
-void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
+void merge_crop(std::optional<box_expr>& bounds, span<interval_expr> new_bounds) {
   if (!bounds) {
     bounds = box_expr();
   }
@@ -63,7 +63,7 @@ void define_undef_bounds(box_expr& bounds, var sym) {
 
 // Keep substituting substitutions until nothing happens.
 std::vector<dim_expr> recursive_substitute(
-    std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
+    std::vector<dim_expr> dims, span<std::pair<expr, expr>> substitutions) {
   scoped_trace trace("recursive_substitute");
   while (true) {
     bool changed = false;
@@ -185,7 +185,7 @@ public:
   };
   symbol_map<std::vector<dim_fold_info>> fold_factors;
 
-  static std::vector<dim_fold_info> get_dim_fold_info(const std::vector<dim_expr>& dims) {
+  static std::vector<dim_fold_info> get_dim_fold_info(span<dim_expr> dims) {
     std::vector<dim_fold_info> info(dims.size(), dim_fold_info());
     for (std::size_t d = 0; d < dims.size(); ++d) {
       if (is_finite(dims[d].fold_factor)) {
@@ -315,7 +315,7 @@ public:
     for (int d = 0; d < static_cast<int>(op->dims.size()); ++d) {
       replacements.emplace_back(buffer_fold_factor(op->sym, d), fold_info[d].factor);
     }
-    std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
+    std::vector<dim_expr> dims = recursive_substitute(to_vector(op->dims), replacements);
     // Replace infinite fold factors with undefined.
     for (dim_expr& d : dims) {
       if (is_positive_infinity(d.fold_factor)) d.fold_factor = expr();
@@ -443,7 +443,7 @@ public:
     }
   }
 
-  void visit_call_or_copy(span<const var> inputs, span<const var> outputs) {
+  void visit_call_or_copy(span<var> inputs, span<var> outputs) {
     scoped_trace trace("visit_call_or_copy");
 
     for (var input : inputs) {
@@ -684,7 +684,7 @@ public:
           std::fill_n(&sems(0, sems.dim(1).min()), stage_count, 1);
           return 0;
         },
-        {}, {l.semaphores}, {}, std::move(init_sems_attrs));
+        span<var>{}, span<var>{&l.semaphores, 1}, {}, std::move(init_sems_attrs));
     // We can fold the semaphores array by the number of threads we'll use.
     // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
     expr sem_fold_factor = stage_count;

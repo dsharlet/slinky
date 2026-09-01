@@ -96,7 +96,7 @@ TEST(evaluate, call) {
         calls.push_back(ctx[x]);
         return 0;
       },
-      {}, {}, {}, {});
+      span<var>{}, span<var>{}, {}, {});
 
   eval_context context;
   context[x] = 2;
@@ -121,7 +121,7 @@ TEST(evaluate, loop) {
           sum_x += ctx[x];
           return 0;
         },
-        {}, {}, {}, {});
+        span<var>{}, span<var>{}, {}, {});
 
     stmt l = loop::make(x, max_workers, range(2, 12), 3, c);
 
@@ -152,7 +152,7 @@ stmt make_check(var buffer, std::vector<int> extents, const void* base = nullptr
         }
         return 0;
       },
-      {}, {buffer}, {}, {});
+      span<var>{}, {&buffer, 1}, {}, {});
 }
 
 TEST(evaluate, buffer_fields_broadcast) {
@@ -317,24 +317,24 @@ TEST(evaluate, transpose) {
 
   auto buf_before = buf;
 
-  evaluate(transpose::make(x, x, {0, 1}, make_check(x, {10, 20}, buf.base())), ctx);
-  evaluate(transpose::make(x, x, {3, 1}, make_check(x, {40, 20}, buf.base())), ctx);
-  evaluate(transpose::make(y, x, {0, 1},
+  evaluate(transpose::make(x, x, std::vector<int>{0, 1}, make_check(x, {10, 20}, buf.base())), ctx);
+  evaluate(transpose::make(x, x, std::vector<int>{3, 1}, make_check(x, {40, 20}, buf.base())), ctx);
+  evaluate(transpose::make(y, x, std::vector<int>{0, 1},
                block::make({
                    make_check(x, {10, 20, 30, 40}, buf.base()),
                    make_check(y, {10, 20}, buf.base()),
                })),
       ctx);
-  evaluate(transpose::make(y, x, {2, 1},
+  evaluate(transpose::make(y, x, std::vector<int>{2, 1},
                block::make({
                    make_check(x, {10, 20, 30, 40}, buf.base()),
                    make_check(y, {30, 20}, buf.base()),
                })),
       ctx);
-  evaluate(transpose::make(y, x, {0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10}, buf.base())), ctx);
+  evaluate(transpose::make(y, x, std::vector<int>{0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10}, buf.base())), ctx);
 
   // The last dimension is a broadcast and is dropped.
-  evaluate(transpose::make(y, x, {0, 5}, make_check(y, {10}, buf.base())), ctx);
+  evaluate(transpose::make(y, x, std::vector<int>{0, 5}, make_check(y, {10}, buf.base())), ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
@@ -400,14 +400,14 @@ TEST(evaluate, async) {
         ++state;
         return 0;
       },
-      {}, {}, {}, {});
+      span<var>{}, span<var>{}, {}, {});
   auto make_check_state = [&](index_t value) {
     return call_stmt::make(
         [value, &state](const call_stmt* op, eval_context& ctx) -> index_t {
           assert(state == value);
           return 0;
         },
-        {}, {}, {}, {});
+        span<var>{}, span<var>{}, {}, {});
   };
 
   stmt test = async::make(x,

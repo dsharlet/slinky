@@ -11,6 +11,7 @@ cc_library(
     name = "builder",
     srcs = [
         "pipeline.cc",
+        "compact_nodes.cc",
         "node_mutator.cc",
         "optimizations.cc",
         "simplify.cc",

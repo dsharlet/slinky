@@ -271,15 +271,15 @@ public:
   }
   bool contains() const { return true; }
 
-  std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
+  std::ptrdiff_t flat_offset_bytes(span<index_t> indices) const {
     index_t offset = 0;
     for (std::size_t i = 0; i < std::min(indices.size(), rank); ++i) {
       offset += dims[i].flat_offset_bytes(indices[i]);
     }
     return offset;
   }
-  void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
-  bool contains(span<const index_t> indices) const {
+  void* address_at(span<index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
+  bool contains(span<index_t> indices) const {
     bool result = true;
     for (std::size_t i = 0; i < std::min(indices.size(), rank); ++i) {
       result = result && dims[i].contains(indices[i]);
@@ -292,7 +292,7 @@ public:
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
   }
-  void translate(span<const index_t> offsets) {
+  void translate(span<index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
@@ -300,7 +300,7 @@ public:
   }
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
-  void slice(span<const std::size_t> ds) {
+  void slice(span<std::size_t> ds) {
     if (ds.size() == 1) {
       slice(ds[0]);
       return;
@@ -609,7 +609,7 @@ public:
   // Construct a buffer with extents, and strides computed such that the stride of dimension
   // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
   // dimension is "innermost".
-  buffer(span<const index_t> extents, std::size_t elem_size = internal::type_info<T>::size)
+  buffer(span<index_t> extents, std::size_t elem_size = internal::type_info<T>::size)
       : buffer(extents.size(), elem_size) {
     slinky::dim* d = dims;
     for (index_t extent : extents) {
@@ -676,8 +676,8 @@ public:
   auto& at() const { return *base(); }
   auto& operator()() const { return *base(); }
 
-  auto& at(span<const index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
-  auto& operator()(span<const index_t> indices) const { return at(indices); }
+  auto& at(span<index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
+  auto& operator()(span<index_t> indices) const { return at(indices); }
 
   // This differs from `raw_buffer::dim(std::size_t)` because it will expand the rank with broadcast dimensions if
   // necessary to return a reference to dimension d.
@@ -843,7 +843,7 @@ SLINKY_INLINE bool attempt_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_
 
 template <typename... Bufs>
 SLINKY_INLINE bool attempt_fuse(
-    std::ptrdiff_t inner, std::ptrdiff_t outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+    std::ptrdiff_t inner, std::ptrdiff_t outer, span<int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
     // These two dims are not part of the same set. Don't fuse them.
     return false;
@@ -871,7 +871,7 @@ bool all(Args... args) {
 // dimensions are considered to be in the same set.
 // Returns true if the sort changed the ordering of the dimensions.
 template <typename... Bufs>
-bool sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+bool sort_dims(span<int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   // We only attempt to sort the dimensions that exist in all buffers. We could do better here, sometimes we can
   // swap implicit broadcast dimensions with another broadcast dimension.
   const size_t rank = std::min({buf.rank, bufs.rank...});
@@ -902,7 +902,7 @@ bool sort_dims(raw_buffer& buf, Bufs&... bufs) {
 // likely to be more efficient. `dim_sets` is an optional span of integers that indicates sets of dimensions that are
 // eligible for fusion. By default, all dimensions are considered to be part of the same set.
 template <typename... Bufs>
-int fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+int fuse_contiguous_dims(span<int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   int fused = 0;
   for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     fused += internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
@@ -920,7 +920,7 @@ int fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
 
 // Call both `sort_dims` and `fuse_contiguous_dims` on the buffers.
 template <typename... Bufs>
-int optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+int optimize_dims(span<int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   // The order of operations here is for performance: It's a lot faster to fuse dimensions than sort them. So we fuse
   // what we can before sorting, then if the sorting changed the order of the dimensions, attempt to fuse again.
   int fused = fuse_contiguous_dims(dim_sets, buf, bufs...);

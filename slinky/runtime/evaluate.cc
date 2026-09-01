@@ -226,7 +226,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx
 
   std::size_t context_size = 0;
   for (const auto& let : op->lets) {
-    context_size = std::max(context_size, let.first.id);
+    context_size = std::max<size_t>(context_size, let.first.id);
   }
   ctx.reserve(context_size + 1);
 

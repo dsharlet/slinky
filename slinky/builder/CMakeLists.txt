@@ -1,5 +1,6 @@
 add_library(slinky_builder
     pipeline.cc
+    compact_nodes.cc
     node_mutator.cc
     optimizations.cc
     simplify.cc

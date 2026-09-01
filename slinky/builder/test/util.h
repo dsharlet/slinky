@@ -40,7 +40,7 @@ std::string remove_windows_newlines(std::string s);
 
 std::string read_entire_file(const std::string& pathname);
 
-inline bool is_permutation(span<const int> p) {
+inline bool is_permutation(span<int> p) {
   std::vector<int> unpermuted(p.size());
   std::iota(unpermuted.begin(), unpermuted.end(), 0);
   return std::is_permutation(p.begin(), p.end(), unpermuted.begin());

@@ -58,6 +58,10 @@ stmt cleanup_semaphores(const stmt& s);
 // Lift constant lets to a single root let_stmt.
 stmt lift_constants(const stmt& s);
 
+// Rewrite the stmt into a single allocation. The allocation will only be freed after all the nodes stored in the
+// allocation are freed.
+stmt compact_nodes(const stmt& s);
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

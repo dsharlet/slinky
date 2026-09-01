@@ -202,7 +202,7 @@ public:
   }
 
   template <typename T>
-  void print_vector(span<const T> v, const std::string& sep = ", ") {
+  void print_vector(span<T> v, const std::string& sep = ", ") {
     for (std::size_t i = 0; i < v.size(); ++i) {
       *this << v[i];
       if (i + 1 < v.size()) {
@@ -213,6 +213,12 @@ public:
 
   template <typename T>
   printer& operator<<(const std::vector<T>& v) {
+    print_vector(v);
+    return *this;
+  }
+
+  template <typename T>
+  printer& operator<<(span<T> v) {
     print_vector(v);
     return *this;
   }
@@ -265,7 +271,7 @@ public:
     }
     *this << ", " << buf.elem_size << ", {";
     if (buf.rank > 0) {
-      print_vector(span<const dim>{buf.dims, buf.rank}, ", ");
+      print_vector(span<dim>{buf.dims, buf.rank}, ", ");
     }
     *this << "})";
   }
@@ -364,8 +370,8 @@ public:
 
   void visit(const call_stmt* n) override {
     *this << indent() << "call(";
-    if (!n->attrs.name.empty()) {
-      *this << n->attrs.name;
+    if (!n->attrs->name.empty()) {
+      *this << n->attrs->name;
     } else if (n->target) {
       *this << "<anonymous target>";
     } else {

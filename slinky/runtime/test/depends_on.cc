@@ -120,25 +120,26 @@ TEST(depends_on, is_pure) {
 }
 
 TEST(find_buffer_dependencies, basic) {
-  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, {}, dummy_call({x}, {z})),
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, span<interval_expr>{}, dummy_call({x}, {z})),
                   /*input=*/false, /*output=*/true),
       testing::ElementsAre(y));
   ASSERT_EQ(find_buffer_data_dependency(buffer_at(x)), x);
   ASSERT_EQ(find_buffer_data_dependency(buffer_at(x, buffer_min(y, 0))), x);
   ASSERT_EQ(find_buffer_data_dependency(buffer_at(x) + buffer_at(y)), var());
 
-  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(x, y, {}, dummy_call({y}, {x}))), testing::ElementsAre(y));
-  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, {}, dummy_call({x}, {z})),
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(x, y, span<interval_expr>{}, dummy_call({y}, {x}))),
+      testing::ElementsAre(y));
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, span<interval_expr>{}, dummy_call({x}, {z})),
                   /*input=*/true, /*output=*/false),
       testing::ElementsAre(x));
-  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, {}, dummy_call({x}, {z})),
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, span<interval_expr>{}, dummy_call({x}, {z})),
                   /*input=*/false, /*output=*/true),
       testing::ElementsAre(y));
 
   stmt test = block::make({
-      crop_buffer::make(z, x, {}, dummy_call({y}, {z})),
-      slice_buffer::make(z, w, {}, dummy_call({y}, {z})),
-      make_buffer::make(v, buffer_at(u), buffer_elem_size(u), {}, dummy_call({x}, {v})),
+      crop_buffer::make(z, x, span<interval_expr>{}, dummy_call({y}, {z})),
+      slice_buffer::make(z, w, span<expr>{}, dummy_call({y}, {z})),
+      make_buffer::make(v, buffer_at(u), buffer_elem_size(u), std::vector<dim_expr>{}, dummy_call({x}, {v})),
   });
 
   ASSERT_THAT(find_buffer_dependencies(test, /*input=*/true, /*output=*/false), testing::ElementsAre(x, y));
