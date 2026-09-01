@@ -23,19 +23,25 @@ class arena : public ref_counted<arena> {
   arena() : next_(sizeof(arena)) {}
 
 public:
-  // A chunk comes from `::operator new`, so it is aligned to this, and can align anything it holds up to this much.
-  static constexpr std::size_t max_alignment = alignof(std::max_align_t);
-
   static constexpr std::size_t block_size = 4096;
 
+  // A chunk is aligned to `block_size`, so it can align anything it holds up to this much.
+  static constexpr std::size_t max_alignment = block_size;
+
   static slinky::ref_count<arena> make() {
-    return slinky::ref_count<arena>(new (::operator new(block_size)) arena());
+    return slinky::ref_count<arena>(new (::operator new(block_size, std::align_val_t(block_size))) arena());
+  }
+
+  // Because chunks are aligned to `block_size`, the chunk an object lives in is the beginning of the block containing
+  // it. This lets nodes find the chunk that owns them without storing a pointer to it.
+  static arena* from(const void* p) {
+    return reinterpret_cast<arena*>(reinterpret_cast<std::uintptr_t>(p) & ~(block_size - 1));
   }
 
   // Returns memory for a node, padding to align it, or null if there is not enough space in this chunk.
   void* allocate(std::size_t size, std::size_t alignment) {
     assert(alignment <= max_alignment);
-    std::size_t offset = align_up(next_, alignment);
+    std::size_t offset = (next_ + alignment - 1) & ~(alignment - 1);
     if (offset + size > block_size) {
       // Out of space
       return nullptr;
@@ -46,7 +52,7 @@ public:
 
   static void destroy(arena* a) {
     a->~arena();
-    ::operator delete(a);
+    ::operator delete(a, std::align_val_t(block_size));
   }
 };
 
@@ -55,25 +61,27 @@ constexpr std::size_t array_alignment = alignof(void*);
 // A node of type `T` that lives in an `arena`.
 template <typename T>
 class arena_node : public T {
-  slinky::ref_count<arena> arena_;
-
 public:
-  arena_node(const T& src, slinky::ref_count<arena> a) : T(src), arena_(std::move(a)) {
+  arena_node(const T& src) : T(src) {
     static_assert(alignof(arena_node) <= arena::max_alignment, "node is overaligned for a chunk");
     static_assert(sizeof(arena_node) % array_alignment == 0, "node arrays would be misaligned");
+    arena::from(this)->add_ref();
   }
 
+  // These nodes find their arena from their own address, so they can only be constructed in an arena.
+  static void* operator new(std::size_t) = delete;
+  static void* operator new(std::size_t, void* mem) { return mem; }
+
   void destroy() override {
-    // Don't destroy the arena before the base node destructor runs.
-    slinky::ref_count<arena> a = std::move(arena_);
     this->~arena_node();
+    arena::from(this)->release();
   }
 };
 
 template <typename T>
 std::size_t size_of(span<T> x) {
   static_assert(alignof(T) <= array_alignment, "array would not be aligned");
-  return align_up(x.size() * sizeof(T), array_alignment);
+  return (x.size() * sizeof(T) + array_alignment - 1) & ~(array_alignment - 1);
 }
 
 // The size of a node in the arena. Nodes that own arrays need room for them too.
@@ -109,74 +117,74 @@ span<T> make_span(void*& storage, span<T> src) {
 }
 
 template <typename T>
-const T* clone_into(void* mem, const T& n, ref_count<arena> a) {
-  return new (mem) arena_node<T>(n, std::move(a));
+const T* clone_into(void* mem, const T& n) {
+  return new (mem) arena_node<T>(n);
 }
-const let* clone_into(void* mem, const let& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<let>(n, std::move(a));
+const let* clone_into(void* mem, const let& n) {
+  auto result = new (mem) arena_node<let>(n);
   void* arrays = result + 1;
   result->lets = make_span(arrays, n.lets);
   return result;
 }
-const call* clone_into(void* mem, const call& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<call>(n, std::move(a));
+const call* clone_into(void* mem, const call& n) {
+  auto result = new (mem) arena_node<call>(n);
   void* arrays = result + 1;
   result->args = make_span(arrays, n.args);
   return result;
 }
-const let_stmt* clone_into(void* mem, const let_stmt& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<let_stmt>(n, std::move(a));
+const let_stmt* clone_into(void* mem, const let_stmt& n) {
+  auto result = new (mem) arena_node<let_stmt>(n);
   void* arrays = result + 1;
   result->lets = make_span(arrays, n.lets);
   return result;
 }
-const block* clone_into(void* mem, const block& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<block>(n, std::move(a));
+const block* clone_into(void* mem, const block& n) {
+  auto result = new (mem) arena_node<block>(n);
   void* arrays = result + 1;
   result->stmts = make_span(arrays, n.stmts);
   return result;
 }
-const call_stmt* clone_into(void* mem, const call_stmt& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<call_stmt>(n, std::move(a));
+const call_stmt* clone_into(void* mem, const call_stmt& n) {
+  auto result = new (mem) arena_node<call_stmt>(n);
   void* arrays = result + 1;
   result->inputs = make_span(arrays, n.inputs);
   result->outputs = make_span(arrays, n.outputs);
   result->scalars = make_span(arrays, n.scalars);
   return result;
 }
-const copy_stmt* clone_into(void* mem, const copy_stmt& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<copy_stmt>(n, std::move(a));
+const copy_stmt* clone_into(void* mem, const copy_stmt& n) {
+  auto result = new (mem) arena_node<copy_stmt>(n);
   void* arrays = result + 1;
   result->src_x = make_span(arrays, n.src_x);
   result->dst_x = make_span(arrays, n.dst_x);
   return result;
 }
-const allocate* clone_into(void* mem, const allocate& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<allocate>(n, std::move(a));
+const allocate* clone_into(void* mem, const allocate& n) {
+  auto result = new (mem) arena_node<allocate>(n);
   void* arrays = result + 1;
   result->dims = make_span(arrays, n.dims);
   return result;
 }
-const make_buffer* clone_into(void* mem, const make_buffer& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<make_buffer>(n, std::move(a));
+const make_buffer* clone_into(void* mem, const make_buffer& n) {
+  auto result = new (mem) arena_node<make_buffer>(n);
   void* arrays = result + 1;
   result->dims = make_span(arrays, n.dims);
   return result;
 }
-const crop_buffer* clone_into(void* mem, const crop_buffer& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<crop_buffer>(n, std::move(a));
+const crop_buffer* clone_into(void* mem, const crop_buffer& n) {
+  auto result = new (mem) arena_node<crop_buffer>(n);
   void* arrays = result + 1;
   result->bounds = make_span(arrays, n.bounds);
   return result;
 }
-const slice_buffer* clone_into(void* mem, const slice_buffer& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<slice_buffer>(n, std::move(a));
+const slice_buffer* clone_into(void* mem, const slice_buffer& n) {
+  auto result = new (mem) arena_node<slice_buffer>(n);
   void* arrays = result + 1;
   result->at = make_span(arrays, n.at);
   return result;
 }
-const transpose* clone_into(void* mem, const transpose& n, ref_count<arena> a) {
-  auto result = new (mem) arena_node<transpose>(n, std::move(a));
+const transpose* clone_into(void* mem, const transpose& n) {
+  auto result = new (mem) arena_node<transpose>(n);
   void* arrays = result + 1;
   result->dims = make_span(arrays, n.dims);
   return result;
@@ -223,7 +231,7 @@ class node_compactor : public node_mutator {
     const T* cloneable = mutated.template as<T>();
     assert(cloneable);
     assert(size_of(*cloneable) == size);
-    set_result(decltype(mutated)(clone_into(mem, *cloneable, std::move(chunk))));
+    set_result(decltype(mutated)(clone_into(mem, *cloneable)));
   }
 
 public:
