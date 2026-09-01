@@ -1,6 +1,7 @@
 #ifndef SLINKY_RUNTIME_EVALUATE_H
 #define SLINKY_RUNTIME_EVALUATE_H
 
+#include <cstdlib>
 #include <optional>
 
 #include "slinky/base/allocator.h"
@@ -12,20 +13,19 @@
 namespace slinky {
 
 class thread_pool;
-class eval_context;
-
-// The default implementations of `eval_config::allocate` and `eval_config::free`.
-void* default_allocate(eval_context& ctx, var sym, raw_buffer* buf);
-void default_free(eval_context& ctx, var sym, raw_buffer* buf, void* allocation);
 
 struct eval_config {
-  // These two functions implement allocation. `allocate` is called before
-  // running the body, and should assign `base` of the buffer to the address
-  // of the min in each dimension. `free` is called after running the body,
-  // passing the result of `allocate` in addition to the buffer.
-  // By default, they take heap blocks from the context's `pool`, aligned to `base_alignment`.
-  std::function<void*(eval_context&, var, raw_buffer*)> allocate = default_allocate;
-  std::function<void(eval_context&, var, raw_buffer*, void*)> free = default_free;
+  // These two functions implement allocation of buffer memory. `allocate` returns a pointer to at least `size` bytes
+  // with `alignof(std::max_align_t)` alignment; `free` releases a pointer returned by `allocate`. The caller aligns
+  // buffer bases to `base_alignment` within the block, padding requests accordingly. When `use_memory_pool` is set,
+  // freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no retained block
+  // fits, and `free` when a block is released from the pool.
+  std::function<void*(std::size_t)> allocate = [](std::size_t size) { return std::malloc(size); };
+  std::function<void(void*)> free = [](void* allocation) { std::free(allocation); };
+
+  // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
+  // and every free calls `free`.
+  bool use_memory_pool = true;
 
   // Functions called when there is a failure in the pipeline.
   // If these functions are not defined, the default handler will write a
@@ -40,8 +40,10 @@ struct eval_config {
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
 
-  // Alignment of the base pointer of allocations.
-  std::size_t base_alignment = sizeof(std::max_align_t);
+  // Alignment of the base pointer of allocations. Blocks from `allocate` are assumed to have
+  // `alignof(std::max_align_t)` alignment; stronger alignments are reached by padding the requested size and aligning
+  // the base within the block.
+  std::size_t base_alignment = alignof(std::max_align_t);
 
   // Alignment to use for `raw_buffer::init_strides` calls.
   std::size_t stride_alignment = 1;
@@ -56,6 +58,18 @@ class eval_context {
 
 public:
   eval_context();
+  ~eval_context() { trim_pool(); }
+
+  // Copies carry the values and config, but not the pool: each copy starts with an empty pool, so the per-worker
+  // context copies made for parallel loops never share retained blocks between threads.
+  eval_context(const eval_context& other) : values_(other.values_), config(other.config) {}
+  eval_context& operator=(const eval_context& other) {
+    if (this == &other) return *this;
+    trim_pool();
+    values_ = other.values_;
+    config = other.config;
+    return *this;
+  }
 
   SLINKY_INLINE void reserve(std::size_t size) {
     if (SLINKY_UNLIKELY(size > values_.size())) {
@@ -92,11 +106,15 @@ public:
 
   const eval_config* config;
 
-  // Heap blocks freed by this context are kept here for reuse instead of being returned to the system. Each context
-  // has its own pool (copying a context gives the copy an empty pool), so blocks stay on the thread that freed them.
-  // `pipeline::evaluate` trims the root context's pool at the end of each evaluation; the per-worker context copies
-  // made for parallel loops trim theirs when they are destroyed at the end of the loop.
+  // Heap blocks freed by this context are kept here for reuse instead of being returned to the system (see
+  // `eval_config::use_memory_pool`). Each context has its own pool, so blocks stay on the thread that freed
+  // them. The pool is trimmed when the context is destroyed (the per-worker context copies made for parallel loops
+  // die at the end of their loop); callers that keep a context alive across evaluations can call `trim_pool` to
+  // release retained blocks earlier.
   memory_pool pool;
+
+  // Releases the blocks retained in `pool` through `config->free`.
+  void trim_pool() { pool.trim(config->free); }
 };
 
 index_t evaluate(const expr& e, eval_context& context);

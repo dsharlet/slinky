@@ -1,5 +1,6 @@
 #include "slinky/builder/test/context.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -40,15 +41,20 @@ void setup_tracing(eval_config& cfg, const std::string& filename) {
 test_context::test_context() {
   static thread_pool_impl threads;
 
-  config.allocate = [this](eval_context&, var, raw_buffer* b) {
-    void* allocation = b->allocate();
-    heap.track_allocate(b->size_bytes());
+  config.allocate = [this](std::size_t size) {
+    void* allocation = malloc(size);
+    if (allocation) {
+      heap.track_allocate(allocation, size);
+    }
     return allocation;
   };
-  config.free = [this](eval_context&, var, raw_buffer* b, void* allocation) {
+  config.free = [this](void* allocation) {
+    heap.track_free(allocation);
     ::free(allocation);
-    heap.track_free(b->size_bytes());
   };
+
+  // Many tests count the number of allocations that go on the heap, don't let the pool absorb them.
+  config.use_memory_pool = false;
 
   copy = [this](const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad) {
     ++copy_calls;
