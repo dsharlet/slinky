@@ -9,6 +9,7 @@ cc_library(
     name = "base",
     hdrs = [
         "allocator.h",
+        "arena.h",
         "arithmetic.h",
         "atomic_wait.h",
         "function_ref.h",

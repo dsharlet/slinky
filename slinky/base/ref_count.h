@@ -15,7 +15,6 @@ class ref_counted {
 
 public:
   ref_counted() = default;
-  virtual ~ref_counted() = default;
 
   // std::atomic<int> does not have any copy or move constructors. This makes sense, such operations would be racy.
   // However, we want to allow making copies of reference counted objects. In this case, what should happen to the

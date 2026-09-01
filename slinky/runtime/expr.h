@@ -64,7 +64,7 @@ public:
   std::optional<var> lookup(const std::string& name) const;
 };
 
-enum class expr_node_type {
+enum class expr_node_type : std::uint8_t {
   none,
 
   variable,
@@ -158,9 +158,11 @@ class base_node : public ref_counted<base_node<NodeType, VisitorType>> {
 public:
   base_node(NodeType type) : type(type) {}
 
-  virtual void accept(VisitorType* v) const = 0;
+  void accept(VisitorType* v) const;
+  void destroy();
 
   NodeType type;
+  bool in_arena = false;
 
   template <typename T>
   const T* as() const {
@@ -171,7 +173,6 @@ public:
     }
   }
 
-  virtual void destroy() { delete this; }
   static void destroy(base_node* p) { p->destroy(); }
 
   // Nodes are allocated with trailing storage for the arrays they own, so they must not be freed by a
@@ -180,6 +181,11 @@ public:
 };
 
 using base_expr_node = base_node<expr_node_type, expr_visitor>;
+
+template <>
+void base_node<expr_node_type, expr_visitor>::accept(expr_visitor* v) const;
+template <>
+void base_node<expr_node_type, expr_visitor>::destroy();
 
 // These next two are just helpers for constructing the type information.
 template <typename T>
@@ -390,8 +396,6 @@ public:
 
   ~let();
 
-  void accept(expr_visitor* v) const override;
-
   static expr make(std::vector<std::pair<var, expr>> lets, expr body);
   static expr make(span<std::pair<var, expr>> lets, expr body);
 
@@ -411,8 +415,6 @@ public:
   // If `field` is a per-dimension field, which dimension being referenced.
   std::int16_t dim;
 
-  void accept(expr_visitor* v) const override;
-
   // Make a scalar variable reference.
   static expr make(var sym);
 
@@ -426,8 +428,6 @@ class constant : public expr_node<constant> {
 public:
   index_t value;
 
-  void accept(expr_visitor* v) const override;
-
   static expr_ref get(index_t value);
   static expr make(index_t value);
   static expr make(const void* value);
@@ -438,8 +438,6 @@ public:
 class constant_buffer : public expr_node<constant_buffer> {
 public:
   const_raw_buffer_ptr value;
-
-  void accept(expr_visitor* v) const override;
 
   static expr make(const_raw_buffer_ptr value);
 
@@ -457,7 +455,6 @@ public:
   class op : public binary_op {                                                                                        \
   public:                                                                                                              \
     op() : binary_op(static_type) {}                                                                                   \
-    void accept(expr_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr expr_node_type static_type = expr_node_type::op;                                                  \
     static constexpr bool commutative = c;                                                                             \
@@ -522,8 +519,6 @@ class logical_not : public expr_node<logical_not> {
 public:
   expr a;
 
-  void accept(expr_visitor* v) const override;
-
   static expr make(expr a);
 
   static constexpr expr_node_type static_type = expr_node_type::logical_not;
@@ -536,8 +531,6 @@ public:
   expr condition;
   expr true_value;
   expr false_value;
-
-  void accept(expr_visitor* v) const override;
 
   static expr make(expr condition, expr true_value, expr false_value);
 
@@ -560,8 +553,6 @@ public:
   span<expr> args;
 
   ~call();
-
-  void accept(expr_visitor* v) const override;
 
   static expr make(slinky::intrinsic i, callable target, std::vector<expr> args);
   static expr make(slinky::intrinsic i, std::vector<expr> args);
@@ -621,27 +612,6 @@ public:
   virtual void visit(const class select*) = 0;
   virtual void visit(const call*) = 0;
 };
-
-inline void variable::accept(expr_visitor* v) const { v->visit(this); }
-inline void constant::accept(expr_visitor* v) const { v->visit(this); }
-inline void constant_buffer::accept(expr_visitor* v) const { v->visit(this); }
-inline void let::accept(expr_visitor* v) const { v->visit(this); }
-inline void add::accept(expr_visitor* v) const { v->visit(this); }
-inline void sub::accept(expr_visitor* v) const { v->visit(this); }
-inline void mul::accept(expr_visitor* v) const { v->visit(this); }
-inline void div::accept(expr_visitor* v) const { v->visit(this); }
-inline void mod::accept(expr_visitor* v) const { v->visit(this); }
-inline void min::accept(expr_visitor* v) const { v->visit(this); }
-inline void max::accept(expr_visitor* v) const { v->visit(this); }
-inline void equal::accept(expr_visitor* v) const { v->visit(this); }
-inline void not_equal::accept(expr_visitor* v) const { v->visit(this); }
-inline void less::accept(expr_visitor* v) const { v->visit(this); }
-inline void less_equal::accept(expr_visitor* v) const { v->visit(this); }
-inline void logical_and::accept(expr_visitor* v) const { v->visit(this); }
-inline void logical_or::accept(expr_visitor* v) const { v->visit(this); }
-inline void logical_not::accept(expr_visitor* v) const { v->visit(this); }
-inline void select::accept(expr_visitor* v) const { v->visit(this); }
-inline void call::accept(expr_visitor* v) const { v->visit(this); }
 
 // If `x` is a constant, returns the value of the constant, otherwise `nullopt`.
 SLINKY_INLINE std::optional<index_t> as_constant(expr_ref x) {

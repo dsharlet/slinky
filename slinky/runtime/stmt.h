@@ -1,6 +1,7 @@
 #ifndef SLINKY_RUNTIME_STMT_H
 #define SLINKY_RUNTIME_STMT_H
 
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -11,7 +12,7 @@
 
 namespace slinky {
 
-enum class stmt_node_type {
+enum class stmt_node_type : std::uint8_t {
   none,
 
   call_stmt,
@@ -41,6 +42,11 @@ enum class memory_type {
 class stmt_visitor;
 
 using base_stmt_node = base_node<stmt_node_type, stmt_visitor>;
+
+template <>
+void base_node<stmt_node_type, stmt_visitor>::accept(stmt_visitor* v) const;
+template <>
+void base_node<stmt_node_type, stmt_visitor>::destroy();
 
 class stmt;
 
@@ -160,8 +166,6 @@ public:
   call_stmt(const call_stmt& other);
   ~call_stmt();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(callable target, span<var> inputs, span<var> outputs, std::vector<expr> scalars, attributes attrs);
 
   static constexpr stmt_node_type static_type = stmt_node_type::call_stmt;
@@ -184,8 +188,6 @@ public:
 
   ~copy_stmt();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad);
   static stmt make(callable impl, var src, std::vector<expr> src_x, var dst, span<var> dst_x, var pad);
 
@@ -207,8 +209,6 @@ public:
   // The values of every let must be a `variable` expression.
   bool is_closure;
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
   static stmt make(span<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
 
@@ -222,8 +222,6 @@ public:
   span<stmt> stmts;
 
   ~block();
-
-  void accept(stmt_visitor* v) const override;
 
   // Create a single block to contain all of the `stmts`.
   // Nested block statements are flattened, and undef stmts are removed.
@@ -250,8 +248,6 @@ public:
   static constexpr int serial = 1;
   static constexpr int parallel = std::numeric_limits<int>::max();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(var sym, expr max_workers, interval_expr bounds, expr step, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
@@ -264,8 +260,6 @@ public:
   var sym;
   stmt task;
   stmt body;
-
-  void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, stmt task, stmt body);
 
@@ -285,8 +279,6 @@ public:
 
   ~allocate();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body);
   static stmt make(var sym, memory_type storage, expr elem_size, span<dim_expr> dims, stmt body);
 
@@ -305,8 +297,6 @@ public:
 
   ~make_buffer();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
   static stmt make(var sym, expr base, expr elem_size, span<dim_expr> dims, stmt body);
 
@@ -319,8 +309,6 @@ public:
   var sym;
   var src;
   stmt body;
-
-  void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, stmt body);
 
@@ -339,8 +327,6 @@ public:
 
   ~crop_buffer();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(var sym, var src, std::vector<interval_expr> bounds, stmt body);
   static stmt make(var sym, var src, span<interval_expr> bounds, stmt body);
 
@@ -355,8 +341,6 @@ public:
   int dim;
   interval_expr bounds;
   stmt body;
-
-  void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, int dim, interval_expr bounds, stmt body);
 
@@ -376,8 +360,6 @@ public:
 
   ~slice_buffer();
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(var sym, var src, std::vector<expr> at, stmt body);
   static stmt make(var sym, var src, span<expr> at, stmt body);
 
@@ -393,8 +375,6 @@ public:
   int dim;
   expr at;
   stmt body;
-
-  void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, int dim, expr at, stmt body);
 
@@ -418,8 +398,6 @@ public:
   static bool is_truncate(span<int> dims);
   bool is_truncate() const;
 
-  void accept(stmt_visitor* v) const override;
-
   static stmt make(var sym, var src, std::vector<int> dims, stmt body);
   static stmt make(var sym, var src, span<int> dims, stmt body);
   static stmt make_truncate(var sym, var src, int rank, stmt body);
@@ -431,8 +409,6 @@ public:
 class check : public stmt_node<check> {
 public:
   expr condition;
-
-  void accept(stmt_visitor* v) const override;
 
   static stmt make(expr condition);
 
@@ -505,22 +481,6 @@ public:
   void visit(const async* op) override;
   void visit(const check* op) override;
 };
-
-inline void let_stmt::accept(stmt_visitor* v) const { v->visit(this); }
-inline void block::accept(stmt_visitor* v) const { v->visit(this); }
-inline void loop::accept(stmt_visitor* v) const { v->visit(this); }
-inline void call_stmt::accept(stmt_visitor* v) const { v->visit(this); }
-inline void copy_stmt::accept(stmt_visitor* v) const { v->visit(this); }
-inline void allocate::accept(stmt_visitor* v) const { v->visit(this); }
-inline void make_buffer::accept(stmt_visitor* v) const { v->visit(this); }
-inline void clone_buffer::accept(stmt_visitor* v) const { v->visit(this); }
-inline void crop_buffer::accept(stmt_visitor* v) const { v->visit(this); }
-inline void crop_dim::accept(stmt_visitor* v) const { v->visit(this); }
-inline void slice_buffer::accept(stmt_visitor* v) const { v->visit(this); }
-inline void slice_dim::accept(stmt_visitor* v) const { v->visit(this); }
-inline void transpose::accept(stmt_visitor* v) const { v->visit(this); }
-inline void async::accept(stmt_visitor* v) const { v->visit(this); }
-inline void check::accept(stmt_visitor* v) const { v->visit(this); }
 
 }  // namespace slinky
 

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <numeric>
@@ -9,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "slinky/base/arena.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
@@ -203,7 +206,126 @@ const constant* make_constant(std::int64_t value) {
   return n;
 }
 
+template <typename T, typename Node>
+void destroy_as(Node* n) {
+  static_cast<const T*>(n)->~T();
+}
+
+void free_node(void* n, bool in_arena) {
+  if (in_arena) {
+    arena::from(n)->release();
+  } else {
+    ::operator delete(n);
+  }
+}
+
 }  // namespace
+
+template <>
+void base_expr_node::accept(expr_visitor* v) const {
+  switch (type) {
+  case expr_node_type::variable: v->visit(static_cast<const variable*>(this)); return;
+  case expr_node_type::constant: v->visit(static_cast<const constant*>(this)); return;
+  case expr_node_type::constant_buffer: v->visit(static_cast<const constant_buffer*>(this)); return;
+  case expr_node_type::let: v->visit(static_cast<const let*>(this)); return;
+  case expr_node_type::add: v->visit(static_cast<const add*>(this)); return;
+  case expr_node_type::sub: v->visit(static_cast<const sub*>(this)); return;
+  case expr_node_type::mul: v->visit(static_cast<const mul*>(this)); return;
+  case expr_node_type::div: v->visit(static_cast<const div*>(this)); return;
+  case expr_node_type::mod: v->visit(static_cast<const mod*>(this)); return;
+  case expr_node_type::min: v->visit(static_cast<const class min*>(this)); return;
+  case expr_node_type::max: v->visit(static_cast<const class max*>(this)); return;
+  case expr_node_type::equal: v->visit(static_cast<const equal*>(this)); return;
+  case expr_node_type::not_equal: v->visit(static_cast<const not_equal*>(this)); return;
+  case expr_node_type::less: v->visit(static_cast<const less*>(this)); return;
+  case expr_node_type::less_equal: v->visit(static_cast<const less_equal*>(this)); return;
+  case expr_node_type::logical_and: v->visit(static_cast<const logical_and*>(this)); return;
+  case expr_node_type::logical_or: v->visit(static_cast<const logical_or*>(this)); return;
+  case expr_node_type::logical_not: v->visit(static_cast<const logical_not*>(this)); return;
+  case expr_node_type::select: v->visit(static_cast<const class select*>(this)); return;
+  case expr_node_type::call: v->visit(static_cast<const call*>(this)); return;
+  case expr_node_type::none: break;
+  }
+  SLINKY_UNREACHABLE << "unknown node type " << static_cast<int>(type);
+}
+
+template <>
+void base_expr_node::destroy() {
+  // Read this before the destructor below ends the lifetime of this node.
+  const bool node_in_arena = in_arena;
+  switch (type) {
+  case expr_node_type::variable: destroy_as<variable>(this); break;
+  case expr_node_type::constant: destroy_as<constant>(this); break;
+  case expr_node_type::constant_buffer: destroy_as<constant_buffer>(this); break;
+  case expr_node_type::let: destroy_as<let>(this); break;
+  case expr_node_type::add: destroy_as<add>(this); break;
+  case expr_node_type::sub: destroy_as<sub>(this); break;
+  case expr_node_type::mul: destroy_as<mul>(this); break;
+  case expr_node_type::div: destroy_as<div>(this); break;
+  case expr_node_type::mod: destroy_as<mod>(this); break;
+  case expr_node_type::min: destroy_as<class min>(this); break;
+  case expr_node_type::max: destroy_as<class max>(this); break;
+  case expr_node_type::equal: destroy_as<equal>(this); break;
+  case expr_node_type::not_equal: destroy_as<not_equal>(this); break;
+  case expr_node_type::less: destroy_as<less>(this); break;
+  case expr_node_type::less_equal: destroy_as<less_equal>(this); break;
+  case expr_node_type::logical_and: destroy_as<logical_and>(this); break;
+  case expr_node_type::logical_or: destroy_as<logical_or>(this); break;
+  case expr_node_type::logical_not: destroy_as<logical_not>(this); break;
+  case expr_node_type::select: destroy_as<class select>(this); break;
+  case expr_node_type::call: destroy_as<call>(this); break;
+  case expr_node_type::none: SLINKY_UNREACHABLE << "expr_node_type::none";
+  }
+  free_node(this, node_in_arena);
+}
+
+template <>
+void base_stmt_node::accept(stmt_visitor* v) const {
+  switch (type) {
+  case stmt_node_type::let_stmt: v->visit(static_cast<const let_stmt*>(this)); return;
+  case stmt_node_type::block: v->visit(static_cast<const block*>(this)); return;
+  case stmt_node_type::loop: v->visit(static_cast<const loop*>(this)); return;
+  case stmt_node_type::call_stmt: v->visit(static_cast<const call_stmt*>(this)); return;
+  case stmt_node_type::copy_stmt: v->visit(static_cast<const copy_stmt*>(this)); return;
+  case stmt_node_type::allocate: v->visit(static_cast<const allocate*>(this)); return;
+  case stmt_node_type::make_buffer: v->visit(static_cast<const make_buffer*>(this)); return;
+  case stmt_node_type::clone_buffer: v->visit(static_cast<const clone_buffer*>(this)); return;
+  case stmt_node_type::crop_buffer: v->visit(static_cast<const crop_buffer*>(this)); return;
+  case stmt_node_type::crop_dim: v->visit(static_cast<const crop_dim*>(this)); return;
+  case stmt_node_type::slice_buffer: v->visit(static_cast<const slice_buffer*>(this)); return;
+  case stmt_node_type::slice_dim: v->visit(static_cast<const slice_dim*>(this)); return;
+  case stmt_node_type::transpose: v->visit(static_cast<const transpose*>(this)); return;
+  case stmt_node_type::async: v->visit(static_cast<const async*>(this)); return;
+  case stmt_node_type::check: v->visit(static_cast<const check*>(this)); return;
+  case stmt_node_type::none: break;
+  }
+  SLINKY_UNREACHABLE << "unknown node type " << static_cast<int>(type);
+}
+
+template <>
+void base_stmt_node::destroy() {
+  // Read this before the destructor below ends the lifetime of this node.
+  const bool node_in_arena = in_arena;
+  switch (type) {
+  case stmt_node_type::let_stmt: destroy_as<let_stmt>(this); break;
+  case stmt_node_type::block: destroy_as<block>(this); break;
+  case stmt_node_type::loop: destroy_as<loop>(this); break;
+  case stmt_node_type::call_stmt: destroy_as<call_stmt>(this); break;
+  case stmt_node_type::copy_stmt: destroy_as<copy_stmt>(this); break;
+  case stmt_node_type::allocate: destroy_as<allocate>(this); break;
+  case stmt_node_type::make_buffer: destroy_as<make_buffer>(this); break;
+  case stmt_node_type::clone_buffer: destroy_as<clone_buffer>(this); break;
+  case stmt_node_type::crop_buffer: destroy_as<crop_buffer>(this); break;
+  case stmt_node_type::crop_dim: destroy_as<crop_dim>(this); break;
+  case stmt_node_type::slice_buffer: destroy_as<slice_buffer>(this); break;
+  case stmt_node_type::slice_dim: destroy_as<slice_dim>(this); break;
+  case stmt_node_type::transpose: destroy_as<transpose>(this); break;
+  case stmt_node_type::async: destroy_as<async>(this); break;
+  case stmt_node_type::check: destroy_as<check>(this); break;
+  case stmt_node_type::none: SLINKY_UNREACHABLE << "stmt_node_type::none";
+  }
+  free_node(this, node_in_arena);
+}
 
 let::~let() { destroy_span(lets); }
 call::~call() { destroy_span(args); }
