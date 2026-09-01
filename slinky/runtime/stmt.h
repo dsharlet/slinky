@@ -154,8 +154,10 @@ public:
   span<var> inputs;
   span<var> outputs;
   span<expr> scalars;
-  attributes attrs;
+  std::unique_ptr<attributes> attrs;
 
+  call_stmt() = default;
+  call_stmt(const call_stmt& other);
   ~call_stmt();
 
   void accept(stmt_visitor* v) const override;

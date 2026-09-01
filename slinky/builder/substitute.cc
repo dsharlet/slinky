@@ -719,7 +719,7 @@ void substitutor::visit(const call_stmt* op) {
     changed = changed || !scalars[i].same_as(op->scalars[i]);
   }
   if (changed) {
-    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), op->attrs));
+    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), *op->attrs));
   } else {
     set_result(op);
   }

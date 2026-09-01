@@ -225,7 +225,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    if (op->attrs.name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
+    if (op->attrs->name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
         is_a_and_b(op->inputs[0], op->outputs[0])) {
       expr input_size = buffer_size_bytes(op->inputs[0]);
       expr output_size = buffer_size_bytes(op->outputs[0]);
@@ -680,7 +680,7 @@ public:
 
   void visit(const call_stmt* op) override {
     set_result(op);
-    if (op->attrs.name == "memcpy") {
+    if (op->attrs->name == "memcpy") {
       assert(op->inputs.size() == 1);
       assert(op->outputs.size() == 1);
       var in = op->inputs[0];
@@ -1114,7 +1114,7 @@ public:
       add_use(input_alloc->root);
     }
 
-    if (op->attrs.name == "memcpy") {
+    if (op->attrs->name == "memcpy") {
       // We can't handle this, it should have been handled by copy_aliaser if it could be aliased.
       return;
     }
@@ -1134,7 +1134,7 @@ public:
       for (std::size_t i = 0; i < op->inputs.size(); ++i) {
         const std::size_t bit = o * op->inputs.size() + i;
         if (bit > 31) break;
-        if ((op->attrs.allow_in_place & (1 << bit)) == 0) {
+        if ((op->attrs->allow_in_place & (1 << bit)) == 0) {
           continue;
         }
 
@@ -1629,7 +1629,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    if (op->attrs.min_rank == std::numeric_limits<int>::max()) {
+    if (op->attrs->min_rank == std::numeric_limits<int>::max()) {
       return set_result(stmt{op});
     }
 
@@ -1639,7 +1639,7 @@ public:
     }
 
     std::vector<expr> slices(sliceable.size());
-    for (int d = slices.size() - 1; d >= op->attrs.min_rank; --d) {
+    for (int d = slices.size() - 1; d >= op->attrs->min_rank; --d) {
       if (sliceable.test(d)) {
         slices[d] = buffer_min(op->outputs.front(), d);
       }
@@ -2227,7 +2227,7 @@ public:
   using node_mutator::visit;
 
   void visit(const call_stmt* op) override {
-    if (op->attrs.name == "init_semaphores") {
+    if (op->attrs->name == "init_semaphores") {
       allocations[op->outputs[0]]->is_semaphores = true;
     }
 
@@ -2245,7 +2245,7 @@ public:
         // Remove the initialization call, because otherwise the following
         // substitute call will fail.
         const call_stmt* maybe_init = maybe_block->stmts[0].as<call_stmt>();
-        if (maybe_init && maybe_init->attrs.name == "init_semaphores") {
+        if (maybe_init && maybe_init->attrs->name == "init_semaphores") {
           std::vector<stmt> new_block(maybe_block->stmts.begin() + 1, maybe_block->stmts.end());
           body = block::make(new_block);
           body = substitute(body, op->sym, expr());

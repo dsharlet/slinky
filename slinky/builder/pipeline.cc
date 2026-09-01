@@ -549,7 +549,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
       }
 
       if (changed) {
-        set_result(call_stmt::make(op->target, inputs, op->outputs, to_vector(op->scalars), op->attrs));
+        set_result(call_stmt::make(op->target, inputs, op->outputs, to_vector(op->scalars), *op->attrs));
       } else {
         set_result(op);
       }
@@ -1495,8 +1495,8 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
     }
 
     expr get_trace_arg(const call_stmt* op) {
-      if (!op->attrs.name.empty()) {
-        return get_trace_arg(op->attrs.name);
+      if (!op->attrs->name.empty()) {
+        return get_trace_arg(op->attrs->name);
       } else {
         return get_trace_arg("call");
       }

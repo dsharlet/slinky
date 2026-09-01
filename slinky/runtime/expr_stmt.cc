@@ -216,6 +216,12 @@ crop_buffer::~crop_buffer() { destroy_span(bounds); }
 slice_buffer::~slice_buffer() { destroy_span(at); }
 transpose::~transpose() { destroy_span(dims); }
 
+call_stmt::call_stmt(const call_stmt& other)
+    : stmt_node<call_stmt>(other), target(other.target), inputs(other.inputs), outputs(other.outputs),
+      scalars(other.scalars) {
+  if (other.attrs) attrs = std::make_unique<attributes>(*other.attrs);
+}
+
 call_stmt::~call_stmt() {
   destroy_span(inputs);
   destroy_span(outputs);
@@ -610,7 +616,7 @@ stmt call_stmt::make(
   n->inputs = make_span(arrays, inputs);
   n->outputs = make_span(arrays, outputs);
   n->scalars = make_span(arrays, scalars);
-  n->attrs = std::move(attrs);
+  n->attrs = std::make_unique<attributes>(std::move(attrs));
   return stmt(n);
 }
 

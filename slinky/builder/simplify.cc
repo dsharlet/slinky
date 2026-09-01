@@ -1490,7 +1490,7 @@ public:
       }
     }
     if (changed) {
-      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), op->attrs));
+      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), *op->attrs));
     } else {
       set_result(op);
     }

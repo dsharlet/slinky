@@ -213,7 +213,7 @@ void node_mutator::visit(const call_stmt* op) {
   if (!changed) {
     set_result(op);
   } else {
-    set_result(call_stmt::make(op->target, op->inputs, op->outputs, std::move(scalars), op->attrs));
+    set_result(call_stmt::make(op->target, op->inputs, op->outputs, std::move(scalars), *op->attrs));
   }
 }
 void node_mutator::visit(const copy_stmt* op) {

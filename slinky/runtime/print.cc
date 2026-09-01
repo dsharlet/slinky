@@ -370,8 +370,8 @@ public:
 
   void visit(const call_stmt* n) override {
     *this << indent() << "call(";
-    if (!n->attrs.name.empty()) {
-      *this << n->attrs.name;
+    if (!n->attrs->name.empty()) {
+      *this << n->attrs->name;
     } else if (n->target) {
       *this << "<anonymous target>";
     } else {
