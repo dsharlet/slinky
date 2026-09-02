@@ -1,8 +1,11 @@
 #ifndef SLINKY_BASE_SPAN_H
 #define SLINKY_BASE_SPAN_H
 
+#include <algorithm>
 #include <array>
+#include <iterator>
 #include <limits>
+#include <type_traits>
 #include <cassert>
 #include <vector>
 
@@ -74,7 +77,6 @@ public:
   template <std::size_t N>
   span(const std::array<value_type, N>& x) : data_(std::data(x)), size_(N) {}
   span(const std::vector<value_type>& c) : data_(std::data(c)), size_(std::size(c)) {}
-
   // Allow shallow copying/assignment.
   span(const span&) = default;
   span(span&&) = default;
@@ -86,6 +88,8 @@ public:
   bool empty() const { return size() == 0; }
   const value_type* begin() const { return data_; }
   const value_type* end() const { return data_ + size(); }
+  std::reverse_iterator<const value_type*> rbegin() const { return std::reverse_iterator<const value_type*>(end()); }
+  std::reverse_iterator<const value_type*> rend() const { return std::reverse_iterator<const value_type*>(begin()); }
 
   const value_type& operator[](std::size_t i) const { return data_[i]; }
   const value_type& front() const { return data_[0]; }
@@ -94,6 +98,15 @@ public:
   span subspan(std::size_t offset) const { return span(data_ + offset, size() - offset); }
   span subspan(std::size_t offset, std::size_t size) const { return span(data_ + offset, size); }
 };
+
+template <typename T, typename U>
+bool operator==(span<T> a, span<U> b) {
+  return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin());
+}
+template <typename T, typename U>
+bool operator!=(span<T> a, span<U> b) {
+  return !(a == b);
+}
 
 template <typename T, std::size_t Extent = dynamic_extent>
 class mutable_span {
@@ -178,12 +191,17 @@ public:
 };
 
 template <typename T>
-std::vector<T> permute(span<const int> p, const std::vector<T>& x, T default_value = T()) {
+std::vector<T> permute(span<int> p, const std::vector<T>& x, T default_value = T()) {
   std::vector<T> result(p.size());
   for (std::size_t i = 0; i < p.size(); ++i) {
     result[i] = static_cast<std::size_t>(p[i]) < x.size() ? x[p[i]] : default_value;
   }
   return result;
+}
+
+template <typename T>
+std::vector<typename span<T>::value_type> to_vector(span<T> x) {
+  return {x.begin(), x.end()};
 }
 
 }  // namespace slinky

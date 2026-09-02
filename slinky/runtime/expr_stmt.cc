@@ -61,6 +61,56 @@ bool can_evaluate(intrinsic fn) {
   }
 }
 
+// A node's arrays are constructed in its own allocation, immediately following the node. This layout is private to
+// the nodes we make here; nothing but the `span` of each array escapes.
+// Every element type we put in a node array has at most this alignment, so every array can be aligned the same way,
+// and the storage a node needs can be computed before allocating it.
+constexpr std::size_t array_alignment = alignof(void*);
+
+// The number of bytes the elements of `x` occupy in the storage of the node that owns them.
+template <typename Array>
+std::size_t size_of(const Array& x) {
+  using T = typename Array::value_type;
+  static_assert(alignof(T) <= array_alignment, "node array elements must not be overaligned");
+  return align_up(x.size() * sizeof(T), array_alignment);
+}
+
+// Construct an array in `storage` by moving the elements of `src` into it, and advance `storage` past it.
+template <typename T>
+span<T> make_span(void*& storage, std::vector<T>& src) {
+  T* result = static_cast<T*>(storage);
+  for (std::size_t i = 0; i < src.size(); ++i) {
+    new (result + i) T(std::move(src[i]));
+  }
+  storage = static_cast<char*>(storage) + size_of(src);
+  return span<T>(result, src.size());
+}
+
+// Construct an array in `storage` by copying `src`, which we don't own, and advance `storage` past it.
+template <typename T>
+span<T> make_span(void*& storage, span<T> src) {
+  T* result = static_cast<T*>(storage);
+  for (std::size_t i = 0; i < src.size(); ++i) {
+    new (result + i) T(src[i]);
+  }
+  storage = static_cast<char*>(storage) + size_of(src);
+  return span<T>(result, src.size());
+}
+
+template <typename T>
+void destroy_span(span<T> x) {
+  for (const T& i : x) {
+    const_cast<T&>(i).~T();
+  }
+}
+
+// Allocate a node with `array_bytes` of storage for its arrays following it.
+template <typename T>
+T* make_node(std::size_t array_bytes = 0) {
+  static_assert(sizeof(T) % array_alignment == 0, "node arrays would be misaligned");
+  return new (::operator new(sizeof(T) + array_bytes)) T();
+}
+
 template <typename T>
 expr make_bin_op(expr a, expr b) {
   // Here we eagerly constant fold arithmetic.
@@ -82,22 +132,30 @@ expr make_bin_op(expr a, expr b) {
   return expr(n);
 }
 
-template <typename T, typename Body>
-T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
-  auto n = new T();
-  n->lets = std::move(lets);
+template <typename T, typename Lets, typename Body>
+T* make_let(Lets&& lets, Body body) {
+  auto n = make_node<T>(size_of(lets));
+  void* arrays = n + 1;
+  n->lets = make_span(arrays, lets);
   n->body = std::move(body);
   return n;
 }
 
 expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
-  return expr(make_let<let>(std::move(lets), std::move(body)));
+  return expr(make_let<let>(lets, std::move(body)));
 }
+expr let::make(span<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 
 expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
 stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure) {
-  let_stmt* n = make_let<let_stmt>(std::move(lets), std::move(body));
+  let_stmt* n = make_let<let_stmt>(lets, std::move(body));
+  n->is_closure = is_closure;
+  return stmt(n);
+}
+
+stmt let_stmt::make(span<std::pair<var, expr>> lets, stmt body, bool is_closure) {
+  let_stmt* n = make_let<let_stmt>(lets, std::move(body));
   n->is_closure = is_closure;
   return stmt(n);
 }
@@ -147,11 +205,41 @@ const constant* make_constant(std::int64_t value) {
 
 }  // namespace
 
+let::~let() { destroy_span(lets); }
+call::~call() { destroy_span(args); }
+
+let_stmt::~let_stmt() { destroy_span(lets); }
+block::~block() { destroy_span(stmts); }
+allocate::~allocate() { destroy_span(dims); }
+make_buffer::~make_buffer() { destroy_span(dims); }
+crop_buffer::~crop_buffer() { destroy_span(bounds); }
+slice_buffer::~slice_buffer() { destroy_span(at); }
+transpose::~transpose() { destroy_span(dims); }
+
+call_stmt::call_stmt(const call_stmt& other)
+    : stmt_node<call_stmt>(other), target(other.target), inputs(other.inputs), outputs(other.outputs),
+      scalars(other.scalars) {
+  if (other.attrs) attrs = std::make_unique<attributes>(*other.attrs);
+}
+
+call_stmt::~call_stmt() {
+  destroy_span(inputs);
+  destroy_span(outputs);
+  destroy_span(scalars);
+}
+
+copy_stmt::~copy_stmt() {
+  destroy_span(src_x);
+  destroy_span(dst_x);
+}
+
 expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return expr(make_variable(sym)); }
 expr variable::make(var sym, buffer_field field, int dim) {
+  assert(dim >= std::numeric_limits<std::int16_t>::min());
+  assert(dim <= std::numeric_limits<std::int16_t>::max());
   variable* n = new variable();
   n->sym = sym;
   n->field = field;
@@ -501,10 +589,11 @@ expr select::make(expr condition, expr true_value, expr false_value) {
 }
 
 expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
-  auto n = new call();
+  auto n = make_node<call>(size_of(args));
   n->intrinsic = i;
   n->target = std::move(target);
-  n->args = std::move(args);
+  void* arrays = n + 1;
+  n->args = make_span(arrays, args);
   expr result(n);
 
   if (n->target || can_evaluate(i)) {
@@ -522,26 +611,37 @@ expr call::make(callable target, std::vector<expr> args) {
 }
 
 stmt call_stmt::make(
-    call_stmt::callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs) {
-  auto n = new call_stmt();
+    call_stmt::callable target, span<var> inputs, span<var> outputs, std::vector<expr> scalars, attributes attrs) {
+  auto n = make_node<call_stmt>(size_of(inputs) + size_of(outputs) + size_of(scalars));
+  void* arrays = n + 1;
   n->target = std::move(target);
-  n->inputs = std::move(inputs);
-  n->outputs = std::move(outputs);
-  n->scalars = std::move(scalars);
-  n->attrs = std::move(attrs);
+  n->inputs = make_span(arrays, inputs);
+  n->outputs = make_span(arrays, outputs);
+  n->scalars = make_span(arrays, scalars);
+  n->attrs = std::make_unique<attributes>(std::move(attrs));
+  return stmt(n);
+}
+
+template <typename DstX>
+stmt make_copy_stmt(copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, DstX&& dst_x, var pad) {
+  auto n = make_node<copy_stmt>(size_of(src_x) + size_of(dst_x));
+  void* arrays = n + 1;
+  n->src = src;
+  n->src_x = make_span(arrays, src_x);
+  n->dst = dst;
+  n->dst_x = make_span(arrays, dst_x);
+  n->pad = pad;
+  n->impl = impl;
   return stmt(n);
 }
 
 stmt copy_stmt::make(
     copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad) {
-  auto n = new copy_stmt();
-  n->src = src;
-  n->src_x = std::move(src_x);
-  n->dst = dst;
-  n->dst_x = std::move(dst_x);
-  n->pad = pad;
-  n->impl = impl;
-  return stmt(n);
+  return make_copy_stmt(impl, src, std::move(src_x), dst, std::move(dst_x), pad);
+}
+
+stmt copy_stmt::make(copy_stmt::callable impl, var src, std::vector<expr> src_x, var dst, span<var> dst_x, var pad) {
+  return make_copy_stmt(impl, src, std::move(src_x), dst, dst_x, pad);
 }
 
 namespace {
@@ -585,8 +685,9 @@ stmt block::make(std::vector<stmt> stmts) {
   } else if (stmts.size() == 1) {
     return std::move(stmts[0]);
   } else {
-    auto n = new block();
-    n->stmts = std::move(stmts);
+    auto n = make_node<block>(size_of(stmts));
+    void* arrays = n + 1;
+  n->stmts = make_span(arrays, stmts);
     return stmt(n);
   }
 }
@@ -612,24 +713,44 @@ stmt loop::make(var sym, expr max_workers, interval_expr bounds, expr step, stmt
   return stmt(l);
 }
 
-stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
-  auto n = new allocate();
+template <typename Dims>
+stmt make_allocate(var sym, memory_type storage, expr elem_size, Dims&& dims, stmt body) {
+  auto n = make_node<allocate>(size_of(dims));
   n->sym = sym;
   n->storage = storage;
   n->elem_size = std::move(elem_size);
-  n->dims = std::move(dims);
+  void* arrays = n + 1;
+  n->dims = make_span(arrays, dims);
+  n->body = std::move(body);
+  return stmt(n);
+}
+
+stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
+  return make_allocate(sym, storage, std::move(elem_size), dims, std::move(body));
+}
+
+stmt allocate::make(var sym, memory_type storage, expr elem_size, span<dim_expr> dims, stmt body) {
+  return make_allocate(sym, storage, std::move(elem_size), dims, std::move(body));
+}
+
+template <typename Dims>
+stmt make_make_buffer(var sym, expr base, expr elem_size, Dims&& dims, stmt body) {
+  auto n = make_node<make_buffer>(size_of(dims));
+  n->sym = sym;
+  n->base = std::move(base);
+  n->elem_size = std::move(elem_size);
+  void* arrays = n + 1;
+  n->dims = make_span(arrays, dims);
   n->body = std::move(body);
   return stmt(n);
 }
 
 stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
-  auto n = new make_buffer();
-  n->sym = sym;
-  n->base = std::move(base);
-  n->elem_size = std::move(elem_size);
-  n->dims = std::move(dims);
-  n->body = std::move(body);
-  return stmt(n);
+  return make_make_buffer(sym, std::move(base), std::move(elem_size), dims, std::move(body));
+}
+
+stmt make_buffer::make(var sym, expr base, expr elem_size, span<dim_expr> dims, stmt body) {
+  return make_make_buffer(sym, std::move(base), std::move(elem_size), dims, std::move(body));
 }
 
 stmt clone_buffer::make(var sym, var src, stmt body) {
@@ -640,13 +761,23 @@ stmt clone_buffer::make(var sym, var src, stmt body) {
   return stmt(n);
 }
 
-stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt body) {
-  auto n = new crop_buffer();
+template <typename Bounds>
+stmt make_crop_buffer(var sym, var src, Bounds&& bounds, stmt body) {
+  auto n = make_node<crop_buffer>(size_of(bounds));
   n->sym = sym;
   n->src = src;
-  n->bounds = std::move(bounds);
+  void* arrays = n + 1;
+  n->bounds = make_span(arrays, bounds);
   n->body = std::move(body);
   return stmt(n);
+}
+
+stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt body) {
+  return make_crop_buffer(sym, src, bounds, std::move(body));
+}
+
+stmt crop_buffer::make(var sym, var src, span<interval_expr> bounds, stmt body) {
+  return make_crop_buffer(sym, src, bounds, std::move(body));
 }
 
 stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) {
@@ -659,13 +790,23 @@ stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) 
   return stmt(n);
 }
 
-stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
-  auto n = new slice_buffer();
+template <typename At>
+stmt make_slice_buffer(var sym, var src, At&& at, stmt body) {
+  auto n = make_node<slice_buffer>(size_of(at));
   n->sym = sym;
   n->src = src;
-  n->at = std::move(at);
+  void* arrays = n + 1;
+  n->at = make_span(arrays, at);
   n->body = std::move(body);
   return stmt(n);
+}
+
+stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
+  return make_slice_buffer(sym, src, at, std::move(body));
+}
+
+stmt slice_buffer::make(var sym, var src, span<expr> at, stmt body) {
+  return make_slice_buffer(sym, src, at, std::move(body));
 }
 
 stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
@@ -678,13 +819,23 @@ stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
   return stmt(n);
 }
 
-stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
-  auto n = new transpose();
+template <typename Dims>
+stmt make_transpose(var sym, var src, Dims&& dims, stmt body) {
+  auto n = make_node<transpose>(size_of(dims));
   n->sym = sym;
   n->src = src;
-  n->dims = dims;
+  void* arrays = n + 1;
+  n->dims = make_span(arrays, dims);
   n->body = std::move(body);
   return stmt(n);
+}
+
+stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
+  return make_transpose(sym, src, dims, std::move(body));
+}
+
+stmt transpose::make(var sym, var src, span<int> dims, stmt body) {
+  return make_transpose(sym, src, dims, std::move(body));
 }
 
 stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
@@ -693,7 +844,7 @@ stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
   return make(sym, src, std::move(dims), std::move(body));
 }
 
-bool transpose::is_truncate(span<const int> dims) {
+bool transpose::is_truncate(span<int> dims) {
   for (std::size_t i = 0; i < dims.size(); ++i) {
     if (dims[i] != static_cast<int>(i)) return false;
   }
@@ -814,7 +965,7 @@ std::vector<dim_expr> buffer_dims(const raw_buffer& buf) {
   return result;
 }
 
-expr buffer_at(expr buf, span<const expr> at) {
+expr buffer_at(expr buf, span<expr> at) {
   std::vector<expr> args;
   args.reserve(at.size() + 1);
   args.push_back(std::move(buf));
@@ -822,7 +973,7 @@ expr buffer_at(expr buf, span<const expr> at) {
   return call::make(intrinsic::buffer_at, std::move(args));
 }
 
-expr buffer_at(expr buf, span<const var> at) {
+expr buffer_at(expr buf, span<var> at) {
   std::vector<expr> args;
   args.reserve(at.size() + 1);
   args.push_back(std::move(buf));
@@ -832,7 +983,7 @@ expr buffer_at(expr buf, span<const var> at) {
 
 expr buffer_at(expr buf) { return call::make(intrinsic::buffer_at, {std::move(buf)}); }
 
-box_expr dims_bounds(span<const dim_expr> dims) {
+box_expr dims_bounds(span<dim_expr> dims) {
   box_expr result(dims.size());
   for (std::size_t d = 0; d < dims.size(); ++d) {
     result[d] = dims[d].bounds;
@@ -892,7 +1043,7 @@ expr semaphore_wait(expr sem, expr count) {
 
 namespace {
 
-expr semaphore_helper(intrinsic fn, span<const expr> sems, span<const expr> counts) {
+expr semaphore_helper(intrinsic fn, span<expr> sems, span<expr> counts) {
   std::vector<expr> args(sems.size() * 2);
   for (std::size_t i = 0; i < sems.size(); ++i) {
     args[i * 2 + 0] = sems[i];
@@ -905,10 +1056,10 @@ expr semaphore_helper(intrinsic fn, span<const expr> sems, span<const expr> coun
 
 }  // namespace
 
-expr semaphore_signal(span<const expr> sems, span<const expr> counts) {
+expr semaphore_signal(span<expr> sems, span<expr> counts) {
   return semaphore_helper(intrinsic::semaphore_signal, sems, counts);
 }
-expr semaphore_wait(span<const expr> sems, span<const expr> counts) {
+expr semaphore_wait(span<expr> sems, span<expr> counts) {
   return semaphore_helper(intrinsic::semaphore_wait, sems, counts);
 }
 

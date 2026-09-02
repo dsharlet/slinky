@@ -60,7 +60,7 @@ public:
     } else {
       if (!try_match(self->rank, op->rank)) return false;
       if (!try_match(self->elem_size, op->elem_size)) return false;
-      if (!try_match(span<const dim>{self->dims, self->rank}, span<const dim>{op->dims, op->rank})) return false;
+      if (!try_match(span<dim>{self->dims, self->rank}, span<dim>{op->dims, op->rank})) return false;
 
       assert(self->size_bytes() == op->size_bytes());
       if (self->size_bytes() > 128) {
@@ -413,7 +413,7 @@ bool match(expr_ref a, expr_ref b) { return matcher().try_match(a.get(), b.get()
 bool match(stmt_ref a, stmt_ref b) { return matcher().try_match(a.get(), b.get()); }
 bool match(const interval_expr& a, const interval_expr& b) { return matcher().try_match(a, b); }
 bool match(const dim_expr& a, const dim_expr& b) { return matcher().try_match(a, b); }
-bool match(const box_expr& a, const box_expr& b) { return matcher().try_match(a, b); }
+bool match(span<interval_expr> a, span<interval_expr> b) { return matcher().try_match(a, b); }
 
 int compare(const var& a, const var& b) {
   matcher m;
@@ -436,7 +436,7 @@ namespace {
 
 template <typename T>
 auto mutate_let(substitutor* this_, const T* op) {
-  std::vector<std::pair<var, expr>> lets = op->lets;
+  std::vector<std::pair<var, expr>> lets = to_vector(op->lets);
   bool changed = false;
   std::size_t decls_entered = 0;
   for (auto& s : lets) {
@@ -719,7 +719,7 @@ void substitutor::visit(const call_stmt* op) {
     changed = changed || !scalars[i].same_as(op->scalars[i]);
   }
   if (changed) {
-    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), op->attrs));
+    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), std::move(scalars), *op->attrs));
   } else {
     set_result(op);
   }
@@ -732,7 +732,7 @@ void substitutor::visit(const copy_stmt* op) {
 
   std::size_t decls_entered = 0;
   // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
-  std::vector<var> dst_x = op->dst_x;
+  std::vector<var> dst_x = to_vector(op->dst_x);
   bool changed = false;
   for (var& i : dst_x) {
     var new_i = enter_decl(i);
@@ -820,11 +820,11 @@ class buffer_substitutor : public substitutor {
 public:
   var target;
   expr elem_size;
-  span<const dim_expr> dims;
+  span<dim_expr> dims;
   var def;
 
 public:
-  buffer_substitutor(var target, expr elem_size, span<const dim_expr> dims, var def = var())
+  buffer_substitutor(var target, expr elem_size, span<dim_expr> dims, var def = var())
       : target(target), elem_size(elem_size), dims(dims), def(def) {}
 
   var enter_decl(var x) override { return x != target ? x : var(); }
@@ -902,7 +902,7 @@ dim_expr substitute_buffer(const dim_expr& e, var buffer, const std::vector<dim_
   return {s.mutate(e.bounds), s.mutate(e.stride), s.mutate(e.fold_factor)};
 }
 
-std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds) {
+std::vector<dim_expr> make_dims_from_bounds(span<interval_expr> bounds) {
   std::vector<dim_expr> dims(bounds.size());
   for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
     dims[d].bounds = bounds[d];

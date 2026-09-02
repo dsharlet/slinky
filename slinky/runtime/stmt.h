@@ -151,14 +151,18 @@ public:
   callable target;
   // These are not actually used during evaluation. They are only here for analyzing the IR, so we can know what will be
   // accessed (and how) by the callable.
-  symbol_list inputs;
-  symbol_list outputs;
-  std::vector<expr> scalars;
-  attributes attrs;
+  span<var> inputs;
+  span<var> outputs;
+  span<expr> scalars;
+  std::unique_ptr<attributes> attrs;
+
+  call_stmt() = default;
+  call_stmt(const call_stmt& other);
+  ~call_stmt();
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(callable target, symbol_list inputs, symbol_list outputs, std::vector<expr> scalars, attributes attrs);
+  static stmt make(callable target, span<var> inputs, span<var> outputs, std::vector<expr> scalars, attributes attrs);
 
   static constexpr stmt_node_type static_type = stmt_node_type::call_stmt;
 };
@@ -168,9 +172,9 @@ public:
   using callable = std::function<void(const raw_buffer&, const raw_buffer&, const raw_buffer& pad)>;
 
   var src;
-  std::vector<expr> src_x;
+  span<expr> src_x;
   var dst;
-  std::vector<var> dst_x;
+  span<var> dst_x;
   // If defined, the copy will be padded with the values from this buffer when `src` is out of bounds of `dst`.
   var pad;
 
@@ -178,9 +182,12 @@ public:
   // The implementation must only perform a copy and no other operations.
   callable impl;
 
+  ~copy_stmt();
+
   void accept(stmt_visitor* v) const override;
 
   static stmt make(callable impl, var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad);
+  static stmt make(callable impl, var src, std::vector<expr> src_x, var dst, span<var> dst_x, var pad);
 
   static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };
@@ -191,8 +198,10 @@ class let_stmt : public stmt_node<let_stmt> {
 public:
   // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
   // list can use the values defined by earlier lets in the list.
-  std::vector<std::pair<var, expr>> lets;
+  span<std::pair<var, expr>> lets;
   stmt body;
+
+  ~let_stmt();
 
   // If this is true, then the body does not access any symbols outside of those defined by `lets`.
   // The values of every let must be a `variable` expression.
@@ -201,6 +210,7 @@ public:
   void accept(stmt_visitor* v) const override;
 
   static stmt make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
+  static stmt make(span<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
 
   static stmt make(var sym, expr value, stmt body);
 
@@ -209,7 +219,9 @@ public:
 
 class block : public stmt_node<block> {
 public:
-  std::vector<stmt> stmts;
+  span<stmt> stmts;
+
+  ~block();
 
   void accept(stmt_visitor* v) const override;
 
@@ -268,12 +280,15 @@ public:
   var sym;
   memory_type storage;
   expr elem_size;
-  std::vector<dim_expr> dims;
+  span<dim_expr> dims;
   stmt body;
+
+  ~allocate();
 
   void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(var sym, memory_type storage, expr elem_size, span<dim_expr> dims, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::allocate;
 };
@@ -285,12 +300,15 @@ public:
   var sym;
   expr base;
   expr elem_size;
-  std::vector<dim_expr> dims;
+  span<dim_expr> dims;
   stmt body;
+
+  ~make_buffer();
 
   void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(var sym, expr base, expr elem_size, span<dim_expr> dims, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::make_buffer;
 };
@@ -316,12 +334,15 @@ class crop_buffer : public stmt_node<crop_buffer> {
 public:
   var sym;
   var src;
-  std::vector<interval_expr> bounds;
+  span<interval_expr> bounds;
   stmt body;
+
+  ~crop_buffer();
 
   void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, std::vector<interval_expr> bounds, stmt body);
+  static stmt make(var sym, var src, span<interval_expr> bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_buffer;
 };
@@ -350,12 +371,15 @@ class slice_buffer : public stmt_node<slice_buffer> {
 public:
   var sym;
   var src;
-  std::vector<expr> at;
+  span<expr> at;
   stmt body;
+
+  ~slice_buffer();
 
   void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, std::vector<expr> at, stmt body);
+  static stmt make(var sym, var src, span<expr> at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_buffer;
 };
@@ -384,17 +408,20 @@ public:
 
   var sym;
   var src;
-  std::vector<int> dims;
+  span<int> dims;
   stmt body;
 
-  static constexpr int new_dim = std::numeric_limits<int>::max();
+  ~transpose();
 
-  static bool is_truncate(span<const int> dims);
+  static constexpr int new_dim = max_rank;
+
+  static bool is_truncate(span<int> dims);
   bool is_truncate() const;
 
   void accept(stmt_visitor* v) const override;
 
   static stmt make(var sym, var src, std::vector<int> dims, stmt body);
+  static stmt make(var sym, var src, span<int> dims, stmt body);
   static stmt make_truncate(var sym, var src, int rank, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::transpose;

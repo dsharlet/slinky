@@ -110,6 +110,12 @@ public:
     return *this;
   }
 
+  template <typename T>
+  js_printer& operator<<(span<T> v) {
+    print_vector(v);
+    return *this;
+  }
+
   js_printer& operator<<(const stmt& s) {
     if (s.defined()) {
       ++depth;
@@ -138,7 +144,7 @@ public:
     *this << "make_buffer('<constant>', 0, "
           << (n->value ? n->value->elem_size : 0) << ", [";
     if (n->value && n->value->rank > 0) {
-      print_vector(span<const dim>{n->value->dims, n->value->rank}, ", ");
+      print_vector(span<dim>{n->value->dims, n->value->rank}, ", ");
     }
     *this << "])";
   }

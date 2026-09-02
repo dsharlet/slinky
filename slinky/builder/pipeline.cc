@@ -514,7 +514,7 @@ void compute_innermost_locations(const std::vector<const func*>& order,
 }
 
 // Update dims vector by substittuting expression from the map.
-std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
+std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<std::pair<expr, expr>> substitutions) {
   for (dim_expr& dim : dims) {
     dim_expr new_dim = dim;
     for (const std::pair<expr, expr>& j : substitutions) {
@@ -549,7 +549,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
       }
 
       if (changed) {
-        set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->scalars, op->attrs));
+        set_result(call_stmt::make(op->target, inputs, op->outputs, to_vector(op->scalars), *op->attrs));
       } else {
         set_result(op);
       }
@@ -559,7 +559,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
       var src = subs[op->src] ? *subs[op->src] : op->src;
       var pad = subs[op->pad] ? *subs[op->pad] : op->pad;
       if (src != op->src || pad != op->pad) {
-        set_result(copy_stmt::make(op->impl, src, op->src_x, op->dst, op->dst_x, pad));
+        set_result(copy_stmt::make(op->impl, src, to_vector(op->src_x), op->dst, op->dst_x, pad));
       } else {
         set_result(op);
       }
@@ -1495,8 +1495,8 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
     }
 
     expr get_trace_arg(const call_stmt* op) {
-      if (!op->attrs.name.empty()) {
-        return get_trace_arg(op->attrs.name);
+      if (!op->attrs->name.empty()) {
+        return get_trace_arg(op->attrs->name);
       } else {
         return get_trace_arg("call");
       }
@@ -1609,6 +1609,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = optimize_symbols(result, ctx);
 
   result = canonicalize_nodes(result);
+
+  // This pass rewrites the nodes to be compact in memory, the stmt should not be modified after this.
+  result = compact_nodes(result);
 
   if (is_verbose()) {
     std::cout << result << std::endl;

@@ -35,11 +35,11 @@ void init_random(Rng& rng, buffer<T, N>& buf) {
 }
 
 template <typename F>
-void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
+void for_each_index(span<dim> dims, int d, index_t* is, const F& f) {
   if (d == 0) {
     for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
       is[0] = i;
-      f(span<const index_t>(is, is + dims.size()));
+      f(span<index_t>(is, is + dims.size()));
     }
   } else {
     for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
@@ -50,9 +50,9 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
 }
 
 template <typename F>
-SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) {
+SLINKY_NO_STACK_PROTECTOR void for_each_index(span<dim> dims, const F& f) {
   if (dims.empty()) {
-    f(span<const index_t>{});
+    f(span<index_t>{});
   } else {
     index_t* i = SLINKY_ALLOCA(index_t, dims.size());
     for_each_index(dims, dims.size() - 1, i, f);
@@ -60,7 +60,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) 
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, const F& f) {
-  for_each_index(span<const dim>{buf.dims, buf.rank}, f);
+  for_each_index(span<dim>{buf.dims, buf.rank}, f);
 }
 
 template <typename T, std::size_t N, typename Value>
