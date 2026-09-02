@@ -11,8 +11,8 @@
 
 namespace slinky {
 
-// Allocates `size` bytes aligned to `alignment` (a power of 2). Release the result with `aligned_free`.
-inline void* aligned_alloc(std::size_t alignment, std::size_t size) {
+// Allocates `size` bytes aligned to `alignment` (a power of 2). Release the result with `deallocate_bytes`.
+inline void* allocate_bytes(std::size_t size, std::size_t alignment) {
 #ifdef _MSC_VER
   return _aligned_malloc(size, alignment);
 #else
@@ -21,7 +21,8 @@ inline void* aligned_alloc(std::size_t alignment, std::size_t size) {
 #endif
 }
 
-inline void aligned_free(void* ptr) {
+// Releases a pointer returned by `allocate_bytes`. The size is accepted (and ignored) to match `eval_config::free`.
+inline void deallocate_bytes(void* ptr, std::size_t = 0) {
 #ifdef _MSC_VER
   _aligned_free(ptr);
 #else

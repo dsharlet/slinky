@@ -42,7 +42,7 @@ test_context::test_context() {
   static thread_pool_impl threads;
 
   config.allocate = [this](std::size_t size, std::size_t alignment) {
-    void* allocation = slinky::aligned_alloc(alignment, size);
+    void* allocation = slinky::allocate_bytes(size, alignment);
     if (allocation) {
       heap.track_allocate(size);
     }
@@ -50,7 +50,7 @@ test_context::test_context() {
   };
   config.free = [this](void* allocation, std::size_t size) {
     heap.track_free(size);
-    slinky::aligned_free(allocation);
+    slinky::deallocate_bytes(allocation);
   };
 
   // Many tests count the number of allocations that go on the heap, don't let the pool absorb them.

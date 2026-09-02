@@ -13,7 +13,7 @@ namespace {
 // Drain the pool, freeing the blocks it retained.
 void empty(memory_pool& pool) {
   for (memory_pool::block b = pool.evict_any(); b.ptr; b = pool.evict_any()) {
-    aligned_free(b.ptr);
+    deallocate_bytes(b.ptr);
   }
 }
 
@@ -25,7 +25,7 @@ TEST(memory_pool, blocks_are_reused) {
   // An empty pool serves nothing.
   ASSERT_EQ(pool.allocate(4096, 16).ptr, nullptr);
 
-  void* a = aligned_alloc(16, 4096);
+  void* a = allocate_bytes(4096, 16);
   pool.free(a, 4096);
   ASSERT_EQ(pool.retained_size(), 4096);
 
@@ -53,20 +53,20 @@ TEST(memory_pool, blocks_are_reused) {
 
 TEST(memory_pool, best_fit) {
   memory_pool pool;
-  void* small = aligned_alloc(16, 3000);
-  void* big = aligned_alloc(16, 4096);
+  void* small = allocate_bytes(3000, 16);
+  void* big = allocate_bytes(4096, 16);
   pool.free(big, 4096);
   pool.free(small, 3000);
 
   // The smallest block that fits is taken, not the first retained.
   ASSERT_EQ(pool.allocate(2500, 16).ptr, small);
-  aligned_free(small);
+  deallocate_bytes(small);
   empty(pool);
 }
 
 TEST(memory_pool, alignment_is_respected) {
   memory_pool pool;
-  void* a = aligned_alloc(64, 4096);
+  void* a = allocate_bytes(4096, 64);
   ASSERT_TRUE(a);
   pool.free(a, 4096);
 
@@ -74,19 +74,19 @@ TEST(memory_pool, alignment_is_respected) {
   const std::size_t alignment = (reinterpret_cast<uintptr_t>(a) & 4095) == 0 ? 8192 : 4096;
   ASSERT_EQ(pool.allocate(4096, alignment).ptr, nullptr);
   ASSERT_EQ(pool.allocate(4096, 64).ptr, a);
-  aligned_free(a);
+  deallocate_bytes(a);
   empty(pool);
 }
 
 TEST(memory_pool, stale_blocks_are_evicted) {
   memory_pool pool;
-  void* a = aligned_alloc(16, 4096);
+  void* a = allocate_bytes(4096, 16);
   pool.free(a, 4096);
 
   // The first mismatched request does not make the block stale.
   ASSERT_EQ(pool.allocate(100, 16).ptr, nullptr);
   ASSERT_EQ(pool.evict_stale().ptr, nullptr);
-  void* b = aligned_alloc(16, 100);
+  void* b = allocate_bytes(100, 16);
   pool.free(b, 100);
 
   // A block that goes unused through a second mismatch is stale; the recently freed one is not.
@@ -94,13 +94,13 @@ TEST(memory_pool, stale_blocks_are_evicted) {
   ASSERT_EQ(pool.evict_stale().ptr, a);
   ASSERT_EQ(pool.evict_stale().ptr, nullptr);
   ASSERT_EQ(pool.retained_size(), 100);
-  aligned_free(a);
+  deallocate_bytes(a);
   empty(pool);
 }
 
 TEST(memory_pool, reused_blocks_are_not_evicted) {
   memory_pool pool;
-  void* a = aligned_alloc(16, 4096);
+  void* a = allocate_bytes(4096, 16);
   pool.free(a, 4096);
 
   // A block that keeps being reused stays retained through any number of mismatched requests.

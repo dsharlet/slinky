@@ -19,10 +19,8 @@ struct eval_config {
   // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`, passing the size it was
   // allocated with. Freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no
   // retained block fits, and `free` when a block is released from the pool.
-  std::function<void*(std::size_t, std::size_t)> allocate = [](std::size_t size, std::size_t alignment) {
-    return aligned_alloc(alignment, size);
-  };
-  std::function<void(void*, std::size_t)> free = [](void* allocation, std::size_t) { aligned_free(allocation); };
+  std::function<void*(std::size_t, std::size_t)> allocate = slinky::allocate_bytes;
+  std::function<void(void*, std::size_t)> free = slinky::deallocate_bytes;
 
   // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
   // and every free calls `free`.
@@ -105,8 +103,10 @@ public:
 
   const eval_config* config;
 
-  // Heap blocks freed by this context are kept here for reuse. Each context has its own pool, so blocks stay on the
-  // thread that freed them.
+  // Heap blocks freed by this context are kept here for reuse. A pipeline allocates and frees every internal buffer
+  // on every evaluation; the system allocator typically serves large allocations with fresh pages, so each evaluation
+  // pays for the page faults of first touching them, inside the kernels that write the buffers. Reusing freed blocks
+  // avoids that. Each context has its own pool, so blocks stay on the thread that freed them.
   memory_pool pool;
 
   // Releases the blocks retained in `pool` through `config->free`.

@@ -8,11 +8,6 @@ namespace slinky {
 
 // A pool of heap blocks that are kept for reuse when freed instead of being returned to the system.
 //
-// A pipeline allocates and frees every internal buffer on every evaluation. The system allocator typically serves
-// large allocations with fresh pages and returns them to the OS on free, so each evaluation pays for the system calls
-// and, worse, for the page faults of first touching those pages, which land inside the kernels that write the buffers.
-// A pool keeps freed blocks alive for the next allocation.
-//
 // The pool does not allocate or free memory itself: `free` takes ownership of a block the caller allocated, and
 // blocks leave the pool either through `allocate` (reuse) or through `evict_stale`/`evict_any`, which hand them back
 // to the caller to release. When no retained block can
