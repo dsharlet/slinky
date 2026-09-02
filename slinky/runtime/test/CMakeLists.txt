@@ -18,6 +18,12 @@ target_link_libraries(slinky_runtime_evaluate_test PRIVATE
 target_compile_features(slinky_runtime_evaluate_test PRIVATE cxx_std_20)
 gtest_discover_tests(slinky_runtime_evaluate_test)
 
+add_executable(slinky_runtime_memory_pool_test memory_pool.cc)
+target_link_libraries(slinky_runtime_memory_pool_test PRIVATE
+    slinky_runtime GTest::gmock GTest::gtest_main)
+target_compile_features(slinky_runtime_memory_pool_test PRIVATE cxx_std_20)
+gtest_discover_tests(slinky_runtime_memory_pool_test)
+
 # --- Benchmarks ---
 
 add_executable(slinky_runtime_buffer_benchmark buffer_benchmark.cc)

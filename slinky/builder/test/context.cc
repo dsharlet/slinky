@@ -1,11 +1,14 @@
 #include "slinky/builder/test/context.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
 #include "slinky/base/chrome_trace.h"
 #include "slinky/base/thread_pool_impl.h"
 #include "slinky/runtime/buffer.h"
+#include "slinky/runtime/evaluate.h"
+#include "slinky/runtime/expr.h"
 
 namespace slinky {
 
@@ -38,15 +41,20 @@ void setup_tracing(eval_config& cfg, const std::string& filename) {
 test_context::test_context() {
   static thread_pool_impl threads;
 
-  config.allocate = [this](var, raw_buffer* b) {
-    void* allocation = b->allocate();
-    heap.track_allocate(b->size_bytes());
+  config.allocate = [this](std::size_t size, std::size_t alignment) {
+    void* allocation = slinky::allocate_bytes(size, alignment);
+    if (allocation) {
+      heap.track_allocate(size);
+    }
     return allocation;
   };
-  config.free = [this](var, raw_buffer* b, void* allocation) {
-    ::free(allocation);
-    heap.track_free(b->size_bytes());
+  config.free = [this](void* allocation, std::size_t size) {
+    heap.track_free(size);
+    slinky::deallocate_bytes(allocation);
   };
+
+  // Many tests count the number of allocations that go on the heap, don't let the pool absorb them.
+  config.use_memory_pool = false;
 
   copy = [this](const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad) {
     ++copy_calls;

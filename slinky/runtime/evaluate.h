@@ -1,9 +1,13 @@
 #ifndef SLINKY_RUNTIME_EVALUATE_H
 #define SLINKY_RUNTIME_EVALUATE_H
 
+#include <cstdlib>
+#include <optional>
+
 #include "slinky/base/allocator.h"
 #include "slinky/base/util.h"
 #include "slinky/runtime/expr.h"
+#include "slinky/runtime/memory_pool.h"
 #include "slinky/runtime/stmt.h"
 
 namespace slinky {
@@ -11,14 +15,16 @@ namespace slinky {
 class thread_pool;
 
 struct eval_config {
-  // These two functions implement allocation. `allocate` is called before
-  // running the body, and should assign `base` of the buffer to the address
-  // of the min in each dimension. `free` is called after running the body,
-  // passing the result of `allocate` in addition to the buffer.
-  // If these functions are not defined, the default handler will call
-  // `raw_buffer::allocate` and `::free`.
-  std::function<void*(var, raw_buffer*)> allocate = [](var, raw_buffer* buf) { return buf->allocate(); };
-  std::function<void(var, raw_buffer*, void*)> free = [](var, raw_buffer*, void* allocation) { ::free(allocation); };
+  // These two functions implement allocation of buffer memory. `allocate` returns a pointer to at least `size` bytes
+  // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`, passing the size it was
+  // allocated with. Freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no
+  // retained block fits, and `free` when a block is released from the pool.
+  std::function<void*(std::size_t, std::size_t)> allocate = slinky::allocate_bytes;
+  std::function<void(void*, std::size_t)> free = slinky::deallocate_bytes;
+
+  // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
+  // and every free calls `free`.
+  bool use_memory_pool = true;
 
   // Functions called when there is a failure in the pipeline.
   // If these functions are not defined, the default handler will write a
@@ -33,8 +39,8 @@ struct eval_config {
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
 
-  // Alignment to use for `raw_buffer::allocate` calls.
-  std::size_t base_alignment = sizeof(std::max_align_t);
+  // Alignment of the base pointer of allocations.
+  std::size_t base_alignment = alignof(std::max_align_t);
 
   // Alignment to use for `raw_buffer::init_strides` calls.
   std::size_t stride_alignment = 1;
@@ -49,6 +55,18 @@ class eval_context {
 
 public:
   eval_context();
+  ~eval_context() { free_pool(); }
+
+  // Copies carry the values and config, but not the pool: each copy starts with an empty pool, so the per-worker
+  // context copies made for parallel loops never share retained blocks between threads.
+  eval_context(const eval_context& other) : values_(other.values_), config(other.config) {}
+  eval_context& operator=(const eval_context& other) {
+    if (this == &other) return *this;
+    free_pool();
+    values_ = other.values_;
+    config = other.config;
+    return *this;
+  }
 
   SLINKY_INLINE void reserve(std::size_t size) {
     if (SLINKY_UNLIKELY(size > values_.size())) {
@@ -84,6 +102,19 @@ public:
   std::size_t size() const { return values_.size(); }
 
   const eval_config* config;
+
+  // Heap blocks freed by this context are kept here for reuse. A pipeline allocates and frees every internal buffer
+  // on every evaluation; the system allocator typically serves large allocations with fresh pages, so each evaluation
+  // pays for the page faults of first touching them, inside the kernels that write the buffers. Reusing freed blocks
+  // avoids that. Each context has its own pool, so blocks stay on the thread that freed them.
+  memory_pool pool;
+
+  // Releases the blocks retained in `pool` through `config->free`.
+  void free_pool() {
+    for (memory_pool::block b = pool.evict_any(); b.ptr; b = pool.evict_any()) {
+      config->free(b.ptr, b.size);
+    }
+  }
 };
 
 index_t evaluate(const expr& e, eval_context& context);
