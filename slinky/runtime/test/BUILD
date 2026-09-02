@@ -65,6 +65,7 @@ cc_test(
     name = "memory_pool",
     srcs = ["memory_pool.cc"],
     deps = [
+        "//slinky/base",
         "//slinky/runtime",
         "@googletest//:gtest_main",
     ],
