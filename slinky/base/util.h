@@ -11,13 +11,19 @@
 
 namespace slinky {
 
-// Allocates `size` bytes aligned to `alignment` (a power of 2). Release the result with `deallocate_bytes`.
+// Allocates `size` bytes aligned to `alignment` (a power of 2). Release the
+// result with `deallocate_bytes`.
 inline void* allocate_bytes(std::size_t size, std::size_t alignment) {
 #ifdef _MSC_VER
   return _aligned_malloc(size, alignment);
 #else
-  // `std::aligned_alloc` requires the size to be a multiple of the alignment.
-  return std::aligned_alloc(alignment, (size + alignment - 1) & ~(alignment - 1));
+  // `posix_memalign` rather than `std::aligned_alloc`, which is only available
+  // on Android from API level 28.
+  void* result = nullptr;
+  if (posix_memalign(&result, alignment, size) != 0) {
+    return nullptr;
+  }
+  return result;
 #endif
 }
 
