@@ -41,19 +41,16 @@ void setup_tracing(eval_config& cfg, const std::string& filename) {
 test_context::test_context() {
   static thread_pool_impl threads;
 
-  // Wrap the default hooks with tracking.
-  auto base_allocate = config.allocate;
-  config.allocate = [this, base_allocate](std::size_t size, std::size_t alignment) {
-    void* allocation = base_allocate(size, alignment);
+  config.allocate = [this](std::size_t size, std::size_t alignment) {
+    void* allocation = slinky::aligned_alloc(alignment, size);
     if (allocation) {
-      heap.track_allocate(allocation, size);
+      heap.track_allocate(size);
     }
     return allocation;
   };
-  auto base_free = config.free;
-  config.free = [this, base_free](void* allocation) {
-    heap.track_free(allocation);
-    base_free(allocation);
+  config.free = [this](void* allocation, std::size_t size) {
+    heap.track_free(size);
+    slinky::aligned_free(allocation);
   };
 
   // Many tests count the number of allocations that go on the heap, don't let the pool absorb them.

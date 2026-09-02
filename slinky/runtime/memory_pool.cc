@@ -9,15 +9,15 @@ namespace slinky {
 
 memory_pool::~memory_pool() { assert(free_.empty()); }
 
-void* memory_pool::remove(std::size_t i) {
-  void* block = free_[i].block;
+memory_pool::block memory_pool::remove(std::size_t i) {
+  block result = {free_[i].block, free_[i].size};
   retained_size_ -= free_[i].size;
   free_[i] = free_.back();
   free_.pop_back();
-  return block;
+  return result;
 }
 
-void* memory_pool::allocate(std::size_t size, std::size_t alignment) {
+memory_pool::block memory_pool::allocate(std::size_t size, std::size_t alignment) {
   // Take the smallest retained block that can serve this request, but don't let a small request squat on a much
   // bigger block.
   std::size_t best = free_.size();
@@ -42,23 +42,23 @@ void* memory_pool::allocate(std::size_t size, std::size_t alignment) {
       ++i;
     }
   }
-  return nullptr;
+  return {};
 }
 
-void memory_pool::free(void* block, std::size_t size) {
-  free_.push_back({size, block, miss_epoch_});
+void memory_pool::free(void* ptr, std::size_t size) {
+  free_.push_back({size, ptr, miss_epoch_});
   retained_size_ += size;
 }
 
-void* memory_pool::evict_stale() {
+memory_pool::block memory_pool::evict_stale() {
   if (!free_.empty() && free_.back().freed_at + 2 <= miss_epoch_) {
     return remove(free_.size() - 1);
   }
-  return nullptr;
+  return {};
 }
 
-void* memory_pool::evict_any() {
-  if (free_.empty()) return nullptr;
+memory_pool::block memory_pool::evict_any() {
+  if (free_.empty()) return {};
   return remove(free_.size() - 1);
 }
 

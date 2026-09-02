@@ -1,9 +1,33 @@
 #ifndef SLINKY_BASE_UTIL_H
 #define SLINKY_BASE_UTIL_H
 
+#include <cstddef>
+#include <cstdlib>
 #include <iostream>
 
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
+
 namespace slinky {
+
+// Allocates `size` bytes aligned to `alignment` (a power of 2). Release the result with `aligned_free`.
+inline void* aligned_alloc(std::size_t alignment, std::size_t size) {
+#ifdef _MSC_VER
+  return _aligned_malloc(size, alignment);
+#else
+  // `std::aligned_alloc` requires the size to be a multiple of the alignment.
+  return std::aligned_alloc(alignment, (size + alignment - 1) & ~(alignment - 1));
+#endif
+}
+
+inline void aligned_free(void* ptr) {
+#ifdef _MSC_VER
+  _aligned_free(ptr);
+#else
+  std::free(ptr);
+#endif
+}
 
 // Some functions are templates that are usually unique specializations, which are beneficial to inline. The compiler
 // will inline functions it knows are used only once, but it can't know this unless the functions have internal linkage.

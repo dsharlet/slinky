@@ -49,30 +49,26 @@ namespace {
 
 struct allocated_buffer : public raw_buffer {
   void* allocation;
-  // The size of `allocation` in bytes, so it can be returned to the pool when it is freed.
+  // The size of `allocation` in bytes.
   std::size_t size;
 };
 
-// Provide memory for `buffer`, of `size` bytes aligned to `config->base_alignment`, using `config->allocate`. When
-// pooling is enabled, blocks are reused from the context's pool first.
+// Provide memory for `buffer`, of `size` bytes aligned to `config->base_alignment`: a reused block from the
+// context's pool when one fits, a fresh block from `config->allocate` otherwise.
 void* allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
   const eval_config& config = *ctx.config;
-  buffer.size = size;
-  void* block = nullptr;
-  if (config.use_memory_pool) {
-    block = ctx.pool.allocate(size, config.base_alignment);
-    if (!block) {
-      // The pool couldn't serve this request; release the blocks it no longer considers worth retaining.
-      while (void* stale = ctx.pool.evict_stale()) {
-        config.free(stale);
-      }
+  memory_pool::block block =
+      config.use_memory_pool ? ctx.pool.allocate(size, config.base_alignment) : memory_pool::block();
+  if (!block.ptr) {
+    // The pool couldn't serve this request; release the blocks it no longer considers worth retaining.
+    for (memory_pool::block b = ctx.pool.evict_stale(); b.ptr; b = ctx.pool.evict_stale()) {
+      config.free(b.ptr, b.size);
     }
+    block = {config.allocate(size, config.base_alignment), size};
   }
-  if (!block) {
-    block = config.allocate(size, config.base_alignment);
-  }
-  buffer.base = block;
-  return block;
+  buffer.base = block.ptr;
+  buffer.size = block.size;
+  return block.ptr;
 }
 
 // Release the memory of `buffer`, allocated by `allocate_buffer`.
@@ -82,7 +78,7 @@ void free_buffer(allocated_buffer& buffer, eval_context& ctx) {
   if (config.use_memory_pool) {
     ctx.pool.free(buffer.allocation, buffer.size);
   } else {
-    config.free(buffer.allocation);
+    config.free(buffer.allocation, buffer.size);
   }
 }
 

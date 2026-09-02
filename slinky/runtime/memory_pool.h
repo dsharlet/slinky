@@ -31,20 +31,27 @@ public:
   memory_pool(const memory_pool&) = delete;
   memory_pool& operator=(const memory_pool&) = delete;
 
+  // A block removed from the pool: the pointer and the block's size in bytes, or {nullptr, 0}.
+  struct block {
+    void* ptr = nullptr;
+    std::size_t size = 0;
+  };
+
   // Returns a retained block of at least `size` bytes whose address is aligned to `alignment` (a power of 2), and
-  // removes it from the pool, or nullptr if no retained block fits. The caller should allocate normally in the
-  // latter case, and release the blocks `evict_stale` produces as a result.
-  void* allocate(std::size_t size, std::size_t alignment);
+  // removes it from the pool, or {nullptr, 0} if no retained block fits. The returned size is the block's own size,
+  // which can exceed the request: pass it back to `free`, so the block doesn't shrink with every reuse. On failure
+  // the caller should allocate normally, and release the blocks `evict_stale` produces as a result.
+  block allocate(std::size_t size, std::size_t alignment);
 
-  // Adds `block` of `size` bytes to the pool, taking ownership of it.
-  void free(void* block, std::size_t size);
+  // Adds `ptr` of `size` bytes to the pool, taking ownership of it.
+  void free(void* ptr, std::size_t size);
 
-  // Removes and returns a retained block that is no longer part of the working set, or nullptr if there is none.
-  // The caller owns releasing it. Constant time when called right after a failed `allocate`.
-  void* evict_stale();
+  // Removes and returns a retained block that is no longer part of the working set, if there is one. The caller owns
+  // releasing it. Constant time when called right after a failed `allocate`.
+  block evict_stale();
 
-  // Removes and returns any retained block, or nullptr if the pool is empty. The caller owns releasing it.
-  void* evict_any();
+  // Removes and returns any retained block, if there is one. The caller owns releasing it.
+  block evict_any();
 
   // The total size in bytes of the blocks currently retained for reuse.
   std::size_t retained_size() const { return retained_size_; }
@@ -57,7 +64,7 @@ private:
     std::size_t freed_at;
   };
 
-  void* remove(std::size_t i);
+  block remove(std::size_t i);
 
   // Free blocks. This is a handful of entries, so linear searches beat a map and its per-node allocations.
   std::vector<retained_block> free_;

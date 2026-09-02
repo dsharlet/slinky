@@ -4,10 +4,6 @@
 #include <cstdlib>
 #include <optional>
 
-#ifdef _MSC_VER
-#include <malloc.h>
-#endif
-
 #include "slinky/base/allocator.h"
 #include "slinky/base/util.h"
 #include "slinky/runtime/expr.h"
@@ -20,23 +16,13 @@ class thread_pool;
 
 struct eval_config {
   // These two functions implement allocation of buffer memory. `allocate` returns a pointer to at least `size` bytes
-  // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`. When `use_memory_pool`
-  // is set, freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no retained
-  // block fits, and `free` when a block is released from the pool.
+  // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`, passing the size it was
+  // allocated with. Freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no
+  // retained block fits, and `free` when a block is released from the pool.
   std::function<void*(std::size_t, std::size_t)> allocate = [](std::size_t size, std::size_t alignment) {
-#ifdef _MSC_VER
-    return _aligned_malloc(size, alignment);
-#else
-    return std::aligned_alloc(alignment, align_up(size, alignment));
-#endif
+    return aligned_alloc(alignment, size);
   };
-  std::function<void(void*)> free = [](void* allocation) {
-#ifdef _MSC_VER
-    _aligned_free(allocation);
-#else
-    std::free(allocation);
-#endif
-  };
+  std::function<void(void*, std::size_t)> free = [](void* allocation, std::size_t) { aligned_free(allocation); };
 
   // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
   // and every free calls `free`.
@@ -71,14 +57,14 @@ class eval_context {
 
 public:
   eval_context();
-  ~eval_context() { trim_pool(); }
+  ~eval_context() { free_pool(); }
 
   // Copies carry the values and config, but not the pool: each copy starts with an empty pool, so the per-worker
   // context copies made for parallel loops never share retained blocks between threads.
   eval_context(const eval_context& other) : values_(other.values_), config(other.config) {}
   eval_context& operator=(const eval_context& other) {
     if (this == &other) return *this;
-    trim_pool();
+    free_pool();
     values_ = other.values_;
     config = other.config;
     return *this;
@@ -119,14 +105,14 @@ public:
 
   const eval_config* config;
 
-  // Heap blocks freed by this context are kept here for reuse (see `eval_config::use_memory_pool`). Each context has
-  // its own pool, so blocks stay on the thread that freed them.
+  // Heap blocks freed by this context are kept here for reuse. Each context has its own pool, so blocks stay on the
+  // thread that freed them.
   memory_pool pool;
 
   // Releases the blocks retained in `pool` through `config->free`.
-  void trim_pool() {
-    while (void* block = pool.evict_any()) {
-      config->free(block);
+  void free_pool() {
+    for (memory_pool::block b = pool.evict_any(); b.ptr; b = pool.evict_any()) {
+      config->free(b.ptr, b.size);
     }
   }
 };
