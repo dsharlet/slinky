@@ -4,6 +4,10 @@
 #include <cstdlib>
 #include <optional>
 
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
+
 #include "slinky/base/allocator.h"
 #include "slinky/base/util.h"
 #include "slinky/runtime/expr.h"
@@ -16,12 +20,23 @@ class thread_pool;
 
 struct eval_config {
   // These two functions implement allocation of buffer memory. `allocate` returns a pointer to at least `size` bytes
-  // with `alignof(std::max_align_t)` alignment; `free` releases a pointer returned by `allocate`. The caller aligns
-  // buffer bases to `base_alignment` within the block, padding requests accordingly. When `use_memory_pool` is set,
-  // freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no retained block
-  // fits, and `free` when a block is released from the pool.
-  std::function<void*(std::size_t)> allocate = [](std::size_t size) { return std::malloc(size); };
-  std::function<void(void*)> free = [](void* allocation) { std::free(allocation); };
+  // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`. When `use_memory_pool`
+  // is set, freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no retained
+  // block fits, and `free` when a block is released from the pool.
+  std::function<void*(std::size_t, std::size_t)> allocate = [](std::size_t size, std::size_t alignment) {
+#ifdef _MSC_VER
+    return _aligned_malloc(size, alignment);
+#else
+    return std::aligned_alloc(alignment, align_up(size, alignment));
+#endif
+  };
+  std::function<void(void*)> free = [](void* allocation) {
+#ifdef _MSC_VER
+    _aligned_free(allocation);
+#else
+    std::free(allocation);
+#endif
+  };
 
   // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
   // and every free calls `free`.
@@ -40,9 +55,7 @@ struct eval_config {
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
 
-  // Alignment of the base pointer of allocations. Blocks from `allocate` are assumed to have
-  // `alignof(std::max_align_t)` alignment; stronger alignments are reached by padding the requested size and aligning
-  // the base within the block.
+  // Alignment of the base pointer of allocations.
   std::size_t base_alignment = alignof(std::max_align_t);
 
   // Alignment to use for `raw_buffer::init_strides` calls.
@@ -106,15 +119,16 @@ public:
 
   const eval_config* config;
 
-  // Heap blocks freed by this context are kept here for reuse instead of being returned to the system (see
-  // `eval_config::use_memory_pool`). Each context has its own pool, so blocks stay on the thread that freed
-  // them. The pool is trimmed when the context is destroyed (the per-worker context copies made for parallel loops
-  // die at the end of their loop); callers that keep a context alive across evaluations can call `trim_pool` to
-  // release retained blocks earlier.
+  // Heap blocks freed by this context are kept here for reuse (see `eval_config::use_memory_pool`). Each context has
+  // its own pool, so blocks stay on the thread that freed them.
   memory_pool pool;
 
   // Releases the blocks retained in `pool` through `config->free`.
-  void trim_pool() { pool.trim(config->free); }
+  void trim_pool() {
+    while (void* block = pool.evict_any()) {
+      config->free(block);
+    }
+  }
 };
 
 index_t evaluate(const expr& e, eval_context& context);

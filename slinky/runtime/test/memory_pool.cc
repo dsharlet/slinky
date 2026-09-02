@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
 
 #include "slinky/runtime/memory_pool.h"
 
@@ -10,138 +12,113 @@ namespace slinky {
 
 namespace {
 
-bool is_aligned(void* ptr, std::size_t alignment) { return (reinterpret_cast<uintptr_t>(ptr) & (alignment - 1)) == 0; }
-
-// Counts the blocks allocated and freed on behalf of the pool. `function_ref` invokes its callee as const.
-struct counting_allocator {
-  mutable int allocs = 0;
-  mutable int frees = 0;
-
-  void* alloc(std::size_t size) const {
-    ++allocs;
-    return std::malloc(size);
-  }
-  void free(void* block) const {
-    ++frees;
+// Drain the pool, freeing the blocks it retained.
+void empty(memory_pool& pool) {
+  while (void* block = pool.evict_any()) {
     std::free(block);
   }
-};
+}
 
 }  // namespace
 
 TEST(memory_pool, blocks_are_reused) {
-  counting_allocator heap;
-  auto alloc_cb = [&](std::size_t size) { return heap.alloc(size); };
-  auto free_cb = [&](void* block) { heap.free(block); };
   memory_pool pool;
 
-  void* a = pool.allocate(4096, 16, alloc_cb, free_cb);
-  ASSERT_NE(a, nullptr);
-  std::memset(a, 0, 4096);
-  pool.free(a);
-  ASSERT_GE(pool.retained_size(), 4096);
-  ASSERT_EQ(heap.allocs, 1);
+  // An empty pool serves nothing.
+  ASSERT_EQ(pool.allocate(4096, 16), nullptr);
 
-  // An identical request gets the block back without allocating.
-  void* b = pool.allocate(4096, 16, alloc_cb, free_cb);
-  ASSERT_EQ(a, b);
+  void* a = std::malloc(4096);
+  pool.free(a, 4096);
+  ASSERT_EQ(pool.retained_size(), 4096);
+
+  // An exact fit gets the block back.
+  ASSERT_EQ(pool.allocate(4096, 16), a);
   ASSERT_EQ(pool.retained_size(), 0);
-  ASSERT_EQ(heap.allocs, 1);
-  pool.free(b);
+  pool.free(a, 4096);
 
   // A slightly smaller request gets the same block.
-  void* c = pool.allocate(3000, 16, alloc_cb, free_cb);
-  ASSERT_EQ(a, c);
-  ASSERT_EQ(heap.allocs, 1);
-  pool.free(c);
+  ASSERT_EQ(pool.allocate(3000, 16), a);
+  pool.free(a, 4096);
 
   // A much smaller request does not squat on the big block.
-  void* d = pool.allocate(1100, 16, alloc_cb, free_cb);
-  ASSERT_NE(a, d);
-  ASSERT_GE(pool.retained_size(), 4096);
-  ASSERT_EQ(heap.allocs, 2);
-  pool.free(d);
+  ASSERT_EQ(pool.allocate(1100, 16), nullptr);
+  ASSERT_EQ(pool.retained_size(), 4096);
 
-  pool.trim(free_cb);
+  // A bigger request cannot be served by the block either.
+  ASSERT_EQ(pool.allocate(5000, 16), nullptr);
+
+  empty(pool);
   ASSERT_EQ(pool.retained_size(), 0);
-  ASSERT_EQ(heap.frees, heap.allocs);
 }
 
-TEST(memory_pool, alignment) {
-  counting_allocator heap;
-  auto alloc_cb = [&](std::size_t size) { return heap.alloc(size); };
-  auto free_cb = [&](void* block) { heap.free(block); };
+TEST(memory_pool, best_fit) {
   memory_pool pool;
+  void* small = std::malloc(3000);
+  void* big = std::malloc(4096);
+  pool.free(big, 4096);
+  pool.free(small, 3000);
 
-  for (std::size_t alignment : {16, 64, 256, 4096}) {
-    for (std::size_t size : {1, 100, 1000, 5000, 100000}) {
-      void* a = pool.allocate(size, alignment, alloc_cb, free_cb);
-      ASSERT_NE(a, nullptr);
-      ASSERT_TRUE(is_aligned(a, alignment));
-      std::memset(a, 0, size);
-      pool.free(a);
-    }
-  }
-  // Reused blocks are re-aligned to the new request.
-  void* a = pool.allocate(4096, 16, alloc_cb, free_cb);
-  pool.free(a);
-  void* b = pool.allocate(4096, 4096, alloc_cb, free_cb);
-  ASSERT_TRUE(is_aligned(b, 4096));
-  std::memset(b, 0, 4096);
-  pool.free(b);
-  pool.trim(free_cb);
+  // The smallest block that fits is taken, not the first retained.
+  ASSERT_EQ(pool.allocate(2500, 16), small);
+  std::free(small);
+  empty(pool);
 }
 
-TEST(memory_pool, free_null) {
+TEST(memory_pool, alignment_is_respected) {
   memory_pool pool;
-  pool.free(nullptr);
+#ifdef _MSC_VER
+  void* a = _aligned_malloc(4096, 64);
+#else
+  void* a = std::aligned_alloc(64, 4096);
+#endif
+  ASSERT_TRUE(a);
+  pool.free(a, 4096);
+
+  // The block can only serve requests its address is aligned for.
+  const std::size_t alignment = (reinterpret_cast<uintptr_t>(a) & 4095) == 0 ? 8192 : 4096;
+  ASSERT_EQ(pool.allocate(4096, alignment), nullptr);
+  ASSERT_EQ(pool.allocate(4096, 64), a);
+#ifdef _MSC_VER
+  _aligned_free(a);
+#else
+  std::free(a);
+#endif
+  empty(pool);
 }
 
 TEST(memory_pool, stale_blocks_are_evicted) {
-  counting_allocator heap;
-  auto alloc_cb = [&](std::size_t size) { return heap.alloc(size); };
-  auto free_cb = [&](void* block) { heap.free(block); };
   memory_pool pool;
+  void* a = std::malloc(4096);
+  pool.free(a, 4096);
 
-  void* a = pool.allocate(4096, 16, alloc_cb, free_cb);
-  pool.free(a);
+  // The first mismatched request does not make the block stale.
+  ASSERT_EQ(pool.allocate(100, 16), nullptr);
+  ASSERT_EQ(pool.evict_stale(), nullptr);
+  void* b = std::malloc(100);
+  pool.free(b, 100);
 
-  // The first mismatched request leaves the unused block retained.
-  pool.free(pool.allocate(100, 16, alloc_cb, free_cb));
-  ASSERT_GE(pool.retained_size(), 4096);
-  ASSERT_EQ(heap.frees, 0);
-
-  // A block that goes unused through a second mismatch is released; the recently freed one is kept.
-  void* b = pool.allocate(100000, 16, alloc_cb, free_cb);
-  ASSERT_EQ(heap.frees, 1);
-  ASSERT_LT(pool.retained_size(), 4096);
-  ASSERT_GT(pool.retained_size(), 0);
-  pool.free(b);
-
-  pool.trim(free_cb);
-  ASSERT_EQ(heap.frees, heap.allocs);
+  // A block that goes unused through a second mismatch is stale; the recently freed one is not.
+  ASSERT_EQ(pool.allocate(100000, 16), nullptr);
+  ASSERT_EQ(pool.evict_stale(), a);
+  ASSERT_EQ(pool.evict_stale(), nullptr);
+  ASSERT_EQ(pool.retained_size(), 100);
+  std::free(a);
+  empty(pool);
 }
 
 TEST(memory_pool, reused_blocks_are_not_evicted) {
-  counting_allocator heap;
-  auto alloc_cb = [&](std::size_t size) { return heap.alloc(size); };
-  auto free_cb = [&](void* block) { heap.free(block); };
   memory_pool pool;
-
-  void* a = pool.allocate(4096, 16, alloc_cb, free_cb);
-  pool.free(a);
+  void* a = std::malloc(4096);
+  pool.free(a, 4096);
 
   // A block that keeps being reused stays retained through any number of mismatched requests.
   for (int i = 0; i < 10; ++i) {
-    // A request that no retained block can serve.
-    pool.free(pool.allocate(10000 + i * 25000, 16, alloc_cb, free_cb));
-    void* b = pool.allocate(4096, 16, alloc_cb, free_cb);
-    ASSERT_EQ(a, b);
-    pool.free(b);
+    ASSERT_EQ(pool.allocate(100000 + i, 16), nullptr);
+    ASSERT_EQ(pool.evict_stale(), nullptr);
+    ASSERT_EQ(pool.allocate(4096, 16), a);
+    pool.free(a, 4096);
   }
-
-  pool.trim(free_cb);
-  ASSERT_EQ(heap.frees, heap.allocs);
+  empty(pool);
 }
 
 }  // namespace slinky

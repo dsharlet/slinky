@@ -49,36 +49,40 @@ namespace {
 
 struct allocated_buffer : public raw_buffer {
   void* allocation;
+  // The size of `allocation` in bytes, so it can be returned to the pool when it is freed.
+  std::size_t size;
 };
 
 // Provide memory for `buffer`, of `size` bytes aligned to `config->base_alignment`, using `config->allocate`. When
-// pooling is enabled, allocations are routed through the context's pool so freed blocks get reused.
+// pooling is enabled, blocks are reused from the context's pool first.
 void* allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
   const eval_config& config = *ctx.config;
+  buffer.size = size;
+  void* block = nullptr;
   if (config.use_memory_pool) {
-    buffer.base = ctx.pool.allocate(size, config.base_alignment, config.allocate, config.free);
-    return buffer.base;
+    block = ctx.pool.allocate(size, config.base_alignment);
+    if (!block) {
+      // The pool couldn't serve this request; release the blocks it no longer considers worth retaining.
+      while (void* stale = ctx.pool.evict_stale()) {
+        config.free(stale);
+      }
+    }
   }
-  // No pooling: use the callbacks directly. They only guarantee `alignof(std::max_align_t)` alignment, so pad
-  // requests for stronger alignments and align the base within the block.
-  const std::size_t pad = config.base_alignment > alignof(std::max_align_t) ? config.base_alignment - 1 : 0;
-  void* block = config.allocate(size + pad);
   if (!block) {
-    buffer.base = nullptr;
-    return nullptr;
+    block = config.allocate(size, config.base_alignment);
   }
-  buffer.base = align_up(reinterpret_cast<char*>(block), config.base_alignment);
+  buffer.base = block;
   return block;
 }
 
 // Release the memory of `buffer`, allocated by `allocate_buffer`.
-void free_buffer(void* allocation, eval_context& ctx) {
-  if (!allocation) return;
+void free_buffer(allocated_buffer& buffer, eval_context& ctx) {
+  if (!buffer.allocation) return;
   const eval_config& config = *ctx.config;
   if (config.use_memory_pool) {
-    ctx.pool.free(allocation);
+    ctx.pool.free(buffer.allocation, buffer.size);
   } else {
-    config.free(allocation);
+    config.free(buffer.allocation);
   }
 }
 
@@ -376,7 +380,7 @@ inline index_t eval_free(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   var sym = *as_variable(op->args[0]);
   allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(ctx.lookup(sym));
-  free_buffer(buf->allocation, ctx);
+  free_buffer(*buf, ctx);
   buf->allocation = nullptr;
   return 1;
 }
@@ -712,8 +716,8 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
   if (!size) {
     return -1;
   }
-  if (op->storage != memory_type::heap &&
-      (op->storage == memory_type::stack || *size <= ctx.config->auto_stack_threshold)) {
+  if ((op->storage == memory_type::automatic && *size <= ctx.config->auto_stack_threshold) ||
+      op->storage == memory_type::stack) {
     std::size_t alignment = ctx.config->base_alignment;
     buffer.base = SLINKY_ALLOCA(char, *size + alignment - 1);
     buffer.base = align_up(buffer.base, alignment);
@@ -728,7 +732,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
   } else {
     result = eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
-  free_buffer(buffer.allocation, ctx);
+  free_buffer(buffer, ctx);
   return result;
 }
 

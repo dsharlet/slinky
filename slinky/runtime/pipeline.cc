@@ -29,12 +29,12 @@ index_t pipeline::evaluate(eval_context& ctx) const { return slinky::evaluate(bo
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
   setup(args, inputs, outputs, ctx);
-  return evaluate(ctx);
+  return slinky::evaluate(body, ctx);
 }
 
 index_t pipeline::evaluate(buffers inputs, buffers outputs, eval_context& ctx) const {
   setup(inputs, outputs, ctx);
-  return evaluate(ctx);
+  return slinky::evaluate(body, ctx);
 }
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs) const {
