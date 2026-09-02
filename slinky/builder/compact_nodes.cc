@@ -8,6 +8,7 @@
 
 #include "slinky/base/ref_count.h"
 #include "slinky/base/util.h"
+#include "slinky/base/util.h"
 #include "slinky/builder/node_mutator.h"
 #include "slinky/builder/optimizations.h"
 #include "slinky/runtime/expr.h"
@@ -29,7 +30,7 @@ public:
   static constexpr std::size_t max_alignment = block_size;
 
   static slinky::ref_count<arena> make() {
-    return slinky::ref_count<arena>(new (::operator new(block_size, std::align_val_t(block_size))) arena());
+    return slinky::ref_count<arena>(new (allocate_bytes(block_size, block_size)) arena());
   }
 
   // Because chunks are aligned to `block_size`, the chunk an object lives in is the beginning of the block containing
@@ -52,7 +53,7 @@ public:
 
   static void destroy(arena* a) {
     a->~arena();
-    ::operator delete(a, std::align_val_t(block_size));
+    deallocate_bytes(a, block_size);
   }
 };
 
