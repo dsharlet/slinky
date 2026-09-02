@@ -12,8 +12,6 @@
 namespace slinky {
 
 enum class stmt_node_type {
-  none,
-
   call_stmt,
   copy_stmt,
   let_stmt,
@@ -29,6 +27,8 @@ enum class stmt_node_type {
   transpose,
   async,
   check,
+
+  none,  // Putting this last avoids a subtraction when computing a jump table offset in `evaluate`.
 };
 
 enum class memory_type {

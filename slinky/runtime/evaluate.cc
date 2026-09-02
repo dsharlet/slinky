@@ -115,7 +115,7 @@ SLINKY_INLINE index_t eval(const call_stmt* op, eval_context& ctx);
 inline index_t eval(const copy_stmt* op, eval_context& ctx);
 inline index_t eval(const let_stmt* op, eval_context& ctx);
 inline index_t eval(const block* op, eval_context& ctx);
-inline index_t eval(const loop* op, eval_context& ctx);
+SLINKY_NO_INLINE index_t eval(const loop* op, eval_context& ctx);
 inline index_t eval(const allocate* op, eval_context& ctx);
 inline index_t eval(const make_buffer* op, eval_context& ctx);
 inline index_t eval(const clone_buffer* op, eval_context& ctx);
@@ -125,7 +125,7 @@ inline index_t eval(const slice_buffer* op, eval_context& ctx);
 inline index_t eval(const slice_dim* op, eval_context& ctx);
 inline index_t eval(const transpose* op, eval_context& ctx);
 SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx);
-inline index_t eval(const check* op, eval_context& ctx);
+SLINKY_NO_INLINE index_t eval(const check* op, eval_context& ctx);
 
 SLINKY_INLINE index_t eval_buffer_field(index_t value, buffer_field field, int d) {
   const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
@@ -171,6 +171,11 @@ SLINKY_INLINE index_t eval_field(expr_ref e, eval_context& ctx) {
 template <buffer_field Field>
 SLINKY_INLINE index_t eval_field(expr_ref e, index_t def, eval_context& ctx) {
   return e.defined() ? eval_field<Field>(e, ctx) : def;
+}
+
+template <typename T>
+SLINKY_NO_INLINE index_t eval_non_inlined(const T* op, eval_context& ctx) {
+  return eval(op, ctx);
 }
 
 SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
@@ -474,11 +479,11 @@ SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_
 
 SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
   switch (op.type()) {
-  case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()), ctx);
+  case stmt_node_type::call_stmt: return eval_non_inlined(reinterpret_cast<const call_stmt*>(op.get()), ctx);
   case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()), ctx);
   case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()), ctx);
   case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()), ctx);
-  case stmt_node_type::block: return eval(reinterpret_cast<const block*>(op.get()), ctx);
+  case stmt_node_type::block: return eval_non_inlined(reinterpret_cast<const block*>(op.get()), ctx);
   case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()), ctx);
   case stmt_node_type::allocate: return eval(reinterpret_cast<const allocate*>(op.get()), ctx);
   case stmt_node_type::make_buffer: return eval(reinterpret_cast<const make_buffer*>(op.get()), ctx);
@@ -611,7 +616,7 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   return result;
 }
 
-inline index_t eval(const loop* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval(const loop* op, eval_context& ctx) {
   index_t max_workers = eval(op->max_workers, ctx);
   if (max_workers > 1) {
     return eval_loop_parallel(op, max_workers, ctx);
@@ -981,7 +986,7 @@ SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {
   return 1;
 }
 
-inline index_t eval(const check* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval(const check* op, eval_context& ctx) {
   if (!eval(op->condition, ctx)) {
     return check_failed(op, ctx);
   } else {
