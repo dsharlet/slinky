@@ -55,7 +55,7 @@ struct allocated_buffer : public raw_buffer {
 
 // Provide memory for `buffer`, of `size` bytes aligned to `config->base_alignment`: a reused block from the
 // context's pool when one fits, a fresh block from `config->allocate` otherwise.
-void* allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
+void allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
   const eval_config& config = *ctx.config;
   memory_pool::block block =
       config.use_memory_pool ? ctx.pool.allocate(size, config.base_alignment) : memory_pool::block();
@@ -66,9 +66,9 @@ void* allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& 
     }
     block = {config.allocate(size, config.base_alignment), size};
   }
+  buffer.allocation = block.ptr;
   buffer.base = block.ptr;
   buffer.size = block.size;
-  return block.ptr;
 }
 
 // Release the memory of `buffer`, allocated by `allocate_buffer`.
@@ -80,6 +80,7 @@ void free_buffer(allocated_buffer& buffer, eval_context& ctx) {
   } else {
     config.free(buffer.allocation, buffer.size);
   }
+  buffer.allocation = nullptr;
 }
 
 struct interval {
@@ -725,7 +726,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
     buffer.allocation = nullptr;
     return eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
-  buffer.allocation = allocate_buffer(buffer, *size, ctx);
+  allocate_buffer(buffer, *size, ctx);
 
   index_t result;
   if (!buffer.base && buffer.elem_count() > 0) {
