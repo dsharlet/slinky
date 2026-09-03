@@ -48,6 +48,15 @@ stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size) {
 
 stmt make_loop(stmt body) { return loop::make(x, loop::serial, range(0, iterations), 1, body); }
 
+eval_context& bench_context() {
+  static eval_context ctx = [] {
+    eval_context c;
+    c.reserve(w.id + 1);
+    return c;
+  }();
+  return ctx;
+}
+
 // For nodes that need a buffer, we can add a buffer outside that loop, the cost of constructing it will be negligible.
 std::vector<dim_expr> make_dims(int rank) {
   std::vector<dim_expr> dims;
@@ -66,7 +75,7 @@ void BM_call(benchmark::State& state) {
   stmt body = make_loop(make_call_counter(calls));
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -85,7 +94,7 @@ void BM_let(benchmark::State& state) {
   stmt body = make_loop(let_stmt::make(values, make_call_counter(calls)));
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -99,7 +108,7 @@ void BM_block(benchmark::State& state) {
   stmt body = make_loop(block::make(call_counters));
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -114,7 +123,7 @@ void BM_crop_dim(benchmark::State& state) {
   stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -129,7 +138,7 @@ void BM_crop_buffer(benchmark::State& state) {
   stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -144,7 +153,7 @@ void BM_slice_dim(benchmark::State& state) {
   stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -159,7 +168,7 @@ void BM_slice_buffer(benchmark::State& state) {
   stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -174,7 +183,7 @@ void BM_transpose(benchmark::State& state) {
   stmt body = make_buf(src, 3, l);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -188,7 +197,7 @@ void BM_allocate(benchmark::State& state) {
   stmt body = make_loop(op);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -216,7 +225,7 @@ void BM_make_buffer(benchmark::State& state, dim_type kind) {
   stmt body = make_buf(src, rank, l);
 
   for (auto _ : state) {
-    evaluate(body);
+    evaluate(body, bench_context());
   }
 
   state.SetItemsProcessed(calls);
@@ -243,6 +252,7 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize, nanoseco
   body = loop::make(x, workers, range(0, iterations), 1, body);
 
   eval_context eval_ctx;
+  eval_ctx.reserve(w.id + 1);
   eval_config config;
   thread_pool_impl t(workers - 1);
   config.thread_pool = &t;

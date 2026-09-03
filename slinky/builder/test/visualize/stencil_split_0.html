@@ -349,31 +349,33 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  check(__in);
-  check((buffer_rank(__in) == 2));
-  check(validate_buffer(__in));
-  check(out);
-  check((buffer_rank(out) == 2));
-  check(validate_buffer(out));
-  check((buffer_elem_size(__in) == 2));
-  check((buffer_elem_size(out) == 2));
-  check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-  check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
-  check((buffer_min(__in, 0) < buffer_min(out, 0)));
-  check((buffer_max(out, 0) < buffer_max(__in, 0)));
-  check((buffer_min(__in, 1) < buffer_min(out, 1)));
-  check((buffer_max(out, 1) < buffer_max(__in, 1)));
-  { let intm = allocate('intm', 2, [
-      {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-      {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
-    ]);
-    consume(__in);
-    produce(intm);
-    __event_t++;
-    consume(intm);
-    produce(out);
-    __event_t++;
-    free(intm);
+  {
+    check(__in);
+    check((buffer_rank(__in) == 2));
+    check(validate_buffer(__in));
+    check(out);
+    check((buffer_rank(out) == 2));
+    check(validate_buffer(out));
+    check((buffer_elem_size(__in) == 2));
+    check((buffer_elem_size(out) == 2));
+    check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+    check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+    check((buffer_min(__in, 0) < buffer_min(out, 0)));
+    check((buffer_max(out, 0) < buffer_max(__in, 0)));
+    check((buffer_min(__in, 1) < buffer_min(out, 1)));
+    check((buffer_max(out, 1) < buffer_max(__in, 1)));
+    { let intm = allocate('intm', 2, [
+        {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+        {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
+      ]);
+      consume(__in);
+      produce(intm);
+      __event_t++;
+      consume(intm);
+      produce(out);
+      __event_t++;
+      free(intm);
+    }
   }
 }
 let __in = allocate('in', 2, [{bounds: [-1, 20], stride:2, fold_factor:NaN}, {bounds: [-1, 30], stride:44, fold_factor:NaN}], true);

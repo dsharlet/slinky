@@ -141,22 +141,38 @@ T* make_let(Lets&& lets, Body body) {
   return n;
 }
 
-expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
-  return expr(make_let<let>(lets, std::move(body)));
-}
+expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 expr let::make(span<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 
 expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
-stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure) {
+namespace {
+
+int max_decl_id(span<std::pair<var, expr>> lets) {
+  int result = -1;
+  for (const std::pair<var, expr>& i : lets) {
+    result = std::max<int>(i.first.id, result);
+  }
+  return result;
+}
+
+bool is_self_assignment(const std::pair<var, expr>& let) { return is_variable(let.second, let.first); }
+
+}  // namespace
+
+stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure, int max_symbol_id) {
   let_stmt* n = make_let<let_stmt>(lets, std::move(body));
   n->is_closure = is_closure;
+  n->max_symbol_id = std::max(max_symbol_id, max_decl_id(n->lets));
+  assert(!is_closure || std::all_of(n->lets.begin(), n->lets.end(), is_self_assignment));
   return stmt(n);
 }
 
-stmt let_stmt::make(span<std::pair<var, expr>> lets, stmt body, bool is_closure) {
+stmt let_stmt::make(span<std::pair<var, expr>> lets, stmt body, bool is_closure, int max_symbol_id) {
   let_stmt* n = make_let<let_stmt>(lets, std::move(body));
   n->is_closure = is_closure;
+  n->max_symbol_id = std::max(max_symbol_id, max_decl_id(n->lets));
+  assert(!is_closure || std::all_of(n->lets.begin(), n->lets.end(), is_self_assignment));
   return stmt(n);
 }
 
@@ -687,7 +703,7 @@ stmt block::make(std::vector<stmt> stmts) {
   } else {
     auto n = make_node<block>(size_of(stmts));
     void* arrays = n + 1;
-  n->stmts = make_span(arrays, stmts);
+    n->stmts = make_span(arrays, stmts);
     return stmt(n);
   }
 }

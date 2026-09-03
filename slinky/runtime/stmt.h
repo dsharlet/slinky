@@ -207,10 +207,14 @@ public:
   // The values of every let must be a `variable` expression.
   bool is_closure;
 
+  // The maximum symbol id that `evaluate` may assign while evaluating this node, or -1 if it is unknown.
+  // Any symbol `x` evaluated by `evaluate` must be contained in a `let_stmt` with `max_symbol_id > x`.
+  int max_symbol_id = -1;
+
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
-  static stmt make(span<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
+  static stmt make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure = false, int max_symbol_id = -1);
+  static stmt make(span<std::pair<var, expr>> lets, stmt body, bool is_closure = false, int max_symbol_id = -1);
 
   static stmt make(var sym, expr value, stmt body);
 

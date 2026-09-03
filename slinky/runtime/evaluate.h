@@ -1,6 +1,7 @@
 #ifndef SLINKY_RUNTIME_EVALUATE_H
 #define SLINKY_RUNTIME_EVALUATE_H
 
+#include <cassert>
 #include <cstdlib>
 #include <optional>
 
@@ -82,6 +83,7 @@ public:
 
   // This is always inlined to avoid msan false positives if the value hasn't been set already yet.
   SLINKY_INLINE index_t set(var id, index_t value) {
+    assert(id.id < values_.size());
     index_t& value_ref = values_[id.id];
     index_t old_value = value_ref;
     value_ref = value;
