@@ -55,10 +55,12 @@ struct allocated_buffer : public raw_buffer {
 
 // Provide memory for `buffer`, of `size` bytes aligned to `config->base_alignment`: a reused block from the
 // context's pool when one fits, a fresh block from `config->allocate` otherwise.
-void* allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
+void allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
   const eval_config& config = *ctx.config;
-  memory_pool::block block =
-      config.use_memory_pool ? ctx.pool.allocate(size, config.base_alignment) : memory_pool::block();
+  memory_pool::block block;
+  if (config.use_memory_pool) {
+    block = ctx.pool.allocate(size, config.base_alignment);
+  }
   if (!block.ptr) {
     // The pool couldn't serve this request; release the blocks it no longer considers worth retaining.
     for (memory_pool::block b = ctx.pool.evict_stale(); b.ptr; b = ctx.pool.evict_stale()) {
@@ -66,9 +68,9 @@ void* allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& 
     }
     block = {config.allocate(size, config.base_alignment), size};
   }
+  buffer.allocation = block.ptr;
   buffer.base = block.ptr;
   buffer.size = block.size;
-  return block.ptr;
 }
 
 // Release the memory of `buffer`, allocated by `allocate_buffer`.
@@ -80,6 +82,7 @@ void free_buffer(allocated_buffer& buffer, eval_context& ctx) {
   } else {
     config.free(buffer.allocation, buffer.size);
   }
+  buffer.allocation = nullptr;
 }
 
 struct interval {
@@ -89,12 +92,6 @@ struct interval {
 const let_stmt* as_closure(stmt_ref s) {
   const let_stmt* l = s.as<let_stmt>();
   return l && l->is_closure ? l : nullptr;
-}
-
-SLINKY_INLINE void remove_trailing_broadcasts(raw_buffer& buffer) {
-  while (buffer.rank > 0 && buffer.dims[buffer.rank - 1].is_broadcast()) {
-    --buffer.rank;
-  }
 }
 
 // The evaluators are mutually recursive, so we need to declare them before defining them.
@@ -725,7 +722,7 @@ inline index_t eval(const allocate* op, eval_context& ctx) {
     buffer.allocation = nullptr;
     return eval_with_value<block>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
   }
-  buffer.allocation = allocate_buffer(buffer, *size, ctx);
+  allocate_buffer(buffer, *size, ctx);
 
   index_t result;
   if (!buffer.base && buffer.elem_count() > 0) {
@@ -780,7 +777,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
 }
 
-inline index_t eval(const clone_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR inline index_t eval(const clone_buffer* op, eval_context& ctx) {
   raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
 
@@ -963,13 +960,18 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context&
   raw_buffer sym_buf;
   sym_buf.base = src_buf->base;
   sym_buf.elem_size = src_buf->elem_size;
-  sym_buf.rank = op->dims.size();
-  sym_buf.dims = SLINKY_ALLOCA(dim, op->dims.size());
 
-  for (std::size_t i = 0; i < op->dims.size(); ++i) {
+  // Drop trailing broadcasts in the result first.
+  std::size_t rank = op->dims.size();
+  while (rank > 0 && src_buf->dim_is_broadcast(op->dims[rank - 1])) {
+    --rank;
+  }
+  sym_buf.rank = rank;
+  sym_buf.dims = SLINKY_ALLOCA(dim, rank);
+
+  for (std::size_t i = 0; i < rank; ++i) {
     sym_buf.dims[i] = src_buf->dim(op->dims[i]);
   }
-  remove_trailing_broadcasts(sym_buf);
 
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }

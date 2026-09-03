@@ -241,6 +241,12 @@ public:
   }
   const slinky::dim& dim(std::size_t i) const { return i < rank ? dims[i] : slinky::dim::broadcast(); }
 
+  // This is equivalent to `dim(i).is_broadcast()`, but more efficient for the trailing broadcast dimensions.
+  bool dim_is_broadcast(std::size_t i) const {
+    if (i >= rank) return true;
+    return dims[i].is_broadcast();
+  }
+
   // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
