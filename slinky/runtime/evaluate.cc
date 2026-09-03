@@ -781,7 +781,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
 }
 
-inline index_t eval(const clone_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR inline index_t eval(const clone_buffer* op, eval_context& ctx) {
   raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
 
