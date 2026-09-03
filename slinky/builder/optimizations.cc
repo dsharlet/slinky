@@ -1770,6 +1770,52 @@ public:
   using node_mutator::visit;
 };
 
+class compact_symbols : public substitutor {
+  symbol_map<var> renames;
+  std::vector<scoped_value_in_symbol_map<var>> decls;
+  std::vector<bool> in_scope;
+
+  // Find an unused symbol to use for a new declaration.
+  var allocate_symbol() {
+    std::size_t i = 0;
+    while (i < in_scope.size() && in_scope[i]) {
+      ++i;
+    }
+    if (i == in_scope.size()) in_scope.push_back(false);
+    in_scope[i] = true;
+    return var(i);
+  }
+
+public:
+  compact_symbols(span<var> external_symbols) {
+    for (var i : external_symbols) {
+      if (!i.defined()) continue;
+      if (i.id >= in_scope.size()) in_scope.resize(i.id + 1, false);
+      in_scope[i.id] = true;
+    }
+  }
+
+  var visit_symbol(var x) override {
+    std::optional<var> renamed = renames.lookup(x);
+    return renamed ? *renamed : x;
+  }
+
+  var enter_decl(var x) override {
+    var renamed = allocate_symbol();
+    decls.push_back(set_value_in_scope(renames, x, renamed));
+    return renamed;
+  }
+
+  void exit_decls(int n) override {
+    for (int i = 0; i < n; ++i) {
+      in_scope[renames.lookup(decls.back().sym())->id] = false;
+      decls.pop_back();
+    }
+  }
+
+  using node_mutator::visit;
+};
+
 // This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
 // efficient when performed in place.
 class reuse_shadows : public stmt_mutator {
@@ -1900,8 +1946,11 @@ stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
 }
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
+  compact_symbols compactor(find_dependencies(s));
+  stmt result = compactor.mutate(s);
+
   reuse_shadows mutator;
-  stmt result = mutator.mutate(s);
+  result = mutator.mutate(result);
 
   if (mutator.max_symbol_id >= 0) {
     // Some symbols were declared outside of any let_stmt.

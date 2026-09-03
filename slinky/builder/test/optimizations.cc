@@ -219,6 +219,8 @@ TEST(optimizations, optimize_symbols) {
     return allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, body);
   };
   auto empty_let = [](stmt body) { return let_stmt::make(std::vector<std::pair<var, expr>>{}, std::move(body)); };
+  // `optimize_symbols` also renumbers declarations to be dense, so the symbols in the results below are not
+  // necessarily the ones in the inputs.
 
   {
     // We don't know about x, we can't mutate it.
@@ -246,7 +248,7 @@ TEST(optimizations, optimize_symbols) {
   {
     node_context ctx = symbols;
     ASSERT_THAT(optimize_symbols(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))), ctx),
-        matches(empty_let(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))))));
+        matches(empty_let(make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, check::make(x))))));
   }
 }
 
