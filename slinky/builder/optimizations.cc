@@ -1776,7 +1776,14 @@ class reuse_shadows : public stmt_mutator {
   // Buffers that can be mutated in place are true in this map.
   symbol_map<bool> can_mutate;
 
+  void declare(var x) {
+    if (x.defined()) max_symbol_id = std::max<int>(max_symbol_id, x.id);
+  }
+
 public:
+  // The largest symbol id declared in the scope we are mutating.
+  int max_symbol_id = -1;
+
   template <typename T>
   void visit_buffer_mutator(const T* op) {
     stmt body = op->body;
@@ -1789,6 +1796,7 @@ public:
       sym = op->src;
       body = substitute(body, op->sym, sym);
     }
+    declare(sym);
 
     // Buffers start out mutable.
     can_mutate[op->sym] = true;
@@ -1804,11 +1812,12 @@ public:
 
   template <typename T>
   void visit_buffer_decl(const T* op, bool decl_mutable = true) {
+    declare(op->sym);
     can_mutate[op->sym] = decl_mutable;
     stmt_mutator::visit(op);
   }
 
-  stmt mutate_closure(stmt s) {
+  stmt make_closure(stmt s, var extra_sym = var()) {
     // We're entering a stmt executed in parallel. All the buffers in scope cannot be mutated in this scope.
     symbol_map<bool> old_can_mutate;
     std::swap(can_mutate, old_can_mutate);
@@ -1819,35 +1828,61 @@ public:
     std::vector<std::pair<var, expr>> lets;
     for (var i : referenced) {
       lets.push_back({i, expr(i)});
+      declare(i);
     }
-    return let_stmt::make(std::move(lets), std::move(s), /*is_closure=*/true);
+    return let_stmt::make(std::move(lets), std::move(s), /*is_closure=*/true, max_symbol_id);
   }
 
   void visit(const loop* op) override {
+    declare(op->sym);
     if (!prove_true(op->max_workers == loop::serial)) {
-      stmt body = mutate_closure(op->body);
+      // The closure is its own let_stmt with its own max_symbol_id.
+      const int old_max_symbol_id = max_symbol_id;
+      max_symbol_id = -1;
+
+      // Include the loop variable declaration in the closure.
+      declare(op->sym);
+      stmt body = make_closure(op->body);
       set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
+
+      max_symbol_id = old_max_symbol_id;
     } else {
       stmt_mutator::visit(op);
     }
   }
 
   void visit(const async* op) override {
+    declare(op->sym);
     // We're entering an async task. All the buffers in scope cannot be mutated in this scope.
-    stmt task = mutate_closure(op->task);
-    stmt body = mutate_closure(op->body);
+    const int old_max_symbol_id = max_symbol_id;
+    max_symbol_id = -1;
+    stmt task = make_closure(op->task);
+    max_symbol_id = -1;
+    stmt body = make_closure(op->body);
     set_result(async::make(op->sym, std::move(task), std::move(body)));
+    max_symbol_id = old_max_symbol_id;
   }
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op); }
+  void visit(const clone_buffer* op) override {
+    declare(op->sym);
+    stmt_mutator::visit(op);
+  }
   void visit(const let_stmt* op) override {
+    const int old_max_symbol_id = max_symbol_id;
+    max_symbol_id = -1;
+
     for (const auto& p : op->lets) {
+      declare(p.first);
       if (p.second.as<constant_buffer>()) {
         can_mutate[p.first] = false;
       }
     }
-    stmt_mutator::visit(op);
+    stmt body = mutate(op->body);
+    set_result(let_stmt::make(op->lets, std::move(body), op->is_closure, max_symbol_id));
+
+    max_symbol_id = old_max_symbol_id;
   }
 
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
@@ -1865,7 +1900,15 @@ stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
 }
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
-  return reuse_shadows().mutate(s);
+  reuse_shadows mutator;
+  stmt result = mutator.mutate(s);
+
+  if (mutator.max_symbol_id >= 0) {
+    // Some symbols were declared outside of any let_stmt.
+    result = let_stmt::make(
+        std::vector<std::pair<var, expr>>{}, std::move(result), /*is_closure=*/false, mutator.max_symbol_id);
+  }
+  return result;
 }
 
 namespace {
@@ -2138,7 +2181,8 @@ public:
       // Assume we are both producing and consuming this buffer.
       consumed.insert(lookup_alias(*buf));
       produced.insert(lookup_alias(*buf));
-    } else if (in_check && (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::validate_buffer)) {
+    } else if (in_check &&
+               (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::validate_buffer)) {
       assert(op->args.size() == 1);
       if (auto buf = as_variable(op->args[0])) {
         produced.insert(lookup_alias(*buf));

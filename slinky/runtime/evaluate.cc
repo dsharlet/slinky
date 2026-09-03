@@ -251,17 +251,16 @@ SLINKY_INLINE index_t eval_let_value(expr_ref e, eval_context& ctx) {
   return eval_non_inlined(e, ctx);
 }
 
+SLINKY_INLINE void reserve_symbols(const let_stmt* op, eval_context& ctx) { ctx.reserve(op->max_symbol_id + 1); }
+SLINKY_INLINE void reserve_symbols(const let* op, eval_context& ctx) {}
+
 template <typename T>
 SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx) {
   // This is a bit ugly but we really want to avoid heap allocations here.
   const size_t size = op->lets.size();
   index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
-  std::size_t context_size = 0;
-  for (const auto& let : op->lets) {
-    context_size = std::max<size_t>(context_size, let.first.id);
-  }
-  ctx.reserve(context_size + 1);
+  reserve_symbols(op, ctx);
 
   for (size_t i = 0; i < size; ++i) {
     const auto& let = op->lets[i];
@@ -466,10 +465,8 @@ SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) { return eval<call_st
 
 template <typename... Ts>
 SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_context& ctx) {
-  ctx.reserve(sym.id + 1);
   index_t old_value = ctx.set(sym, value);
   index_t result = eval<Ts...>(op, ctx);
-  // ctx might have grown and invalidated the ctx_value reference.
   ctx.set(sym, old_value);
   return result;
 }
@@ -508,8 +505,10 @@ inline index_t eval(const block* op, eval_context& ctx) {
 SLINKY_NO_INLINE void init_context(
     eval_context& context, const eval_context& parent_context, const let_stmt* closure, var exclude = var()) {
   if (closure) {
-    // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
-    context.reserve(parent_context.size());
+    // The body is a closure, so we know exactly which symbols we need to copy to the new local context, and how big
+    // it needs to be.
+    assert(closure->max_symbol_id >= 0);
+    context.reserve(closure->max_symbol_id + 1);
     context.config = parent_context.config;
 
     // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent
@@ -520,9 +519,7 @@ SLINKY_NO_INLINE void init_context(
         // it. However, we are going to overwrite it below.
         continue;
       }
-      auto src = as_variable(i.second);
-      assert(src);
-      context.set(i.first, parent_context.lookup(*src));
+      context.set(i.first, parent_context.lookup(i.first));
     }
   } else {
     // We don't have a closure, just copy the whole context.
@@ -547,10 +544,12 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
   }
 
   if (n == 1) {
+    if (closure) {
+      // The closure is a no-op, except for this, don't drop it.
+      ctx.reserve(closure->max_symbol_id + 1);
+    }
     return eval_with_value<block, crop_dim>(body, op->sym, bounds.min, ctx);
   } else {
-    ctx.reserve(op->sym.id + 1);
-
     thread_pool* pool = ctx.config->thread_pool;
     assert(pool);
 
@@ -593,11 +592,7 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   interval bounds = eval(op->bounds, ctx);
   index_t step = eval(op->step, 1, ctx);
   assert(step != 0);
-  // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to ctx[op->sym] here
-  // because the context could grow and invalidate the reference. This could be fixed by having evaluate
-  // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
-  // not clear this optimization is necessary yet.
-  ctx.reserve(op->sym.id + 1);
+  // We don't get a reference to ctx[op->sym] here because the context could grow and invalidate the reference.
   index_t old_value = ctx.set(op->sym, 0);
   index_t result = 0;
   if (step > 0) {
@@ -642,7 +637,6 @@ SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx) {
     task_body();
   }
 
-  ctx.reserve(op->sym.id + 1);
   index_t old_sym = 0;
   if (op->sym.defined()) ctx.set(op->sym, reinterpret_cast<index_t>(&*task));
 

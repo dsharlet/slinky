@@ -17,6 +17,12 @@ node_context ctx;
 var x(ctx, "x");
 var y(ctx, "y");
 
+eval_context make_context() {
+  eval_context result;
+  result.reserve(y.id + 1);
+  return result;
+}
+
 }  // namespace
 
 bool operator==(const raw_buffer& a, const raw_buffer& b) {
@@ -30,7 +36,7 @@ bool operator==(const raw_buffer& a, const raw_buffer& b) {
 }
 
 TEST(evaluate, arithmetic) {
-  eval_context context;
+  eval_context context = make_context();
   context[x] = 4;
 
   ASSERT_EQ(evaluate(x + 5, context), 9);
@@ -63,7 +69,7 @@ TEST(evaluate, arithmetic) {
 }
 
 TEST(evaluate, buffer_fields) {
-  eval_context context;
+  eval_context context = make_context();
   buffer<int, 1> buf({10});
   context[x] = reinterpret_cast<index_t>(&buf);
 
@@ -83,7 +89,7 @@ TEST(evaluate, user_defined_call) {
     return x * y;
   };
 
-  eval_context context;
+  eval_context context = make_context();
   context[x] = 3;
   context[y] = 4;
   ASSERT_EQ(evaluate(call::make(intrinsic::none, fn, {x, y}), context), 12);
@@ -98,7 +104,7 @@ TEST(evaluate, call) {
       },
       span<var>{}, span<var>{}, {}, {});
 
-  eval_context context;
+  eval_context context = make_context();
   context[x] = 2;
 
   int result = evaluate(c, context);
@@ -108,7 +114,7 @@ TEST(evaluate, call) {
 }
 
 TEST(evaluate, loop) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   thread_pool_impl t;
   eval_config cfg;
   cfg.thread_pool = &t;
@@ -156,7 +162,7 @@ stmt make_check(var buffer, std::vector<int> extents, const void* base = nullptr
 }
 
 TEST(evaluate, buffer_fields_broadcast) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 1> buf({10});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
@@ -166,26 +172,30 @@ TEST(evaluate, buffer_fields_broadcast) {
 }
 
 TEST(evaluate, allocate) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   expr elem_size = 1;
-  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}}, make_check(x, {4}, not_null)));
-  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4}, not_null)));
-  evaluate(allocate::make(
-      x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4}, not_null)));
+  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}}, make_check(x, {4}, not_null)), ctx);
+  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast()},
+               make_check(x, {4}, not_null)),
+      ctx);
+  evaluate(allocate::make(x, memory_type::automatic, elem_size,
+               {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4}, not_null)),
+      ctx);
 }
 
 TEST(evaluate, make_buffer) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   expr base = 0;
   expr elem_size = 1;
-  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}}, make_check(x, {4})));
-  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4})));
+  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}}, make_check(x, {4})), ctx);
+  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4})), ctx);
   evaluate(
-      make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4})));
+      make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4})),
+      ctx);
 }
 
 TEST(evaluate, crop_dim) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 2> buf({10, 20});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
@@ -214,7 +224,7 @@ TEST(evaluate, crop_dim) {
 }
 
 TEST(evaluate, crop_buffer) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
@@ -250,7 +260,7 @@ TEST(evaluate, crop_buffer) {
 }
 
 TEST(evaluate, slice_dim) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 3> buf({10, 20, 30});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
@@ -271,7 +281,7 @@ TEST(evaluate, slice_dim) {
 }
 
 TEST(evaluate, slice_buffer) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
@@ -310,7 +320,7 @@ TEST(evaluate, slice_buffer) {
 }
 
 TEST(evaluate, transpose) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
@@ -339,7 +349,7 @@ TEST(evaluate, transpose) {
 }
 
 TEST(evaluate, clone_buffer) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   buffer<int, 2> buf({10, 20});
   buf.allocate();
   ctx[y] = reinterpret_cast<index_t>(&buf);
@@ -356,7 +366,7 @@ TEST(evaluate, clone_buffer) {
 }
 
 TEST(evaluate, semaphore) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   thread_pool_impl t;
   eval_config cfg;
   cfg.thread_pool = &t;
@@ -387,7 +397,7 @@ TEST(evaluate, semaphore) {
 }
 
 TEST(evaluate, async) {
-  eval_context ctx;
+  eval_context ctx = make_context();
   thread_pool_impl t;
   eval_config cfg;
   cfg.thread_pool = &t;
