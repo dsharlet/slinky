@@ -8,7 +8,6 @@ target_link_libraries(slinky_builder_test_util PUBLIC
     slinky_chrome_trace
     slinky_thread_pool_impl
     slinky_base_test_util
-    slinky_replica_pipeline
     GTest::gmock
     GTest::gtest
 )
@@ -35,16 +34,13 @@ add_builder_test(elementwise
     slinky_base_test_util slinky_builder slinky_runtime)
 
 add_builder_test(pipeline
-    slinky_builder_test_util slinky_base_test_util slinky_builder
-    slinky_replica_pipeline slinky_runtime)
+    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
 
 add_builder_test(copy_pipeline
-    slinky_builder_test_util slinky_base_test_util slinky_builder
-    slinky_replica_pipeline slinky_runtime)
+    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
 
 add_builder_test(pyramid
-    slinky_builder_test_util slinky_base_test_util slinky_builder
-    slinky_replica_pipeline slinky_runtime)
+    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
 
 add_builder_test(softmax
     slinky_builder_test_util slinky_base_test_util slinky_builder
@@ -64,9 +60,6 @@ add_builder_test(auto_stack_threshold
 
 add_builder_test(cannot_alias
     slinky_builder_test_util slinky_builder slinky_runtime)
-
-add_builder_test(replica_pipeline
-    slinky_builder_test_util slinky_builder slinky_replica_pipeline)
 
 add_builder_test(substitute
     slinky_builder slinky_runtime GTest::gmock)

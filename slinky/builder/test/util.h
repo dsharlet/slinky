@@ -49,10 +49,6 @@ inline bool is_permutation(span<int> p) {
 void check_visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs,
     pipeline::buffers outputs, const node_context* ctx);
 
-std::string get_replica_golden();
-
-void check_replica_pipeline(const std::string& replica_text);
-
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_TEST_UTIL_H
