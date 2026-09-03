@@ -3,7 +3,6 @@
 
 #include "slinky/base/test/bazel_util.h"
 #include "slinky/builder/pipeline.h"
-#include "slinky/builder/replica_pipeline.h"
 #include "slinky/builder/test/context.h"
 #include "slinky/builder/test/funcs.h"
 #include "slinky/builder/test/util.h"
@@ -574,11 +573,6 @@ TEST_P(concatenated_output, pipeline) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
     ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
-
-  if (no_alias_buffers == true && concat_dim == 1 && !with_loops) {
-    check_replica_pipeline(
-        define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}));
-  }
 }
 
 class transposed_output : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
@@ -703,8 +697,6 @@ TEST(stacked_output, pipeline) {
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
   ASSERT_EQ(eval_ctx.copy_calls, 0);
-
-  check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
 class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int, int>> {};

@@ -364,28 +364,28 @@ function pipeline(__in, out) {
     check((buffer_max(out, 0) < buffer_max(__in, 0)));
     check((buffer_min(__in, 1) < buffer_min(out, 1)));
     check((buffer_max(out, 1) < buffer_max(__in, 1)));
-    { let intm = allocate('intm', 2, [
+    { let _2_ = allocate('<2>', 2, [
         {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
         {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
       ]);
       let __loop_min = (buffer_min(out, 1) + -2);
       let __loop_max = buffer_max(out, 1);
       let __loop_step = 1;
-      for(let x = __loop_min; x <= __loop_max; x += __loop_step) {
-        { let __intm = crop_dim(intm, 1, [(x + 1), (x + 1)]); {
-          let intm = __intm;
+      for(let _3_ = __loop_min; _3_ <= __loop_max; _3_ += __loop_step) {
+        { let ___2_ = crop_dim(_2_, 1, [(_3_ + 1), (_3_ + 1)]); {
+          let _2_ = ___2_;
           consume(__in);
-          produce(intm);
+          produce(_2_);
           __event_t++;
         }}
-        { let __y = crop_dim(out, 1, [x, x]); {
-          let y = __y;
-          consume(intm);
-          produce(y);
+        { let ___4_ = crop_dim(out, 1, [_3_, _3_]); {
+          let _4_ = ___4_;
+          consume(_2_);
+          produce(_4_);
           __event_t++;
         }}
       }
-      free(intm);
+      free(_2_);
     }
   }
 }

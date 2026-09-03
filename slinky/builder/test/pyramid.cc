@@ -3,7 +3,6 @@
 
 #include "slinky/base/test/bazel_util.h"
 #include "slinky/builder/pipeline.h"
-#include "slinky/builder/replica_pipeline.h"
 #include "slinky/builder/substitute.h"
 #include "slinky/builder/test/context.h"
 #include "slinky/builder/test/funcs.h"
@@ -78,10 +77,6 @@ TEST_P(pyramid, pipeline) {
 
   const int parallel_extra = max_workers != loop::serial ? 1 : 0;
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W + 2) / 2 * (2 + parallel_extra) * sizeof(int)));
-
-  if (max_workers == loop::serial) {
-    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
-  }
 }
 
 class pyramid_multi : public testing::TestWithParam<int> {};

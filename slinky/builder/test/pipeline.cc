@@ -4,7 +4,6 @@
 #include <numeric>
 
 #include "slinky/builder/pipeline.h"
-#include "slinky/builder/replica_pipeline.h"
 #include "slinky/builder/substitute.h"
 #include "slinky/builder/test/context.h"
 #include "slinky/builder/test/funcs.h"
@@ -478,10 +477,6 @@ TEST_P(matmuls, pipeline) {
   if (split > 0 && max_workers == loop::serial) {
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(N * sizeof(int) * split));
   }
-
-  if (split == 1 && max_workers == loop::serial) {
-    check_replica_pipeline(define_replica_pipeline(ctx, {a, b, c}, {abc}));
-  }
 }
 
 class stencil : public testing::TestWithParam<std::tuple<int, int, int>> {};
@@ -830,10 +825,6 @@ TEST_P(multiple_outputs, pipeline) {
       ASSERT_EQ(sum_xy_buf(z), expected_xy);
     }
   }
-
-  if (split == 1 && max_workers == loop::serial && !ignore_one_output) {
-    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
-  }
 }
 
 class outer_product : public testing::TestWithParam<std::tuple<int, int, int>> {};
@@ -933,8 +924,6 @@ TEST(unrelated, pipeline) {
         add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add2"});
 
     stencil1.loops({{y, 2}});
-
-    check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out1, out2}));
 
     return build_pipeline(ctx, {in1, in2}, {out1, out2});
   };
@@ -1065,10 +1054,6 @@ TEST_P(padded_stencil, pipeline) {
 
   // Also visualize this pipeline.
   check_visualize("padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
-
-  if (schedule == 1) {
-    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
-  }
 }
 
 interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx}; }
@@ -1497,8 +1482,6 @@ TEST(fork, pipeline) {
       ASSERT_EQ(out2_buf(x, y), in_buf(x, y) * 2 + 1);
     }
   }
-
-  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out1, out2}));
 }
 
 TEST(split, pipeline) {

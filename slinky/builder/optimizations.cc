@@ -1800,6 +1800,13 @@ public:
     return renamed ? *renamed : x;
   }
 
+  // Remove the names of symbols we reallocated from the context.
+  void clear_names(node_context& ctx) const {
+    for (std::size_t i = 0; i < in_scope.size(); ++i) {
+      if (!in_scope[i]) ctx.clear_name(var(i));
+    }
+  }
+
   var enter_decl(var x) override {
     var renamed = allocate_symbol();
     decls.push_back(set_value_in_scope(renames, x, renamed));
@@ -1948,6 +1955,7 @@ stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
   compact_symbols compactor(find_dependencies(s));
   stmt result = compactor.mutate(s);
+  compactor.clear_names(ctx);
 
   reuse_shadows mutator;
   result = mutator.mutate(result);

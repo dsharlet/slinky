@@ -350,9 +350,9 @@ function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   {
-    let add_result = make_buffer('<constant>', 0, 1, [{bounds: [0, 21], stride:1, fold_factor:NaN}]);
+    let _2_ = make_buffer('<constant>', 0, 1, [{bounds: [0, 21], stride:1, fold_factor:NaN}]);
     {
-      let stencil1_result = trace_begin(buffer_at(add_result, 13));
+      let _3_ = trace_begin(buffer_at(_2_, 13));
       check(__in);
       check((buffer_rank(__in) == 2));
       check(validate_buffer(__in));
@@ -367,40 +367,40 @@ function pipeline(__in, out) {
       check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
       check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
       check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-      { let x = allocate('x', 2, [
+      { let _4_ = allocate('<4>', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
         ]);
-        { let y = allocate('y', 2, [
-            {bounds:[(buffer_min(x, 0) + -1), (buffer_max(x, 0) + 1)], stride:NaN, fold_factor:NaN},
-            {bounds:[(buffer_min(x, 1) + -1), (buffer_max(x, 1) + 1)], stride:NaN, fold_factor:NaN}
+        { let _5_ = allocate('<5>', 2, [
+            {bounds:[(buffer_min(_4_, 0) + -1), (buffer_max(_4_, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(_4_, 1) + -1), (buffer_max(_4_, 1) + 1)], stride:NaN, fold_factor:NaN}
           ]);
           {
-            let add_result_uncropped = trace_begin(buffer_at(add_result, 0));
+            let _6_ = trace_begin(buffer_at(_2_, 0));
             consume(__in);
-            produce(y);
+            produce(_5_);
             __event_t++;
-            check(trace_end(add_result_uncropped));
+            check(trace_end(_6_));
           }
           {
-            let add_result_uncropped = trace_begin(buffer_at(add_result, 6));
-            consume(y);
-            produce(x);
+            let _6_ = trace_begin(buffer_at(_2_, 6));
+            consume(_5_);
+            produce(_4_);
             __event_t++;
-            check(trace_end(add_result_uncropped));
+            check(trace_end(_6_));
           }
-          free(y);
+          free(_5_);
         }
         {
-          let y = trace_begin(buffer_at(add_result, 6));
-          consume(x);
+          let _5_ = trace_begin(buffer_at(_2_, 6));
+          consume(_4_);
           produce(out);
           __event_t++;
-          check(trace_end(y));
+          check(trace_end(_5_));
         }
-        free(x);
+        free(_4_);
       }
-      check(trace_end(stencil1_result));
+      check(trace_end(_3_));
     }
   }
 }

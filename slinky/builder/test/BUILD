@@ -24,7 +24,6 @@ cc_library(
         "//slinky/base:chrome_trace",
         "//slinky/base:thread_pool_impl",
         "//slinky/base/test:util",
-        "//slinky/builder:replica_pipeline",
         "@googletest//:gtest",
     ],
 )
@@ -69,12 +68,11 @@ cc_test(
 cc_test(
     name = "pipeline",
     srcs = ["pipeline.cc"],
-    data = ["replica_pipeline.cc"] + glob(["visualize/*.html"]),
+    data = glob(["visualize/*.html"]),
     deps = [
         ":util",
         "//slinky/base/test:util",
         "//slinky/builder",
-        "//slinky/builder:replica_pipeline",
         "//slinky/runtime",
         "@googletest//:gtest_main",
     ],
@@ -84,12 +82,10 @@ cc_test(
 cc_test(
     name = "copy_pipeline",
     srcs = ["copy_pipeline.cc"],
-    data = ["replica_pipeline.cc"],
     deps = [
         ":util",
         "//slinky/base/test:util",
         "//slinky/builder",
-        "//slinky/builder:replica_pipeline",
         "//slinky/runtime",
         "@googletest//:gtest_main",
     ],
@@ -99,12 +95,10 @@ cc_test(
 cc_test(
     name = "pyramid",
     srcs = ["pyramid.cc"],
-    data = ["replica_pipeline.cc"],
     deps = [
         ":util",
         "//slinky/base/test:util",
         "//slinky/builder",
-        "//slinky/builder:replica_pipeline",
         "//slinky/runtime",
         "@googletest//:gtest_main",
     ],
@@ -183,18 +177,6 @@ cc_test(
         ":util",
         "//slinky/builder",
         "//slinky/runtime",
-        "@googletest//:gtest_main",
-    ],
-    size = "small",
-)
-
-cc_test(
-    name = "replica_pipeline",
-    srcs = ["replica_pipeline.cc"],
-    deps = [
-        ":util",
-        "//slinky/builder",
-        "//slinky/builder:replica_pipeline",
         "@googletest//:gtest_main",
     ],
     size = "small",

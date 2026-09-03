@@ -350,7 +350,7 @@ function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   {
-    let intm = make_buffer('<constant>', 0, 2, []);
+    let _2_ = make_buffer('<constant>', 0, 2, []);
     check(__in);
     check((buffer_rank(__in) == 2));
     check(validate_buffer(__in));
@@ -362,31 +362,31 @@ function pipeline(__in, out) {
     check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
     check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
     {
-      let padded_intm = buffer_min(__in, 0);
-      let x = buffer_min(__in, 1);
-      let y = buffer_max(__in, 0);
-      let padding = buffer_max(__in, 1);
-      { let g = allocate('g', 2, [
+      let _3_ = buffer_min(__in, 0);
+      let _4_ = buffer_min(__in, 1);
+      let _5_ = buffer_max(__in, 0);
+      let _6_ = buffer_max(__in, 1);
+      { let _7_ = allocate('<7>', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
         ]);
-        { let __g_0 = crop_buffer(g, [
-            [padded_intm, y],
-            [x, padding]
+        { let ___8_ = crop_buffer(_7_, [
+            [_3_, _5_],
+            [_4_, _6_]
         ]); {
-          let g_0 = __g_0;
+          let _8_ = ___8_;
           consume(__in);
-          produce(g_0);
+          produce(_8_);
           __event_t++;
-          produce(g_0);
-          produce(g);
-          produce(intm);
+          produce(_8_);
+          produce(_7_);
+          produce(_2_);
           __event_t++;
         }}
-        consume(g);
+        consume(_7_);
         produce(out);
         __event_t++;
-        free(g);
+        free(_7_);
       }
     }
   }

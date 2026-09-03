@@ -42,6 +42,8 @@ public:
 
   std::string sanitize(std::string s) const {
     std::replace(s.begin(), s.end(), '.', '_');
+    std::replace(s.begin(), s.end(), '<', '_');
+    std::replace(s.begin(), s.end(), '>', '_');
     std::replace(s.begin(), s.end(), '/', '_');
     std::replace(s.begin(), s.end(), '#', '_');
     if (s == "in") {
