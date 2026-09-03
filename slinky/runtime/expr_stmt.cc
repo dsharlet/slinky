@@ -140,8 +140,8 @@ expr make_bin_op(expr a, expr b) {
 }
 
 template <typename T, typename Lets, typename Body>
-T* make_let(Lets&& lets, Body body) {
-  auto n = make_node<T>(size_of(lets));
+T* make_let(Lets&& lets, Body body, std::size_t extra_bytes = 0) {
+  auto n = make_node<T>(size_of(lets) + extra_bytes);
   void* arrays = n + 1;
   n->lets = make_span(arrays, lets);
   n->body = std::move(body);
@@ -165,20 +165,54 @@ int max_decl_id(span<std::pair<var, expr>> lets) {
 
 bool is_self_assignment(const std::pair<var, expr>& let) { return is_variable(let.second, let.first); }
 
+std::optional<index_t> constant_let_value(const expr& value) {
+  if (const constant* c = value.as<constant>()) {
+    return c->value;
+  } else if (const constant_buffer* c = value.as<constant_buffer>()) {
+    return reinterpret_cast<index_t>(c->value.get());
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Returns the number of `lets` that are contiguously numbered symbols that are constants. If `values` is not null,
+// store the constant values in order here.
+template <typename Lets>
+std::size_t contiguous_constant_values(const Lets& lets, index_t* values) {
+  for (size_t i = 0; i < lets.size(); ++i) {
+    if (lets[i].first.id != lets[0].first.id + i) return i;
+    auto value = constant_let_value(lets[i].second);
+    if (!value) return i;
+    if (values) values[i] = *value;
+  }
+  return lets.size();
+}
+
+std::size_t constants_size(span<std::pair<var, expr>> lets) {
+  return contiguous_constant_values(lets, nullptr) * sizeof(index_t);
+}
+
+span<index_t> make_contiguous_constants(let_stmt* n) {
+  index_t* values = reinterpret_cast<index_t*>(reinterpret_cast<char*>(n + 1) + size_of(n->lets));
+  return {values, contiguous_constant_values(n->lets, values)};
+}
+
 }  // namespace
 
 stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure, int max_symbol_id) {
-  let_stmt* n = make_let<let_stmt>(lets, std::move(body));
+  let_stmt* n = make_let<let_stmt>(lets, std::move(body), constants_size(lets));
   n->is_closure = is_closure;
   n->max_symbol_id = std::max(max_symbol_id, max_decl_id(n->lets));
+  n->constants = make_contiguous_constants(n);
   assert(!is_closure || std::all_of(n->lets.begin(), n->lets.end(), is_self_assignment));
   return stmt(n);
 }
 
 stmt let_stmt::make(span<std::pair<var, expr>> lets, stmt body, bool is_closure, int max_symbol_id) {
-  let_stmt* n = make_let<let_stmt>(lets, std::move(body));
+  let_stmt* n = make_let<let_stmt>(lets, std::move(body), constants_size(lets));
   n->is_closure = is_closure;
   n->max_symbol_id = std::max(max_symbol_id, max_decl_id(n->lets));
+  n->constants = make_contiguous_constants(n);
   assert(!is_closure || std::all_of(n->lets.begin(), n->lets.end(), is_self_assignment));
   return stmt(n);
 }

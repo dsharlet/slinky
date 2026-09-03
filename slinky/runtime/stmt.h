@@ -211,6 +211,9 @@ public:
   // Any symbol `x` evaluated by `evaluate` must be contained in a `let_stmt` with `max_symbol_id > x`.
   int max_symbol_id = -1;
 
+  // The values of the first n contiguously named constants in `lets`.
+  span<index_t> constants;
+
   void accept(stmt_visitor* v) const override;
 
   static stmt make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure = false, int max_symbol_id = -1);

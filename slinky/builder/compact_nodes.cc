@@ -92,7 +92,9 @@ std::size_t size_of(const T&) {
 }
 std::size_t size_of(const let& n) { return sizeof(arena_node<let>) + size_of(n.lets); }
 std::size_t size_of(const call& n) { return sizeof(arena_node<call>) + size_of(n.args); }
-std::size_t size_of(const let_stmt& n) { return sizeof(arena_node<let_stmt>) + size_of(n.lets); }
+std::size_t size_of(const let_stmt& n) {
+  return sizeof(arena_node<let_stmt>) + size_of(n.lets) + size_of(n.constants);
+}
 std::size_t size_of(const block& n) { return sizeof(arena_node<block>) + size_of(n.stmts); }
 std::size_t size_of(const call_stmt& n) {
   return sizeof(arena_node<call_stmt>) + size_of(n.inputs) + size_of(n.outputs) + size_of(n.scalars);
@@ -137,6 +139,7 @@ const let_stmt* clone_into(void* mem, const let_stmt& n) {
   auto result = new (mem) arena_node<let_stmt>(n);
   void* arrays = result + 1;
   result->lets = make_span(arrays, n.lets);
+  result->constants = make_span(arrays, n.constants);
   return result;
 }
 const block* clone_into(void* mem, const block& n) {

@@ -1813,6 +1813,27 @@ public:
     return renamed;
   }
 
+  void visit(const let_stmt* op) override {
+    // Put the lets with constant values first, so they get the contiguous symbols, which `evaluate` can implement more
+    // efficiently. This is always safe because a constant can't depend on another value in the let.
+    std::vector<std::pair<var, expr>> lets;
+    lets.reserve(op->lets.size());
+    for (const std::pair<var, expr>& i : op->lets) {
+      if (i.second.as<constant>() || i.second.as<constant_buffer>()) lets.push_back(i);
+    }
+    for (const std::pair<var, expr>& i : op->lets) {
+      if (!(i.second.as<constant>() || i.second.as<constant_buffer>())) lets.push_back(i);
+    }
+
+    for (std::pair<var, expr>& i : lets) {
+      i.second = mutate(i.second);
+      i.first = enter_decl(i.first);
+    }
+    stmt body = mutate(op->body);
+    exit_decls(lets.size());
+    set_result(let_stmt::make(std::move(lets), std::move(body), op->is_closure));
+  }
+
   void exit_decls(int n) override {
     for (int i = 0; i < n; ++i) {
       in_scope[renames.lookup(decls.back().sym())->id] = false;

@@ -207,16 +207,9 @@ SLINKY_INLINE index_t eval_let_value(expr_ref e, eval_context& ctx) {
   return eval_non_inlined(e, ctx);
 }
 
-SLINKY_INLINE void reserve_symbols(const let_stmt* op, eval_context& ctx) { ctx.reserve(op->max_symbol_id + 1); }
-SLINKY_INLINE void reserve_symbols(const let* op, eval_context& ctx) {}
-
-template <typename T>
-SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval_let(const T* op, eval_context& ctx) {
-  // This is a bit ugly but we really want to avoid heap allocations here.
+SLINKY_INLINE SLINKY_NO_STACK_PROTECTOR index_t eval(const let* op, eval_context& ctx) {
   const size_t size = op->lets.size();
   index_t* old_values = SLINKY_ALLOCA(index_t, size);
-
-  reserve_symbols(op, ctx);
 
   for (size_t i = 0; i < size; ++i) {
     const auto& let = op->lets[i];
@@ -228,8 +221,6 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval_let(const T* op, eval_conte
   }
   return result;
 }
-
-SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) { return eval_let(op, ctx); }
 
 SLINKY_INLINE index_t eval(const variable* op, eval_context& ctx) {
   return eval_variable(ctx.lookup(op->sym), op->field, op->dim);
@@ -501,7 +492,32 @@ SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_
   return result;
 }
 
-SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx) { return eval_let(op, ctx); }
+SLINKY_INLINE SLINKY_NO_STACK_PROTECTOR index_t eval(const let_stmt* op, eval_context& ctx) {
+  const size_t size = op->lets.size();
+  const size_t constants_size = op->constants.size();
+  index_t* old_values = SLINKY_ALLOCA(index_t, size);
+
+  ctx.reserve(op->max_symbol_id + 1);
+
+  if (constants_size > 0) {
+    ctx.read(op->lets[0].first, constants_size, old_values);
+    ctx.write(op->lets[0].first, constants_size, op->constants.data());
+  }
+  for (size_t i = constants_size; i < size; ++i) {
+    const auto& let = op->lets[i];
+    old_values[i] = ctx.set(let.first, eval_let_value(let.second, ctx));
+  }
+
+  index_t result = eval(op->body, ctx);
+
+  if (constants_size > 0) {
+    ctx.write(op->lets[0].first, constants_size, old_values);
+  }
+  for (size_t i = constants_size; i < size; ++i) {
+    ctx.set(op->lets[i].first, old_values[i]);
+  }
+  return result;
+}
 
 SLINKY_INLINE index_t eval(const block* op, eval_context& ctx) {
   for (const auto& s : op->stmts) {

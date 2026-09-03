@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 
 #include "slinky/base/allocator.h"
@@ -88,6 +89,16 @@ public:
     index_t old_value = value_ref;
     value_ref = value;
     return old_value;
+  }
+
+  // Read or write the value of `n` contiguous symbols.
+  SLINKY_INLINE void read(var begin, size_t n, index_t* values) {
+    assert(begin.id + n <= values_.size());
+    std::memcpy(values, &values_[begin.id], n * sizeof(index_t));
+  }
+  SLINKY_INLINE void write(var begin, size_t n, const index_t* values) {
+    assert(begin.id + n <= values_.size());
+    std::memcpy(&values_[begin.id], values, n * sizeof(index_t));
   }
 
   index_t lookup(var id) const {
