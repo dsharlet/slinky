@@ -24,9 +24,9 @@ std::string node_context::name(var v) const {
   if (v.id < sym_to_name.size() && !sym_to_name[v.id].empty()) {
     return sym_to_name[v.id];
   } else if (v.defined()) {
-    return "<" + std::to_string(v.id) + ">";
+    return "." + std::to_string(v.id);
   } else {
-    return "<>";
+    return ".";
   }
 }
 

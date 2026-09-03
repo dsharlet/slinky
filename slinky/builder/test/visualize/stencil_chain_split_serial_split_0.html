@@ -350,9 +350,9 @@ function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   {
-    let _2_ = make_buffer('<constant>', 0, 1, [{bounds: [0, 21], stride:1, fold_factor:NaN}]);
+    let _2 = make_buffer('<constant>', 0, 1, [{bounds: [0, 21], stride:1, fold_factor:NaN}]);
     {
-      let _3_ = trace_begin(buffer_at(_2_, 13));
+      let _3 = trace_begin(buffer_at(_2, 13));
       check(__in);
       check((buffer_rank(__in) == 2));
       check(validate_buffer(__in));
@@ -367,40 +367,40 @@ function pipeline(__in, out) {
       check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
       check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
       check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-      { let _4_ = allocate('<4>', 2, [
+      { let _4 = allocate('.4', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
         ]);
-        { let _5_ = allocate('<5>', 2, [
-            {bounds:[(buffer_min(_4_, 0) + -1), (buffer_max(_4_, 0) + 1)], stride:NaN, fold_factor:NaN},
-            {bounds:[(buffer_min(_4_, 1) + -1), (buffer_max(_4_, 1) + 1)], stride:NaN, fold_factor:NaN}
+        { let _5 = allocate('.5', 2, [
+            {bounds:[(buffer_min(_4, 0) + -1), (buffer_max(_4, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(_4, 1) + -1), (buffer_max(_4, 1) + 1)], stride:NaN, fold_factor:NaN}
           ]);
           {
-            let _6_ = trace_begin(buffer_at(_2_, 0));
+            let _6 = trace_begin(buffer_at(_2, 0));
             consume(__in);
-            produce(_5_);
+            produce(_5);
             __event_t++;
-            check(trace_end(_6_));
+            check(trace_end(_6));
           }
           {
-            let _6_ = trace_begin(buffer_at(_2_, 6));
-            consume(_5_);
-            produce(_4_);
+            let _6 = trace_begin(buffer_at(_2, 6));
+            consume(_5);
+            produce(_4);
             __event_t++;
-            check(trace_end(_6_));
+            check(trace_end(_6));
           }
-          free(_5_);
+          free(_5);
         }
         {
-          let _5_ = trace_begin(buffer_at(_2_, 6));
-          consume(_4_);
+          let _5 = trace_begin(buffer_at(_2, 6));
+          consume(_4);
           produce(out);
           __event_t++;
-          check(trace_end(_5_));
+          check(trace_end(_5));
         }
-        free(_4_);
+        free(_4);
       }
-      check(trace_end(_3_));
+      check(trace_end(_3));
     }
   }
 }

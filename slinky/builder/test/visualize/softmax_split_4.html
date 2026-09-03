@@ -360,80 +360,80 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
   check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
-    let _2_ = buffer_min(out, 0);
-    let _3_ = buffer_max(out, 0);
-    check((buffer_min(__in, 0) <= _2_));
-    check((_3_ <= buffer_max(__in, 0)));
+    let _2 = buffer_min(out, 0);
+    let _3 = buffer_max(out, 0);
+    check((buffer_min(__in, 0) <= _2));
+    check((_3 <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    { let _4_ = allocate('<4>', 4, [
+    { let _4 = allocate('.4', 4, [
         {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
         {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
       ]);
-      { let _5_ = allocate('<5>', 4, [
+      { let _5 = allocate('.5', 4, [
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
         ]);
-        { let _6_ = allocate('<6>', 4, [
-            {bounds:[_2_, _3_], stride:NaN, fold_factor:NaN},
+        { let _6 = allocate('.6', 4, [
+            {bounds:[_2, _3], stride:NaN, fold_factor:NaN},
             {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
           ]);
-          { let _7_ = allocate('<7>', 4, [
+          { let _7 = allocate('.7', 4, [
               {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
             ]);
-            { let _8_ = allocate('<8>', 4, [
-                {bounds:[_2_, _3_], stride:NaN, fold_factor:NaN},
+            { let _8 = allocate('.8', 4, [
+                {bounds:[_2, _3], stride:NaN, fold_factor:NaN},
                 {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
               ]);
               let __loop_min = buffer_min(out, 1);
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 4;
-              for(let _9_ = __loop_min; _9_ <= __loop_max; _9_ += __loop_step) {
-                { let ___8_ = crop_dim(_8_, 1, [_9_, (_9_ + 3)]); {
-                  let _8_ = ___8_;
+              for(let _9 = __loop_min; _9 <= __loop_max; _9 += __loop_step) {
+                { let ___8 = crop_dim(_8, 1, [_9, (_9 + 3)]); {
+                  let _8 = ___8;
                   consume(__in);
-                  produce(_8_);
+                  produce(_8);
                   __event_t++;
                 }}
-                { let ___7_ = crop_dim(_7_, 0, [_9_, (_9_ + 3)]); {
-                  let _7_ = ___7_;
-                  consume(_8_);
-                  produce(_7_);
+                { let ___7 = crop_dim(_7, 0, [_9, (_9 + 3)]); {
+                  let _7 = ___7;
+                  consume(_8);
+                  produce(_7);
                   __event_t++;
                 }}
-                { let ___5_ = crop_dim(_5_, 0, [_9_, (_9_ + 3)]); {
-                  let _5_ = ___5_;
-                  { let ___6_ = crop_dim(_6_, 1, [_9_, (_9_ + 3)]); {
-                    let _6_ = ___6_;
+                { let ___5 = crop_dim(_5, 0, [_9, (_9 + 3)]); {
+                  let _5 = ___5;
+                  { let ___6 = crop_dim(_6, 1, [_9, (_9 + 3)]); {
+                    let _6 = ___6;
                     consume(__in);
-                    consume(_7_);
-                    produce(_6_);
-                    produce(_5_);
+                    consume(_7);
+                    produce(_6);
+                    produce(_5);
                     __event_t++;
                   }}
                 }}
-                { let ___4_ = crop_dim(_4_, 1, [_9_, (_9_ + 3)]); {
-                  let _4_ = ___4_;
-                  consume(_6_);
-                  consume(_5_);
-                  produce(_4_);
+                { let ___4 = crop_dim(_4, 1, [_9, (_9 + 3)]); {
+                  let _4 = ___4;
+                  consume(_6);
+                  consume(_5);
+                  produce(_4);
                   __event_t++;
                 }}
-                { let ___10_ = crop_dim(out, 1, [_9_, (_9_ + 3)]); {
-                  let _10_ = ___10_;
-                  consume(_4_);
-                  produce(_10_);
+                { let ___10 = crop_dim(out, 1, [_9, (_9 + 3)]); {
+                  let _10 = ___10;
+                  consume(_4);
+                  produce(_10);
                   __event_t++;
                 }}
               }
-              free(_8_);
+              free(_8);
             }
-            free(_7_);
+            free(_7);
           }
-          free(_6_);
+          free(_6);
         }
-        free(_5_);
+        free(_5);
       }
-      free(_4_);
+      free(_4);
     }
   }
 }

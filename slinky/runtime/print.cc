@@ -146,7 +146,7 @@ public:
     if (context) {
       os << context->name(sym);
     } else if (sym.defined()) {
-      os << "<" + std::to_string(sym.id) << ">";
+      os << "." << sym.id;
     } else {
       os << "<>";
     }
