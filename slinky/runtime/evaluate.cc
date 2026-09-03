@@ -57,8 +57,10 @@ struct allocated_buffer : public raw_buffer {
 // context's pool when one fits, a fresh block from `config->allocate` otherwise.
 void allocate_buffer(allocated_buffer& buffer, std::size_t size, eval_context& ctx) {
   const eval_config& config = *ctx.config;
-  memory_pool::block block =
-      config.use_memory_pool ? ctx.pool.allocate(size, config.base_alignment) : memory_pool::block();
+  memory_pool::block block;
+  if (config.use_memory_pool) {
+    block = ctx.pool.allocate(size, config.base_alignment);
+  }
   if (!block.ptr) {
     // The pool couldn't serve this request; release the blocks it no longer considers worth retaining.
     for (memory_pool::block b = ctx.pool.evict_stale(); b.ptr; b = ctx.pool.evict_stale()) {
