@@ -68,8 +68,18 @@ TEST(optimizations, fuse_siblings) {
                   allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
                   allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y)),
               })),
+      matches(allocate::make(
+          x, memory_type::heap, 1, span<dim_expr>{}, block::make({use_buffer(x), use_buffer(x)}))));
+
+  ASSERT_THAT(fuse_siblings(block::make({
+                  allocate::make(x, memory_type::heap, 1, span<dim_expr>{},
+                      allocate::make(y, memory_type::heap, 1, span<dim_expr>{}, use_buffer(y))),
+                  allocate::make(z, memory_type::heap, 1, span<dim_expr>{},
+                      allocate::make(w, memory_type::heap, 1, span<dim_expr>{}, use_buffer(w))),
+              })),
       matches(allocate::make(x, memory_type::heap, 1, span<dim_expr>{},
-          block::make({use_buffer(x), clone_buffer::make(y, x, use_buffer(y))}))));
+          allocate::make(y, memory_type::heap, 1, span<dim_expr>{},
+              block::make({use_buffer(y), use_buffer(y)})))));
 
   ASSERT_THAT(fuse_siblings(block::make({
                   allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
@@ -113,8 +123,7 @@ TEST(optimizations, fuse_siblings) {
                   crop_dim::make(z, y, 0, {0, 10}, crop_dim::make(w, z, 1, {0, 10}, use_buffer(w))),
               })),
       matches(crop_dim::make(x, y, 0, {0, 10},
-          block::make({crop_dim::make(z, x, 1, {0, 10}, use_buffer(z)),
-              clone_buffer::make(z, x, crop_dim::make(w, z, 1, {0, 10}, use_buffer(w)))}))));
+          crop_dim::make(z, x, 1, {0, 10}, block::make({use_buffer(z), use_buffer(z)})))));
 }
 
 TEST(optimizations, remove_pure_dims) {
