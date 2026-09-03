@@ -92,12 +92,6 @@ const let_stmt* as_closure(stmt_ref s) {
   return l && l->is_closure ? l : nullptr;
 }
 
-SLINKY_INLINE void remove_trailing_broadcasts(raw_buffer& buffer) {
-  while (buffer.rank > 0 && buffer.dims[buffer.rank - 1].is_broadcast()) {
-    --buffer.rank;
-  }
-}
-
 // The evaluators are mutually recursive, so we need to declare them before defining them.
 SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx);
 SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
@@ -964,13 +958,18 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context&
   raw_buffer sym_buf;
   sym_buf.base = src_buf->base;
   sym_buf.elem_size = src_buf->elem_size;
-  sym_buf.rank = op->dims.size();
-  sym_buf.dims = SLINKY_ALLOCA(dim, op->dims.size());
 
-  for (std::size_t i = 0; i < op->dims.size(); ++i) {
+  // Drop trailing broadcasts in the result first.
+  std::size_t rank = op->dims.size();
+  while (rank > 0 && src_buf->dim_is_broadcast(op->dims[rank - 1])) {
+    --rank;
+  }
+  sym_buf.rank = rank;
+  sym_buf.dims = SLINKY_ALLOCA(dim, rank);
+
+  for (std::size_t i = 0; i < rank; ++i) {
     sym_buf.dims[i] = src_buf->dim(op->dims[i]);
   }
-  remove_trailing_broadcasts(sym_buf);
 
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
