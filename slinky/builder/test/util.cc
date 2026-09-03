@@ -38,14 +38,4 @@ void check_visualize(const std::string& filename, const pipeline& p, pipeline::b
   }
 }
 
-std::string get_replica_golden() {
-  static std::string golden = read_entire_file(get_bazel_file_path("slinky/builder/test/replica_pipeline.cc"));
-  return golden;
-}
-
-void check_replica_pipeline(const std::string& replica_text) {
-  size_t pos = get_replica_golden().find(replica_text);
-  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-}
-
 }  // namespace slinky

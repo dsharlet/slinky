@@ -360,80 +360,80 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 0) <= 0), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
   check(or_else((buffer_fold_factor(out, 1) <= 0), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
-    let g = buffer_min(out, 0);
-    let g_0 = buffer_max(out, 0);
-    check((buffer_min(__in, 0) <= g));
-    check((g_0 <= buffer_max(__in, 0)));
+    let _2 = buffer_min(out, 0);
+    let _3 = buffer_max(out, 0);
+    check((buffer_min(__in, 0) <= _2));
+    check((_3 <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    { let softmax_out = allocate('softmax_out', 4, [
+    { let _4 = allocate('.4', 4, [
         {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
         {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
       ]);
-      { let sum_exp_in = allocate('sum_exp_in', 4, [
+      { let _5 = allocate('.5', 4, [
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
         ]);
-        { let exp_in = allocate('exp_in', 4, [
-            {bounds:[g, g_0], stride:NaN, fold_factor:NaN},
+        { let _6 = allocate('.6', 4, [
+            {bounds:[_2, _3], stride:NaN, fold_factor:NaN},
             {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
           ]);
-          { let max_in = allocate('max_in', 4, [
+          { let _7 = allocate('.7', 4, [
               {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
             ]);
-            { let softmax_in = allocate('softmax_in', 4, [
-                {bounds:[g, g_0], stride:NaN, fold_factor:NaN},
+            { let _8 = allocate('.8', 4, [
+                {bounds:[_2, _3], stride:NaN, fold_factor:NaN},
                 {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
               ]);
               let __loop_min = buffer_min(out, 1);
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 1;
-              for(let out_b = __loop_min; out_b <= __loop_max; out_b += __loop_step) {
-                { let __softmax_in = crop_dim(softmax_in, 1, [out_b, out_b]); {
-                  let softmax_in = __softmax_in;
+              for(let _9 = __loop_min; _9 <= __loop_max; _9 += __loop_step) {
+                { let ___8 = crop_dim(_8, 1, [_9, _9]); {
+                  let _8 = ___8;
                   consume(__in);
-                  produce(softmax_in);
+                  produce(_8);
                   __event_t++;
                 }}
-                { let __max_in = crop_dim(max_in, 0, [out_b, out_b]); {
-                  let max_in = __max_in;
-                  consume(softmax_in);
-                  produce(max_in);
+                { let ___7 = crop_dim(_7, 0, [_9, _9]); {
+                  let _7 = ___7;
+                  consume(_8);
+                  produce(_7);
                   __event_t++;
                 }}
-                { let __sum_exp_in = crop_dim(sum_exp_in, 0, [out_b, out_b]); {
-                  let sum_exp_in = __sum_exp_in;
-                  { let __exp_in = crop_dim(exp_in, 1, [out_b, out_b]); {
-                    let exp_in = __exp_in;
+                { let ___5 = crop_dim(_5, 0, [_9, _9]); {
+                  let _5 = ___5;
+                  { let ___6 = crop_dim(_6, 1, [_9, _9]); {
+                    let _6 = ___6;
                     consume(__in);
-                    consume(max_in);
-                    produce(exp_in);
-                    produce(sum_exp_in);
+                    consume(_7);
+                    produce(_6);
+                    produce(_5);
                     __event_t++;
                   }}
                 }}
-                { let __softmax_out = crop_dim(softmax_out, 1, [out_b, out_b]); {
-                  let softmax_out = __softmax_out;
-                  consume(exp_in);
-                  consume(sum_exp_in);
-                  produce(softmax_out);
+                { let ___4 = crop_dim(_4, 1, [_9, _9]); {
+                  let _4 = ___4;
+                  consume(_6);
+                  consume(_5);
+                  produce(_4);
                   __event_t++;
                 }}
-                { let __out_out_b = crop_dim(out, 1, [out_b, out_b]); {
-                  let out_out_b = __out_out_b;
-                  consume(softmax_out);
-                  produce(out_out_b);
+                { let ___10 = crop_dim(out, 1, [_9, _9]); {
+                  let _10 = ___10;
+                  consume(_4);
+                  produce(_10);
                   __event_t++;
                 }}
               }
-              free(softmax_in);
+              free(_8);
             }
-            free(max_in);
+            free(_7);
           }
-          free(exp_in);
+          free(_6);
         }
-        free(sum_exp_in);
+        free(_5);
       }
-      free(softmax_out);
+      free(_4);
     }
   }
 }

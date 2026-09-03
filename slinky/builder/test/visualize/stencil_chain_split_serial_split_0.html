@@ -350,9 +350,9 @@ function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   {
-    let __trace_names = make_buffer('<constant>', 0, 1, [{bounds: [0, 21], stride:1, fold_factor:NaN}]);
+    let _2 = make_buffer('<constant>', 0, 1, [{bounds: [0, 21], stride:1, fold_factor:NaN}]);
     {
-      let __trace_token = trace_begin(buffer_at(__trace_names, 13));
+      let _3 = trace_begin(buffer_at(_2, 13));
       check(__in);
       check((buffer_rank(__in) == 2));
       check(validate_buffer(__in));
@@ -367,40 +367,40 @@ function pipeline(__in, out) {
       check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
       check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
       check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-      { let stencil1_result = allocate('stencil1_result', 2, [
+      { let _4 = allocate('.4', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
         ]);
-        { let add_result = allocate('add_result', 2, [
-            {bounds:[(buffer_min(stencil1_result, 0) + -1), (buffer_max(stencil1_result, 0) + 1)], stride:NaN, fold_factor:NaN},
-            {bounds:[(buffer_min(stencil1_result, 1) + -1), (buffer_max(stencil1_result, 1) + 1)], stride:NaN, fold_factor:NaN}
+        { let _5 = allocate('.5', 2, [
+            {bounds:[(buffer_min(_4, 0) + -1), (buffer_max(_4, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(_4, 1) + -1), (buffer_max(_4, 1) + 1)], stride:NaN, fold_factor:NaN}
           ]);
           {
-            let __trace_token = trace_begin(buffer_at(__trace_names, 0));
+            let _6 = trace_begin(buffer_at(_2, 0));
             consume(__in);
-            produce(add_result);
+            produce(_5);
             __event_t++;
-            check(trace_end(__trace_token));
+            check(trace_end(_6));
           }
           {
-            let __trace_token = trace_begin(buffer_at(__trace_names, 6));
-            consume(add_result);
-            produce(stencil1_result);
+            let _6 = trace_begin(buffer_at(_2, 6));
+            consume(_5);
+            produce(_4);
             __event_t++;
-            check(trace_end(__trace_token));
+            check(trace_end(_6));
           }
-          free(add_result);
+          free(_5);
         }
         {
-          let __trace_token = trace_begin(buffer_at(__trace_names, 6));
-          consume(stencil1_result);
+          let _5 = trace_begin(buffer_at(_2, 6));
+          consume(_4);
           produce(out);
           __event_t++;
-          check(trace_end(__trace_token));
+          check(trace_end(_5));
         }
-        free(stencil1_result);
+        free(_4);
       }
-      check(trace_end(__trace_token));
+      check(trace_end(_3));
     }
   }
 }

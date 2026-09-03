@@ -15,11 +15,6 @@ target_link_libraries(slinky_builder PUBLIC
     slinky_runtime
 )
 
-add_library(slinky_replica_pipeline
-    replica_pipeline.cc
-)
-target_link_libraries(slinky_replica_pipeline PUBLIC slinky_runtime slinky_builder)
-
 if(SLINKY_ENABLE_TESTS)
     add_subdirectory(test)
 endif()

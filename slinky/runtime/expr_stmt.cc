@@ -21,13 +21,20 @@ var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(nam
 expr var::operator-() const { return -expr(*this); }
 
 std::string node_context::name(var v) const {
-  if (v.id < sym_to_name.size()) {
+  if (v.id < sym_to_name.size() && !sym_to_name[v.id].empty()) {
     return sym_to_name[v.id];
   } else if (v.defined()) {
-    return "<" + std::to_string(v.id) + ">";
+    return "." + std::to_string(v.id);
   } else {
-    return "<>";
+    return ".";
   }
+}
+
+void node_context::clear_name(var i) {
+  if (i.id >= sym_to_name.size()) return;
+  auto j = name_to_sym.find(sym_to_name[i.id]);
+  if (j != name_to_sym.end() && j->second == i) name_to_sym.erase(j);
+  sym_to_name[i.id].clear();
 }
 
 var node_context::insert(const std::string& name) {

@@ -37,15 +37,3 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
-
-cc_library(
-    name = "replica_pipeline",
-    srcs = [
-        "replica_pipeline.cc",
-    ],
-    hdrs = [
-        "replica_pipeline.h",
-    ],
-    deps = ["//slinky/runtime", ":builder"],
-    visibility = ["//visibility:public"],
-)

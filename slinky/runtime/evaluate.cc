@@ -25,7 +25,7 @@ namespace slinky {
 void dump_context_for_expr(
     std::ostream& s, const eval_context& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
   for (std::size_t i = 0; i < ctx.size(); ++i) {
-    std::string sym = symbols ? symbols->name(var(i)) : "<" + std::to_string(i) + ">";
+    std::string sym = symbols ? symbols->name(var(i)) : "." + std::to_string(i);
     auto deps = depends_on(deps_of, var(i));
     if (!deps_of.defined() || deps.var) {
       s << "  " << sym << " = " << ctx.lookup(var(i)) << std::endl;

@@ -58,6 +58,9 @@ public:
   // Get the name of a var.
   std::string name(var i) const;
 
+  // Forget the name of a var, e.g. because it no longer holds what it was named for. `name` will report it as its id.
+  void clear_name(var i);
+
   // Get or insert a new var for a name.
   var insert(const std::string& name);
   var insert_unique(const std::string& prefix = "_");
