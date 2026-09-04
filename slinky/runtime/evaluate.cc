@@ -47,6 +47,10 @@ eval_context::eval_context() {
 
 namespace {
 
+struct interval {
+  index_t min, max;
+};
+
 struct allocated_buffer : public raw_buffer {
   void* allocation;
   // The size of `allocation` in bytes.
@@ -84,44 +88,10 @@ void free_buffer(allocated_buffer& buffer, eval_context& ctx) {
   }
   buffer.allocation = nullptr;
 }
-
-struct interval {
-  index_t min, max;
-};
-
-const let_stmt* as_closure(stmt_ref s) {
+SLINKY_INLINE const let_stmt* as_closure(stmt_ref s) {
   const let_stmt* l = s.as<let_stmt>();
   return l && l->is_closure ? l : nullptr;
 }
-
-// The evaluators are mutually recursive, so we need to declare them before defining them.
-SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
-inline index_t eval(const variable* op, eval_context& ctx);
-inline index_t eval(const constant* op);
-inline index_t eval(const constant_buffer* op);
-inline index_t eval(const let* op, eval_context& ctx);
-inline index_t eval(const logical_not* op, eval_context& ctx);
-inline index_t eval(const class select* op, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx);
-
-SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx);
-SLINKY_INLINE index_t eval(const call_stmt* op, eval_context& ctx);
-inline index_t eval(const copy_stmt* op, eval_context& ctx);
-inline index_t eval(const let_stmt* op, eval_context& ctx);
-inline index_t eval(const block* op, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval(const loop* op, eval_context& ctx);
-inline index_t eval(const allocate* op, eval_context& ctx);
-inline index_t eval(const make_buffer* op, eval_context& ctx);
-inline index_t eval(const clone_buffer* op, eval_context& ctx);
-inline index_t eval(const crop_buffer* op, eval_context& ctx);
-inline index_t eval(const crop_dim* op, eval_context& ctx);
-inline index_t eval(const slice_buffer* op, eval_context& ctx);
-inline index_t eval(const slice_dim* op, eval_context& ctx);
-inline index_t eval(const transpose* op, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval(const check* op, eval_context& ctx);
 
 SLINKY_INLINE index_t eval_buffer_field(index_t value, buffer_field field, int d) {
   const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
@@ -137,13 +107,56 @@ SLINKY_INLINE index_t eval_buffer_field(index_t value, buffer_field field, int d
   }
 }
 
-SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
-  // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
-  // we handle common node types here, and call a non-inlined handler for the less common nodes below.
-  switch (e.type()) {
-  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
-  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
-  default: return eval_non_inlined(e, ctx);
+// To maximize performance, we need to tightly control inlining behavior. `eval` functions are always inlined.
+SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx);
+SLINKY_INLINE index_t eval(const let* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const call* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const variable* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const constant* op, eval_context&);
+SLINKY_INLINE index_t eval(const constant_buffer* op, eval_context&);
+SLINKY_INLINE index_t eval(const add* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const sub* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const mul* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const div* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const mod* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const class min* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const class max* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const equal* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const not_equal* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const less* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const less_equal* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const logical_and* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const logical_or* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const logical_not* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const class select* op, eval_context& ctx);
+
+SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const call_stmt* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const copy_stmt* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const block* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const loop* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const allocate* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const make_buffer* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const clone_buffer* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const crop_buffer* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const crop_dim* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const slice_buffer* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const slice_dim* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const transpose* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const async* op, eval_context& ctx);
+SLINKY_INLINE index_t eval(const check* op, eval_context& ctx);
+
+// These helpers dispatch an unknown type `expr` or `stmt` to the appropriate `eval` function.
+SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
+SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref e, eval_context& ctx);
+
+// If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
+SLINKY_INLINE index_t eval(expr_ref e, index_t def, eval_context& ctx) {
+  if (e.defined()) {
+    return eval(e, ctx);
+  } else {
+    return def;
   }
 }
 
@@ -169,54 +182,6 @@ SLINKY_INLINE index_t eval_field(expr_ref e, index_t def, eval_context& ctx) {
   return e.defined() ? eval_field<Field>(e, ctx) : def;
 }
 
-template <typename T>
-SLINKY_NO_INLINE index_t eval_non_inlined(const T* op, eval_context& ctx) {
-  return eval(op, ctx);
-}
-
-template <typename T>
-SLINKY_NO_INLINE index_t eval_binary(const base_expr_node* e, eval_context& ctx) {
-  const binary_op* op = static_cast<const binary_op*>(e);
-  index_t a = eval(op->a, ctx);
-  index_t b = eval(op->b, ctx);
-  return make_binary<T>(a, b);
-}
-
-SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
-  switch (e.type()) {
-  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
-  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
-  case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()));
-  case expr_node_type::call: return eval(static_cast<const call*>(e.get()), ctx);
-  case expr_node_type::let: return eval_non_inlined(static_cast<const let*>(e.get()), ctx);
-  case expr_node_type::logical_not: return eval_non_inlined(static_cast<const logical_not*>(e.get()), ctx);
-  case expr_node_type::select: return eval_non_inlined(static_cast<const class select*>(e.get()), ctx);
-  case expr_node_type::add: return eval_binary<add>(e.get(), ctx);
-  case expr_node_type::sub: return eval_binary<sub>(e.get(), ctx);
-  case expr_node_type::mul: return eval_binary<mul>(e.get(), ctx);
-  case expr_node_type::div: return eval_binary<div>(e.get(), ctx);
-  case expr_node_type::mod: return eval_binary<mod>(e.get(), ctx);
-  case expr_node_type::min: return eval_binary<class min>(e.get(), ctx);
-  case expr_node_type::max: return eval_binary<class max>(e.get(), ctx);
-  case expr_node_type::equal: return eval_binary<equal>(e.get(), ctx);
-  case expr_node_type::not_equal: return eval_binary<not_equal>(e.get(), ctx);
-  case expr_node_type::less: return eval_binary<less>(e.get(), ctx);
-  case expr_node_type::less_equal: return eval_binary<less_equal>(e.get(), ctx);
-  case expr_node_type::logical_and: return eval_binary<logical_and>(e.get(), ctx);
-  case expr_node_type::logical_or: return eval_binary<logical_or>(e.get(), ctx);
-  default: SLINKY_UNREACHABLE << "unknown expr type " << to_string(e.type());
-  }
-}
-
-// If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
-SLINKY_INLINE index_t eval(expr_ref e, index_t def, eval_context& ctx) {
-  if (e.defined()) {
-    return eval(e, ctx);
-  } else {
-    return def;
-  }
-}
-
 SLINKY_INLINE interval eval(const interval_expr& x, eval_context& ctx) {
   index_t min = eval_field<buffer_field::min>(x.min, ctx);
   if (x.is_point()) {
@@ -234,13 +199,6 @@ SLINKY_INLINE interval eval(const interval_expr& x, interval def, eval_context& 
   }
 }
 
-inline index_t eval(const variable* op, eval_context& ctx) {
-  return eval_buffer_field(ctx.lookup(op->sym), op->field, op->dim);
-}
-
-inline index_t eval(const constant* op) { return op->value; }
-inline index_t eval(const constant_buffer* op) { return reinterpret_cast<index_t>(op->value.get()); }
-
 SLINKY_INLINE index_t eval_let_value(expr_ref e, eval_context& ctx) {
   // The simplifier should substitute constant and variable let values, so we don't bother with inlining them here.
   if (e.type() == expr_node_type::constant_buffer) {
@@ -253,7 +211,7 @@ SLINKY_INLINE void reserve_symbols(const let_stmt* op, eval_context& ctx) { ctx.
 SLINKY_INLINE void reserve_symbols(const let* op, eval_context& ctx) {}
 
 template <typename T>
-SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval_let(const T* op, eval_context& ctx) {
   // This is a bit ugly but we really want to avoid heap allocations here.
   const size_t size = op->lets.size();
   index_t* old_values = SLINKY_ALLOCA(index_t, size);
@@ -273,13 +231,43 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_let(const T* op, eval_context& ctx
 
 SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) { return eval_let(op, ctx); }
 
-inline index_t eval(const logical_not* op, eval_context& ctx) { return eval(op->a, ctx) == 0; }
+SLINKY_INLINE index_t eval(const variable* op, eval_context& ctx) {
+  return eval_buffer_field(ctx.lookup(op->sym), op->field, op->dim);
+}
 
-inline index_t eval(const class select* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const constant* op, eval_context&) { return op->value; }
+SLINKY_INLINE index_t eval(const constant_buffer* op, eval_context&) {
+  return reinterpret_cast<index_t>(op->value.get());
+}
+
+template <typename T>
+SLINKY_INLINE index_t eval_binary(const T* op, eval_context& ctx) {
+  index_t a = eval(op->a, ctx);
+  index_t b = eval(op->b, ctx);
+  return make_binary<T>(a, b);
+}
+
+SLINKY_INLINE index_t eval(const add* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const sub* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const mul* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const div* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const mod* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const class min* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const class max* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const equal* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const not_equal* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const less* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const less_equal* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const logical_and* op, eval_context& ctx) { return eval_binary(op, ctx); }
+SLINKY_INLINE index_t eval(const logical_or* op, eval_context& ctx) { return eval_binary(op, ctx); }
+
+SLINKY_INLINE index_t eval(const logical_not* op, eval_context& ctx) { return eval(op->a, ctx) == 0; }
+
+SLINKY_INLINE index_t eval(const class select* op, eval_context& ctx) {
   return eval(eval(op->condition, ctx) ? op->true_value : op->false_value, ctx);
 }
 
-inline bool eval_short_circuit_op(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE bool eval_short_circuit_op(const call* op, eval_context& ctx) {
   for (expr_ref i : op->args) {
     index_t x = eval(i, ctx);
     if (!x && op->intrinsic == intrinsic::and_then) {
@@ -291,7 +279,7 @@ inline bool eval_short_circuit_op(const call* op, eval_context& ctx) {
   return op->intrinsic == intrinsic::and_then;
 }
 
-inline void* eval_buffer_at(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE void* eval_buffer_at(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
   auto sym = as_variable(op->args[0]);
   assert(sym);
@@ -309,7 +297,7 @@ inline void* eval_buffer_at(const call* op, eval_context& ctx) {
   return result;
 }
 
-inline index_t eval_semaphore_init(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_semaphore_init(const call* op, eval_context& ctx) {
   assert(op->args.size() == 2);
   index_t* sem = reinterpret_cast<index_t*>(eval(op->args[0], ctx));
   index_t count = eval(op->args[1], 0, ctx);
@@ -317,7 +305,7 @@ inline index_t eval_semaphore_init(const call* op, eval_context& ctx) {
   return 1;
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval_semaphore_signal(const call* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_NO_INLINE index_t eval_semaphore_signal(const call* op, eval_context& ctx) {
   assert(op->args.size() % 2 == 0);
   std::size_t sem_count = op->args.size() / 2;
   index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
@@ -334,7 +322,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_semaphore_signal(const call* op, e
   return 1;
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval_semaphore_wait(const call* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_NO_INLINE index_t eval_semaphore_wait(const call* op, eval_context& ctx) {
   assert(op->args.size() % 2 == 0);
   std::size_t sem_count = op->args.size() / 2;
   index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
@@ -357,13 +345,13 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_semaphore_wait(const call* op, eva
   return 1;
 }
 
-inline index_t eval_trace_begin(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_trace_begin(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   const char* name = reinterpret_cast<const char*>(eval(op->args[0], ctx));
   return ctx.config->trace_begin ? ctx.config->trace_begin(name) : 0;
 }
 
-inline index_t eval_trace_end(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_trace_end(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   if (ctx.config->trace_end) {
     ctx.config->trace_end(eval(op->args[0], ctx));
@@ -371,7 +359,7 @@ inline index_t eval_trace_end(const call* op, eval_context& ctx) {
   return 1;
 }
 
-inline index_t eval_free(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_free(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   var sym = *as_variable(op->args[0]);
   allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(ctx.lookup(sym));
@@ -380,7 +368,7 @@ inline index_t eval_free(const call* op, eval_context& ctx) {
   return 1;
 }
 
-inline index_t eval_validate_buffer(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_validate_buffer(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   var sym = *as_variable(op->args[0]);
   const raw_buffer* buf = ctx.lookup_buffer(sym);
@@ -388,14 +376,14 @@ inline index_t eval_validate_buffer(const call* op, eval_context& ctx) {
   return validate_buffer(*buf) ? 1 : 0;
 }
 
-inline index_t eval_buffer_size_bytes(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_buffer_size_bytes(const call* op, eval_context& ctx) {
   assert(op->args.size() == 1);
   var sym = *as_variable(op->args[0]);
   const raw_buffer* buf = ctx.lookup_buffer(sym);
   return buf ? buf->size_bytes() : 0;
 }
 
-inline index_t eval_wait_for(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_wait_for(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
   for (expr_ref i : op->args) {
     var sym = *as_variable(i);
@@ -407,12 +395,12 @@ inline index_t eval_wait_for(const call* op, eval_context& ctx) {
   return op->args.size();
 }
 
-inline index_t eval_call(const call* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_call(const call* op, eval_context& ctx) {
   assert(op->target);
   return op->target(op, ctx);
 }
 
-SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const call* op, eval_context& ctx) {
   switch (op->intrinsic) {
   case intrinsic::none: return eval_call(op, ctx);
 
@@ -444,6 +432,50 @@ SLINKY_NO_INLINE index_t eval(const call* op, eval_context& ctx) {
   }
 }
 
+// Call `eval(op, ctx)`, which should inline into this function, but this function itself is not inlined.
+template <typename T>
+SLINKY_NO_INLINE index_t eval_non_inlined(const T* op, eval_context& ctx) {
+  return eval(op, ctx);
+}
+
+// In this dispatcher, only functions that use registers that don't need to be saved/restored should be inlined.
+// This should allow this function to be implemented as table of tail calls.
+SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
+  switch (e.type()) {
+  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
+  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()), ctx);
+  case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()), ctx);
+  case expr_node_type::call: return eval_non_inlined(static_cast<const call*>(e.get()), ctx);
+  case expr_node_type::let: return eval_non_inlined(static_cast<const let*>(e.get()), ctx);
+  case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()), ctx);
+  case expr_node_type::select: return eval_non_inlined(static_cast<const class select*>(e.get()), ctx);
+  case expr_node_type::add: return eval_non_inlined(static_cast<const add*>(e.get()), ctx);
+  case expr_node_type::sub: return eval_non_inlined(static_cast<const sub*>(e.get()), ctx);
+  case expr_node_type::mul: return eval_non_inlined(static_cast<const mul*>(e.get()), ctx);
+  case expr_node_type::div: return eval_non_inlined(static_cast<const div*>(e.get()), ctx);
+  case expr_node_type::mod: return eval_non_inlined(static_cast<const mod*>(e.get()), ctx);
+  case expr_node_type::min: return eval_non_inlined(static_cast<const class min*>(e.get()), ctx);
+  case expr_node_type::max: return eval_non_inlined(static_cast<const class max*>(e.get()), ctx);
+  case expr_node_type::equal: return eval_non_inlined(static_cast<const equal*>(e.get()), ctx);
+  case expr_node_type::not_equal: return eval_non_inlined(static_cast<const not_equal*>(e.get()), ctx);
+  case expr_node_type::less: return eval_non_inlined(static_cast<const less*>(e.get()), ctx);
+  case expr_node_type::less_equal: return eval_non_inlined(static_cast<const less_equal*>(e.get()), ctx);
+  case expr_node_type::logical_and: return eval_non_inlined(static_cast<const logical_and*>(e.get()), ctx);
+  case expr_node_type::logical_or: return eval_non_inlined(static_cast<const logical_or*>(e.get()), ctx);
+  default: SLINKY_UNREACHABLE << "unknown expr type " << to_string(e.type());
+  }
+}
+
+SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
+  // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
+  // we handle common node types here, and call a non-inlined handler for the less common nodes below.
+  switch (e.type()) {
+  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
+  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()), ctx);
+  default: return eval_non_inlined(e, ctx);
+  }
+}
+
 template <typename T>
 SLINKY_INLINE bool eval_if(stmt_ref op, eval_context& ctx, index_t& result) {
   if (op.type() != T::static_type) return false;
@@ -469,30 +501,9 @@ SLINKY_INLINE index_t eval_with_value(stmt_ref op, var sym, index_t value, eval_
   return result;
 }
 
-SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
-  switch (op.type()) {
-  case stmt_node_type::call_stmt: return eval_non_inlined(reinterpret_cast<const call_stmt*>(op.get()), ctx);
-  case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()), ctx);
-  case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()), ctx);
-  case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()), ctx);
-  case stmt_node_type::block: return eval_non_inlined(reinterpret_cast<const block*>(op.get()), ctx);
-  case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()), ctx);
-  case stmt_node_type::allocate: return eval(reinterpret_cast<const allocate*>(op.get()), ctx);
-  case stmt_node_type::make_buffer: return eval(reinterpret_cast<const make_buffer*>(op.get()), ctx);
-  case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()), ctx);
-  case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()), ctx);
-  case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()), ctx);
-  case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()), ctx);
-  case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()), ctx);
-  case stmt_node_type::async: return eval(reinterpret_cast<const async*>(op.get()), ctx);
-  case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()), ctx);
-  default: SLINKY_UNREACHABLE << "unknown stmt type " << to_string(op.type());
-  }
-}
-
 SLINKY_INLINE index_t eval(const let_stmt* op, eval_context& ctx) { return eval_let(op, ctx); }
 
-inline index_t eval(const block* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const block* op, eval_context& ctx) {
   for (const auto& s : op->stmts) {
     index_t result = eval<call_stmt>(s, ctx);
     if (result) return result;
@@ -586,7 +597,7 @@ SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers,
   }
 }
 
-SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   interval bounds = eval(op->bounds, ctx);
   index_t step = eval(op->step, 1, ctx);
   assert(step != 0);
@@ -606,7 +617,7 @@ SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op, eval_context& ctx) {
   return result;
 }
 
-SLINKY_NO_INLINE index_t eval(const loop* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const loop* op, eval_context& ctx) {
   index_t max_workers = eval(op->max_workers, ctx);
   if (max_workers > 1) {
     return eval_loop_parallel(op, max_workers, ctx);
@@ -615,7 +626,7 @@ SLINKY_NO_INLINE index_t eval(const loop* op, eval_context& ctx) {
   }
 }
 
-inline index_t eval_with_new_context(stmt_ref task, eval_context& ctx) {
+SLINKY_INLINE index_t eval_with_new_context(stmt_ref task, eval_context& ctx) {
   eval_context new_ctx;
   const let_stmt* closure = as_closure(task);
   if (closure) task = closure->body;
@@ -624,7 +635,7 @@ inline index_t eval_with_new_context(stmt_ref task, eval_context& ctx) {
   return eval(task, new_ctx);
 }
 
-SLINKY_NO_INLINE index_t eval(const async* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const async* op, eval_context& ctx) {
   index_t task_result = 0;
   auto task_body = [&]() { task_result = eval_with_new_context(op->task, ctx); };
   ref_count<thread_pool::task> task;
@@ -666,7 +677,7 @@ SLINKY_INLINE index_t eval(const call_stmt* op, eval_context& ctx) {
   return result;
 }
 
-inline index_t eval(const copy_stmt* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const copy_stmt* op, eval_context& ctx) {
   SLINKY_UNREACHABLE << "copy_stmt should have been implemented by calls to copy/pad.";
 }
 
@@ -676,7 +687,7 @@ SLINKY_NO_INLINE index_t allocate_failed(const allocate* op, eval_context& ctx) 
 }
 
 // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
-inline index_t eval(const allocate* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const allocate* op, eval_context& ctx) {
   allocated_buffer buffer;
   buffer.elem_size = eval_field<buffer_field::elem_size>(op->elem_size, ctx);
   std::size_t rank = op->dims.size();
@@ -731,7 +742,7 @@ SLINKY_NO_INLINE index_t make_buffer_failed(const make_buffer* op, eval_context&
   return -1;
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval(const make_buffer* op, eval_context& ctx) {
   raw_buffer buffer;
   buffer.elem_size = eval_field<buffer_field::elem_size>(op->elem_size, 0, ctx);
   // The base is very likely a buffer_at call, try to skip the eval overhead.
@@ -769,7 +780,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const make_buffer* op, eval_contex
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&buffer), ctx);
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const clone_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval(const clone_buffer* op, eval_context& ctx) {
   raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
 
@@ -780,7 +791,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const clone_buffer* op, eval_conte
 }
 
 // For these evaluators, it's easier to assume the op is always shadowed.
-SLINKY_NO_STACK_PROTECTOR inline index_t eval_shadowed(const crop_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_NO_INLINE index_t eval_shadowed(const crop_buffer* op, eval_context& ctx) {
   raw_buffer* buffer = reinterpret_cast<raw_buffer*>(ctx.lookup(op->sym));
   assert(buffer);
 
@@ -811,7 +822,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_shadowed(const crop_buffer* op, ev
   return result;
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_NO_INLINE index_t eval_unshadowed(const crop_buffer* op, eval_context& ctx) {
   // The operation is not shadowed. Make a clone and use eval_shadowed on the clone.
   const raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
@@ -833,7 +844,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_buffer* op, 
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
-inline index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
+SLINKY_NO_INLINE index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
   raw_buffer* buffer = reinterpret_cast<raw_buffer*>(ctx.lookup(op->sym));
   assert(buffer);
 
@@ -857,7 +868,7 @@ inline index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
   return result;
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_dim* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_NO_INLINE index_t eval_unshadowed(const crop_dim* op, eval_context& ctx) {
   // The operation is not shadowed. Make a clone and use eval_shadowed on the clone.
   const raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
@@ -874,14 +885,14 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval_unshadowed(const crop_dim* op, eva
 }
 
 template <typename T>
-index_t eval_maybe_shadowed(const T* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval_maybe_shadowed(const T* op, eval_context& ctx) {
   return op->sym == op->src ? eval_shadowed(op, ctx) : eval_unshadowed(op, ctx);
 }
 
-inline index_t eval(const crop_buffer* op, eval_context& ctx) { return eval_maybe_shadowed(op, ctx); }
-inline index_t eval(const crop_dim* op, eval_context& ctx) { return eval_maybe_shadowed(op, ctx); }
+SLINKY_INLINE index_t eval(const crop_buffer* op, eval_context& ctx) { return eval_maybe_shadowed(op, ctx); }
+SLINKY_INLINE index_t eval(const crop_dim* op, eval_context& ctx) { return eval_maybe_shadowed(op, ctx); }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_buffer* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval(const slice_buffer* op, eval_context& ctx) {
   raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
   raw_buffer sym_buf;
@@ -909,7 +920,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_buffer* op, eval_conte
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval(const slice_dim* op, eval_context& ctx) {
   raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
 
@@ -944,7 +955,7 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const slice_dim* op, eval_context&
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
-SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context& ctx) {
+SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval(const transpose* op, eval_context& ctx) {
   const raw_buffer* src_buf = reinterpret_cast<const raw_buffer*>(ctx.lookup(op->src));
   assert(src_buf);
 
@@ -968,6 +979,29 @@ SLINKY_NO_STACK_PROTECTOR inline index_t eval(const transpose* op, eval_context&
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
+// In this dispatcher, only functions that use registers that don't need to be saved/restored should be inlined.
+// This should allow this function to be implemented as table of tail calls.
+SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
+  switch (op.type()) {
+  case stmt_node_type::call_stmt: return eval_non_inlined(reinterpret_cast<const call_stmt*>(op.get()), ctx);
+  case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()), ctx);
+  case stmt_node_type::copy_stmt: return eval_non_inlined(reinterpret_cast<const copy_stmt*>(op.get()), ctx);
+  case stmt_node_type::let_stmt: return eval_non_inlined(reinterpret_cast<const let_stmt*>(op.get()), ctx);
+  case stmt_node_type::block: return eval_non_inlined(reinterpret_cast<const block*>(op.get()), ctx);
+  case stmt_node_type::loop: return eval_non_inlined(reinterpret_cast<const loop*>(op.get()), ctx);
+  case stmt_node_type::allocate: return eval_non_inlined(reinterpret_cast<const allocate*>(op.get()), ctx);
+  case stmt_node_type::make_buffer: return eval_non_inlined(reinterpret_cast<const make_buffer*>(op.get()), ctx);
+  case stmt_node_type::clone_buffer: return eval_non_inlined(reinterpret_cast<const clone_buffer*>(op.get()), ctx);
+  case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()), ctx);
+  case stmt_node_type::slice_buffer: return eval_non_inlined(reinterpret_cast<const slice_buffer*>(op.get()), ctx);
+  case stmt_node_type::slice_dim: return eval_non_inlined(reinterpret_cast<const slice_dim*>(op.get()), ctx);
+  case stmt_node_type::transpose: return eval_non_inlined(reinterpret_cast<const transpose*>(op.get()), ctx);
+  case stmt_node_type::async: return eval_non_inlined(reinterpret_cast<const async*>(op.get()), ctx);
+  case stmt_node_type::check: return eval_non_inlined(reinterpret_cast<const check*>(op.get()), ctx);
+  default: SLINKY_UNREACHABLE << "unknown stmt type " << to_string(op.type());
+  }
+}
+
 SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {
   if (ctx.config->check_failed) {
     ctx.config->check_failed(op->condition);
@@ -980,7 +1014,7 @@ SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {
   return 1;
 }
 
-SLINKY_NO_INLINE index_t eval(const check* op, eval_context& ctx) {
+SLINKY_INLINE index_t eval(const check* op, eval_context& ctx) {
   if (!eval(op->condition, ctx)) {
     return check_failed(op, ctx);
   } else {
