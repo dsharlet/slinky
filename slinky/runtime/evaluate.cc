@@ -9,6 +9,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "slinky/base/chrome_trace.h"
@@ -148,8 +149,8 @@ SLINKY_INLINE index_t eval(const async* op, eval_context& ctx);
 SLINKY_INLINE index_t eval(const check* op, eval_context& ctx);
 
 // These helpers dispatch an unknown type `expr` or `stmt` to the appropriate `eval` function.
-SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
-SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref e, eval_context& ctx);
+SLINKY_INLINE index_t eval_indirect(expr_ref e, eval_context& ctx);
+SLINKY_INLINE index_t eval_indirect(stmt_ref e, eval_context& ctx);
 
 // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
 SLINKY_INLINE index_t eval(expr_ref e, index_t def, eval_context& ctx) {
@@ -174,7 +175,7 @@ SLINKY_INLINE index_t eval_field(expr_ref e, eval_context& ctx) {
   }
   default: break;
   }
-  return eval_non_inlined(e, ctx);
+  return eval_indirect(e, ctx);
 }
 
 template <buffer_field Field>
@@ -204,7 +205,7 @@ SLINKY_INLINE index_t eval_let_value(expr_ref e, eval_context& ctx) {
   if (e.type() == expr_node_type::constant_buffer) {
     return reinterpret_cast<index_t>(static_cast<const constant_buffer*>(e.get())->value.get());
   }
-  return eval_non_inlined(e, ctx);
+  return eval_indirect(e, ctx);
 }
 
 SLINKY_INLINE void reserve_symbols(const let_stmt* op, eval_context& ctx) { ctx.reserve(op->max_symbol_id + 1); }
@@ -432,47 +433,62 @@ SLINKY_INLINE index_t eval(const call* op, eval_context& ctx) {
   }
 }
 
-// Call `eval(op, ctx)`, which should inline into this function, but this function itself is not inlined.
+// Placeholders for the `none` node types, so they can be listed in the dispatch tables below like any other
+// node type instead of being a special case.
+struct none_expr {
+  static constexpr expr_node_type static_type = expr_node_type::none;
+};
+struct none_stmt {
+  static constexpr stmt_node_type static_type = stmt_node_type::none;
+};
+
+SLINKY_NO_INLINE index_t eval(const none_expr*, eval_context&) { SLINKY_UNREACHABLE << "undefined expr"; }
+SLINKY_NO_INLINE index_t eval(const none_stmt*, eval_context&) { SLINKY_UNREACHABLE << "undefined stmt"; }
+
+// An entry in a dispatch table. `eval(op, ctx)` should inline here, but this function itself is not inlined:
+// every entry has the same signature, so the table can be indexed by node type and tail called directly.
+using eval_fn = index_t (*)(const void*, eval_context&);
+
 template <typename T>
-SLINKY_NO_INLINE index_t eval_non_inlined(const T* op, eval_context& ctx) {
-  return eval(op, ctx);
+SLINKY_NO_INLINE index_t eval_entry(const void* op, eval_context& ctx) {
+  return eval(static_cast<const T*>(op), ctx);
 }
 
-// In this dispatcher, only functions that use registers that don't need to be saved/restored should be inlined.
-// This should allow this function to be implemented as table of tail calls.
-SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
-  switch (e.type()) {
-  case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
-  case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()), ctx);
-  case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()), ctx);
-  case expr_node_type::call: return eval_non_inlined(static_cast<const call*>(e.get()), ctx);
-  case expr_node_type::let: return eval_non_inlined(static_cast<const let*>(e.get()), ctx);
-  case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()), ctx);
-  case expr_node_type::select: return eval_non_inlined(static_cast<const class select*>(e.get()), ctx);
-  case expr_node_type::add: return eval_non_inlined(static_cast<const add*>(e.get()), ctx);
-  case expr_node_type::sub: return eval_non_inlined(static_cast<const sub*>(e.get()), ctx);
-  case expr_node_type::mul: return eval_non_inlined(static_cast<const mul*>(e.get()), ctx);
-  case expr_node_type::div: return eval_non_inlined(static_cast<const div*>(e.get()), ctx);
-  case expr_node_type::mod: return eval_non_inlined(static_cast<const mod*>(e.get()), ctx);
-  case expr_node_type::min: return eval_non_inlined(static_cast<const class min*>(e.get()), ctx);
-  case expr_node_type::max: return eval_non_inlined(static_cast<const class max*>(e.get()), ctx);
-  case expr_node_type::equal: return eval_non_inlined(static_cast<const equal*>(e.get()), ctx);
-  case expr_node_type::not_equal: return eval_non_inlined(static_cast<const not_equal*>(e.get()), ctx);
-  case expr_node_type::less: return eval_non_inlined(static_cast<const less*>(e.get()), ctx);
-  case expr_node_type::less_equal: return eval_non_inlined(static_cast<const less_equal*>(e.get()), ctx);
-  case expr_node_type::logical_and: return eval_non_inlined(static_cast<const logical_and*>(e.get()), ctx);
-  case expr_node_type::logical_or: return eval_non_inlined(static_cast<const logical_or*>(e.get()), ctx);
-  default: SLINKY_UNREACHABLE << "unknown expr type " << to_string(e.type());
+// A table of `eval` entry points indexed by node type. `Ts` must be listed in node type order for indexing by
+// `type` to be correct; a `switch` checked that for us, and a misordered table would silently dispatch to the
+// wrong handler, so check it here.
+template <typename... Ts>
+constexpr bool is_dispatch_order() {
+  const std::size_t types[] = {static_cast<std::size_t>(Ts::static_type)...};
+  for (std::size_t i = 0; i < sizeof...(Ts); ++i) {
+    if (types[i] != i) return false;
   }
+  return true;
+}
+
+template <typename... Ts>
+struct dispatch_table {
+  static_assert(is_dispatch_order<Ts...>(), "dispatch table is not in node type order");
+  static constexpr eval_fn entries[] = {eval_entry<Ts>...};
+};
+
+// Dispatch through a table of tail calls indexed by node type. See `dispatch_table`.
+using expr_table = dispatch_table<none_expr, variable, let, add, sub, mul, div, mod, class min, class max,
+    equal, not_equal, less, less_equal, logical_and, logical_or, logical_not, class select, call, constant,
+    constant_buffer>;
+
+SLINKY_INLINE index_t eval_indirect(expr_ref e, eval_context& ctx) {
+  const base_expr_node* n = e.get();
+  return expr_table::entries[static_cast<int>(n->type)](n, ctx);
 }
 
 SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx) {
-  // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
-  // we handle common node types here, and call a non-inlined handler for the less common nodes below.
+  // It helps a lot to handle the common node types here: the type loaded for these comparisons is the same one
+  // `eval_indirect` indexes its table with, so the fast path costs two compares and the dispatch is unchanged.
   switch (e.type()) {
   case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
   case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()), ctx);
-  default: return eval_non_inlined(e, ctx);
+  default: return eval_indirect(e, ctx);
   }
 }
 
@@ -488,7 +504,7 @@ template <typename... Ts>
 SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) {
   index_t result = 0;
   if ((eval_if<Ts>(op, ctx, result) || ...)) return result;
-  return eval_non_inlined(op, ctx);
+  return eval_indirect(op, ctx);
 }
 
 SLINKY_INLINE index_t eval(stmt_ref op, eval_context& ctx) { return eval<call_stmt>(op, ctx); }
@@ -979,27 +995,13 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval(const transpose* op, eval_c
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
 
-// In this dispatcher, only functions that use registers that don't need to be saved/restored should be inlined.
-// This should allow this function to be implemented as table of tail calls.
-SLINKY_NO_INLINE index_t eval_non_inlined(stmt_ref op, eval_context& ctx) {
-  switch (op.type()) {
-  case stmt_node_type::call_stmt: return eval_non_inlined(reinterpret_cast<const call_stmt*>(op.get()), ctx);
-  case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()), ctx);
-  case stmt_node_type::copy_stmt: return eval_non_inlined(reinterpret_cast<const copy_stmt*>(op.get()), ctx);
-  case stmt_node_type::let_stmt: return eval_non_inlined(reinterpret_cast<const let_stmt*>(op.get()), ctx);
-  case stmt_node_type::block: return eval_non_inlined(reinterpret_cast<const block*>(op.get()), ctx);
-  case stmt_node_type::loop: return eval_non_inlined(reinterpret_cast<const loop*>(op.get()), ctx);
-  case stmt_node_type::allocate: return eval_non_inlined(reinterpret_cast<const allocate*>(op.get()), ctx);
-  case stmt_node_type::make_buffer: return eval_non_inlined(reinterpret_cast<const make_buffer*>(op.get()), ctx);
-  case stmt_node_type::clone_buffer: return eval_non_inlined(reinterpret_cast<const clone_buffer*>(op.get()), ctx);
-  case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()), ctx);
-  case stmt_node_type::slice_buffer: return eval_non_inlined(reinterpret_cast<const slice_buffer*>(op.get()), ctx);
-  case stmt_node_type::slice_dim: return eval_non_inlined(reinterpret_cast<const slice_dim*>(op.get()), ctx);
-  case stmt_node_type::transpose: return eval_non_inlined(reinterpret_cast<const transpose*>(op.get()), ctx);
-  case stmt_node_type::async: return eval_non_inlined(reinterpret_cast<const async*>(op.get()), ctx);
-  case stmt_node_type::check: return eval_non_inlined(reinterpret_cast<const check*>(op.get()), ctx);
-  default: SLINKY_UNREACHABLE << "unknown stmt type " << to_string(op.type());
-  }
+// Dispatch through a table of tail calls indexed by node type. See `dispatch_table`.
+using stmt_table = dispatch_table<call_stmt, copy_stmt, let_stmt, block, loop, allocate, make_buffer,
+    clone_buffer, crop_buffer, crop_dim, slice_buffer, slice_dim, transpose, async, check, none_stmt>;
+
+SLINKY_INLINE index_t eval_indirect(stmt_ref op, eval_context& ctx) {
+  const base_stmt_node* n = op.get();
+  return stmt_table::entries[static_cast<int>(n->type)](n, ctx);
 }
 
 SLINKY_NO_INLINE index_t check_failed(const check* op, eval_context& ctx) {
