@@ -93,7 +93,7 @@ SLINKY_INLINE const let_stmt* as_closure(stmt_ref s) {
   return l && l->is_closure ? l : nullptr;
 }
 
-SLINKY_INLINE index_t eval_buffer_field(index_t value, buffer_field field, int d) {
+SLINKY_INLINE index_t eval_variable(index_t value, buffer_field field, int d) {
   const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
   switch (field) {
   case buffer_field::none: return value;
@@ -169,7 +169,7 @@ SLINKY_INLINE index_t eval_field(expr_ref e, eval_context& ctx) {
     const variable* op = static_cast<const variable*>(e.get());
     index_t value = ctx.lookup(op->sym);
     if (op->field == buffer_field::none) return value;
-    if (op->field == Field) return eval_buffer_field(value, Field, op->dim);
+    if (op->field == Field) return eval_variable(value, Field, op->dim);
     break;
   }
   default: break;
@@ -232,7 +232,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_INLINE index_t eval_let(const T* op, eval_conte
 SLINKY_INLINE index_t eval(const let* op, eval_context& ctx) { return eval_let(op, ctx); }
 
 SLINKY_INLINE index_t eval(const variable* op, eval_context& ctx) {
-  return eval_buffer_field(ctx.lookup(op->sym), op->field, op->dim);
+  return eval_variable(ctx.lookup(op->sym), op->field, op->dim);
 }
 
 SLINKY_INLINE index_t eval(const constant* op, eval_context&) { return op->value; }
