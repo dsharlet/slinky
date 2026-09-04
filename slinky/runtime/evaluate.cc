@@ -97,7 +97,6 @@ const let_stmt* as_closure(stmt_ref s) {
 // The evaluators are mutually recursive, so we need to declare them before defining them.
 SLINKY_INLINE index_t eval(expr_ref e, eval_context& ctx);
 SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx);
-inline index_t eval_binary(expr_ref e, eval_context& ctx);
 inline index_t eval(const variable* op, eval_context& ctx);
 inline index_t eval(const constant* op);
 inline index_t eval(const constant_buffer* op);
@@ -175,38 +174,37 @@ SLINKY_NO_INLINE index_t eval_non_inlined(const T* op, eval_context& ctx) {
   return eval(op, ctx);
 }
 
+template <typename T>
+SLINKY_NO_INLINE index_t eval_binary(const base_expr_node* e, eval_context& ctx) {
+  const binary_op* op = static_cast<const binary_op*>(e);
+  index_t a = eval(op->a, ctx);
+  index_t b = eval(op->b, ctx);
+  return make_binary<T>(a, b);
+}
+
 SLINKY_NO_INLINE index_t eval_non_inlined(expr_ref e, eval_context& ctx) {
   switch (e.type()) {
   case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()), ctx);
   case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
   case expr_node_type::constant_buffer: return eval(static_cast<const constant_buffer*>(e.get()));
   case expr_node_type::call: return eval(static_cast<const call*>(e.get()), ctx);
-  case expr_node_type::let: return eval(static_cast<const let*>(e.get()), ctx);
-  case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()), ctx);
-  case expr_node_type::select: return eval(static_cast<const class select*>(e.get()), ctx);
-  default: return eval_binary(e, ctx);
-  }
-}
-
-inline index_t eval_binary(expr_ref e, eval_context& ctx) {
-  const binary_op* op = static_cast<const binary_op*>(e.get());
-  index_t a = eval(op->a, ctx);
-  index_t b = eval(op->b, ctx);
-  switch (op->type) {
-  case expr_node_type::add: return make_binary<add>(a, b);
-  case expr_node_type::sub: return make_binary<sub>(a, b);
-  case expr_node_type::mul: return make_binary<mul>(a, b);
-  case expr_node_type::div: return make_binary<div>(a, b);
-  case expr_node_type::mod: return make_binary<mod>(a, b);
-  case expr_node_type::min: return make_binary<class min>(a, b);
-  case expr_node_type::max: return make_binary<class max>(a, b);
-  case expr_node_type::equal: return make_binary<equal>(a, b);
-  case expr_node_type::not_equal: return make_binary<not_equal>(a, b);
-  case expr_node_type::less: return make_binary<less>(a, b);
-  case expr_node_type::less_equal: return make_binary<less_equal>(a, b);
-  case expr_node_type::logical_and: return make_binary<logical_and>(a, b);
-  case expr_node_type::logical_or: return make_binary<logical_or>(a, b);
-  default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(op->type);
+  case expr_node_type::let: return eval_non_inlined(static_cast<const let*>(e.get()), ctx);
+  case expr_node_type::logical_not: return eval_non_inlined(static_cast<const logical_not*>(e.get()), ctx);
+  case expr_node_type::select: return eval_non_inlined(static_cast<const class select*>(e.get()), ctx);
+  case expr_node_type::add: return eval_binary<add>(e.get(), ctx);
+  case expr_node_type::sub: return eval_binary<sub>(e.get(), ctx);
+  case expr_node_type::mul: return eval_binary<mul>(e.get(), ctx);
+  case expr_node_type::div: return eval_binary<div>(e.get(), ctx);
+  case expr_node_type::mod: return eval_binary<mod>(e.get(), ctx);
+  case expr_node_type::min: return eval_binary<class min>(e.get(), ctx);
+  case expr_node_type::max: return eval_binary<class max>(e.get(), ctx);
+  case expr_node_type::equal: return eval_binary<equal>(e.get(), ctx);
+  case expr_node_type::not_equal: return eval_binary<not_equal>(e.get(), ctx);
+  case expr_node_type::less: return eval_binary<less>(e.get(), ctx);
+  case expr_node_type::less_equal: return eval_binary<less_equal>(e.get(), ctx);
+  case expr_node_type::logical_and: return eval_binary<logical_and>(e.get(), ctx);
+  case expr_node_type::logical_or: return eval_binary<logical_or>(e.get(), ctx);
+  default: SLINKY_UNREACHABLE << "unknown expr type " << to_string(e.type());
   }
 }
 
