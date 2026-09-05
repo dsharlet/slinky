@@ -848,11 +848,6 @@ SLINKY_NO_INLINE index_t eval_shadowed(const crop_dim* op, eval_context& ctx) {
   raw_buffer* buffer = reinterpret_cast<raw_buffer*>(ctx.lookup(op->sym));
   assert(buffer);
 
-  if (op->dim >= static_cast<int>(buffer->rank)) {
-    // Cropping a broadcast dimension is a no-op.
-    return eval<call_stmt>(op->body, ctx);
-  }
-
   slinky::dim& dim = buffer->dims[op->dim];
   index_t old_min = dim.min();
   index_t old_max = dim.max();
@@ -876,10 +871,11 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_NO_INLINE index_t eval_unshadowed(const crop_di
   raw_buffer sym_buf = *src_buf;
   sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
   internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
-  // dim() returns broadcast for op->dim >= rank, and crop is a no-op in that case.
-  const slinky::dim& dim = static_cast<const raw_buffer&>(sym_buf).dim(op->dim);
-  interval bounds = eval(op->bounds, {dim.min(), dim.max()}, ctx);
-  sym_buf.crop(op->dim, bounds.min, bounds.max);
+  if (op->dim < sym_buf.rank) {
+    const slinky::dim& dim = sym_buf.dims[op->dim];
+    interval bounds = eval(op->bounds, {dim.min(), dim.max()}, ctx);
+    sym_buf.crop(op->dim, bounds.min, bounds.max);
+  }
 
   return eval_with_value<call_stmt>(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf), ctx);
 }
