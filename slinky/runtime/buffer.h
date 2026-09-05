@@ -509,25 +509,29 @@ struct type_info<const void> {
 
 template <typename T>
 void copy_small_n(const T* src, std::size_t n, T* dst) {
-  switch (n) {
-  case 4: *dst++ = *src++;
-  case 3: *dst++ = *src++;
-  case 2: *dst++ = *src++;
-  case 1: *dst++ = *src++;
-  case 0: return;
-  default: std::copy_n(src, n, dst); return;
+  if (n == 0) return;
+  std::size_t count = (n + 3) / 4;
+  switch (n % 4) {
+  case 0: do { *dst++ = *src++;
+  case 3:      *dst++ = *src++;
+  case 2:      *dst++ = *src++;
+  case 1:      *dst++ = *src++;
+          } while (--count > 0);
   }
 }
 
 template <typename T>
 void copy_small_n_backward(const T* src, std::size_t n, T* dst) {
-  switch (n) {
-  case 4: *(--dst) = *(--src);
-  case 3: *(--dst) = *(--src);
-  case 2: *(--dst) = *(--src);
-  case 1: *(--dst) = *(--src);
-  case 0: return;
-  default: std::copy_backward(src, src + n, dst + n); return;
+  if (n == 0) return;
+  src += n;
+  dst += n;
+  std::size_t count = (n + 3) / 4;
+  switch (n % 4) {
+  case 0: do { *(--dst) = *(--src);
+  case 3:      *(--dst) = *(--src);
+  case 2:      *(--dst) = *(--src);
+  case 1:      *(--dst) = *(--src);
+          } while (--count > 0);
   }
 }
 
