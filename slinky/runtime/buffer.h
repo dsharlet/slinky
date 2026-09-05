@@ -952,8 +952,6 @@ int optimize_dims(raw_buffer& buf, Bufs&... bufs) {
     }
   }
 
-  fused += fuse_contiguous_dims(buf, bufs...);
-
   // The order of operations here is for performance: It's a lot faster to fuse dimensions than sort them. So we fuse
   // what we can before sorting, then if the sorting changed the order of the dimensions, attempt to fuse again.
   fused += fuse_contiguous_dims(buf, bufs...);
