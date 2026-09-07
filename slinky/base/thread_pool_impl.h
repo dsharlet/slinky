@@ -31,6 +31,7 @@ public:
     std::size_t shard_count_;
     // How many workers can start working on this loop. Decremented as workers begin working.
     std::atomic<int> max_workers_;
+    std::atomic<int> active_workers_{0};
 
     alignas(cache_line_size) std::atomic<std::size_t> todo_;
 
@@ -58,7 +59,13 @@ public:
 
     // Return a unique worker ID for this loop. Negative worker IDs are invalid, indicating no more workers should work
     // on this loop.
-    int allocate_worker() { return --max_workers_; }
+    int allocate_worker() {
+      int w = --max_workers_;
+      if (w >= 0) {
+        active_workers_.fetch_add(1, std::memory_order_relaxed);
+      }
+      return w;
+    }
 
     // Work on the loop. This returns when work on all items in the loop has started, but may return before all items
     // are complete. Returns true if this call resulted in the loop being done, but the loop may not be done.
@@ -68,7 +75,7 @@ public:
     // Returns true if there is no work left to start.
     bool all_work_started() const;
 
-    bool done() const override { return todo_ == 0; }
+    bool done() const override { return todo_ == 0 && active_workers_ == 0; }
   };
 
 private:

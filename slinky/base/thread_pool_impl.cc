@@ -56,18 +56,25 @@ std::size_t thread_pool_impl::task_impl::shard::work(task_body& body) {
 }
 
 bool thread_pool_impl::task_impl::work(std::size_t worker) {
-  task_body body = body_;
   std::size_t done = 0;
-  // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
-  // stealing work from other workers.
-  const std::size_t i0 = worker % shard_count_;
-  for (std::size_t i = i0; i < shard_count_; ++i) {
-    done += shards_[i].work(body);
+  {
+    task_body body = body_;
+    // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
+    // stealing work from other workers.
+    const std::size_t i0 = worker % shard_count_;
+    for (std::size_t i = i0; i < shard_count_; ++i) {
+      done += shards_[i].work(body);
+    }
+    for (std::size_t i = 0; i < i0; ++i) {
+      done += shards_[i].work(body);
+    }
+    // Destroy `body` before decrementing active_workers_ below, so the destructor does not run after the caller
+    // disposes of it.
   }
-  for (std::size_t i = 0; i < i0; ++i) {
-    done += shards_[i].work(body);
+  if (done > 0) {
+    todo_ -= done;
   }
-  return done > 0 && (todo_ -= done) == 0;
+  return --active_workers_ == 0;
 }
 
 bool thread_pool_impl::task_impl::work() {
@@ -80,7 +87,7 @@ bool thread_pool_impl::task_impl::work() {
 }
 
 bool thread_pool_impl::task_impl::all_work_started() const {
-  if (done()) return true;
+  if (todo_ == 0) return true;
   for (std::size_t i = 0; i < shard_count_; ++i) {
     const shard& s = shards_[i];
     if (s.i < s.end) return false;
