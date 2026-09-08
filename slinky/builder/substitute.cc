@@ -270,6 +270,7 @@ public:
     const loop* ls = static_cast<const loop*>(self);
 
     if (!try_match(ls->sym, op->sym)) return;
+    if (!try_match(ls->max_workers, op->max_workers)) return;
     if (!try_match(ls->bounds, op->bounds)) return;
     if (!try_match(ls->step, op->step)) return;
     if (!try_match(ls->body, op->body)) return;
@@ -485,13 +486,15 @@ void substitutor::visit(const let_stmt* op) { set_result(mutate_let(this, op)); 
 void substitutor::visit(const loop* op) {
   interval_expr bounds = mutate(op->bounds);
   expr step = mutate(op->step);
+  expr max_workers = mutate(op->max_workers);
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
   sym = sym.defined() ? sym : op->sym;
-  if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+  if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) &&
+      max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(loop::make(sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+    set_result(loop::make(sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
   }
   exit_decls();
 }

@@ -71,6 +71,8 @@ TEST(substitute, shadowed) {
       matches(copy_stmt::make(nullptr, x, {u}, w, {z}, {})));
   ASSERT_THAT(substitute(copy_stmt::make(nullptr, x, {y}, w, {z}, u), u, v),
       matches(copy_stmt::make(nullptr, x, {y}, w, {z}, v)));
+  ASSERT_THAT(substitute(loop::make(x, u, {0, 10}, 1, check::make(x == y)), u, v),
+      matches(loop::make(x, v, {0, 10}, 1, check::make(x == y))));
 }
 
 TEST(match, basic) {
@@ -90,6 +92,11 @@ TEST(match, basic) {
   ASSERT_FALSE(match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make(x, y, check::make(x))));
   ASSERT_FALSE(
       match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make({{x, y * z}, {w, y * z}}, check::make(x))));
+
+  ASSERT_TRUE(
+      match(loop::make(x, u, {0, 10}, 1, check::make(x == y)), loop::make(x, u, {0, 10}, 1, check::make(x == y))));
+  ASSERT_FALSE(
+      match(loop::make(x, u, {0, 10}, 1, check::make(x == y)), loop::make(x, v, {0, 10}, 1, check::make(x == y))));
 
   {
     slinky::dim dims[2] = {{0, 10, 2}, {0, 1, 22}};
