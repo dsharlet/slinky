@@ -2426,7 +2426,7 @@ interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds, const alig
 
 interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, const alignment_map& alignment) {
   if (deep_is_point(x)) {
-    return bounds_of(x.min, expr_bounds);
+    return bounds_of(x.min, expr_bounds, alignment);
   } else {
     scoped_trace trace("bounds_of");
     simplifier s(expr_bounds, alignment);
