@@ -843,11 +843,14 @@ public:
       };
     }
 
-    for (std::optional<buffer_info>& i : buffers) {
-      if (!i) continue;
-      for (auto& a : i->aliases) {
+    for (std::size_t i = 0; i < buffers.size(); ++i) {
+      if (!buffers[i]) continue;
+      for (auto& a : buffers[i]->aliases) {
         if (a.target == sym) {
           handler(a);
+        }
+        if (a.target != sym && var(i) != sym) {
+          continue;
         }
         // Substitute buffer metadata of sym with the corresponding src dimensions.
         for (dim_expr& d : a.dims) {
