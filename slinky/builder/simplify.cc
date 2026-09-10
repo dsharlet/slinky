@@ -959,9 +959,9 @@ public:
       interval_expr result_bounds = bounds_of(op, a_info.bounds, b_info.bounds);
       if (auto proven = attempt_to_prove(result_bounds)) {
         set_result(expr(*proven), {point(*proven), alignment_type()});
-      } else if (auto proven = attempt_to_prove(bounds_of(op, point(a), b_info.bounds))) {
+      } else if (!a_info.bounds.is_point() && (proven = attempt_to_prove(bounds_of(op, point(a), b_info.bounds)))) {
         set_result(expr(*proven), {point(*proven), alignment_type()});
-      } else if (auto proven = attempt_to_prove(bounds_of(op, a_info.bounds, point(b)))) {
+      } else if (!b_info.bounds.is_point() && (proven = attempt_to_prove(bounds_of(op, a_info.bounds, point(b))))) {
         set_result(expr(*proven), {point(*proven), alignment_type()});
       } else {
         set_result(std::move(result), {std::move(result_bounds), alignment_type()});
@@ -1163,21 +1163,33 @@ public:
 
     scoped_buffers.clear();
     scoped_values.clear();
-    for (auto it = lets.rbegin(); it != lets.rend();) {
-      auto deps = depends_on(body, it->first);
-      // Find any deps on this variable in the inner let values.
-      for (auto inner = lets.rbegin(); inner != it; ++inner) {
-        depends_on(inner->second, it->first, deps);
-      }
+    std::vector<depends_on_result> deps(lets.size());
+    std::vector<std::pair<var, depends_on_result&>> deps_map;
+    deps_map.reserve(lets.size());
+    for (std::size_t i = 0; i < lets.size(); ++i) {
+      deps_map.push_back({lets[i].first, deps[i]});
+    }
+    depends_on(body, deps_map);
 
-      if (!deps.any()) {
-        // Prune dead lets
-        it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
+    span<std::pair<var, depends_on_result&>> deps_map_span(deps_map);
+    for (std::size_t i = lets.size(); i-- > 0;) {
+      if (!deps[i].any()) {
         values_changed = true;
-      } else {
-        ++it;
+      } else if (i > 0) {
+        depends_on(lets[i].second, deps_map_span.subspan(0, i));
       }
     }
+
+    std::size_t w = 0;
+    for (std::size_t i = 0; i < lets.size(); ++i) {
+      if (deps[i].any()) {
+        if (w != i) {
+          lets[w] = std::move(lets[i]);
+        }
+        ++w;
+      }
+    }
+    lets.resize(w);
 
     if (lets.empty()) {
       // All lets were removed.
