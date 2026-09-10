@@ -959,9 +959,9 @@ public:
       interval_expr result_bounds = bounds_of(op, a_info.bounds, b_info.bounds);
       if (auto proven = attempt_to_prove(result_bounds)) {
         set_result(expr(*proven), {point(*proven), alignment_type()});
-      } else if (auto proven = attempt_to_prove(bounds_of(op, point(a), b_info.bounds))) {
+      } else if (!a_info.bounds.is_point() && (proven = attempt_to_prove(bounds_of(op, point(a), b_info.bounds)))) {
         set_result(expr(*proven), {point(*proven), alignment_type()});
-      } else if (auto proven = attempt_to_prove(bounds_of(op, a_info.bounds, point(b)))) {
+      } else if (!b_info.bounds.is_point() && (proven = attempt_to_prove(bounds_of(op, a_info.bounds, point(b))))) {
         set_result(expr(*proven), {point(*proven), alignment_type()});
       } else {
         set_result(std::move(result), {std::move(result_bounds), alignment_type()});
