@@ -115,6 +115,20 @@ TEST(optimizations, fuse_siblings) {
       matches(crop_dim::make(x, y, 0, {0, 10},
           block::make({crop_dim::make(z, x, 1, {0, 10}, use_buffer(z)),
               clone_buffer::make(z, x, crop_dim::make(w, z, 1, {0, 10}, use_buffer(w)))}))));
+
+  ASSERT_THAT(
+      fuse_siblings(block::make({
+          allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, use_buffer(x)),
+          allocate::make(y, memory_type::heap, 1, span<dim_expr>{},
+              allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, block::make({use_buffer(x), use_buffer(y)}))),
+      })),
+      matches(allocate::make(x, memory_type::heap, 1, span<dim_expr>{},
+          block::make({
+              use_buffer(x),
+              clone_buffer::make(y, x,
+                  allocate::make(
+                      x, memory_type::heap, 1, span<dim_expr>{}, block::make({use_buffer(x), use_buffer(y)}))),
+          }))));
 }
 
 TEST(optimizations, remove_pure_dims) {
