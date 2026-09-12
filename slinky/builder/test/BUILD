@@ -57,6 +57,7 @@ cc_test(
     name = "elementwise",
     srcs = ["elementwise.cc"],
     deps = [
+        ":util",
         "//slinky/base/test:util",
         "//slinky/builder",
         "//slinky/runtime",
