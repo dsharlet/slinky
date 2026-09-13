@@ -151,7 +151,9 @@ T* make_let(Lets&& lets, Body body) {
 expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 expr let::make(span<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 
-expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
+expr let::make(var sym, expr value, expr body) {
+  return make({{sym, std::move(value)}}, std::move(body));
+}
 
 namespace {
 
@@ -164,12 +166,16 @@ int max_decl_id(span<std::pair<var, expr>> lets) {
 }
 
 bool is_self_assignment(const std::pair<var, expr>& let) { return is_variable(let.second, let.first); }
+bool is_value_constant(const std::pair<var, expr>& let) {
+  return let.second.as<constant>() || let.second.as<constant_buffer>();
+}
 
 }  // namespace
 
 stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure, int max_symbol_id) {
   let_stmt* n = make_let<let_stmt>(lets, std::move(body));
   n->is_closure = is_closure;
+  n->is_constant = std::all_of(n->lets.begin(), n->lets.end(), is_value_constant);
   n->max_symbol_id = std::max(max_symbol_id, max_decl_id(n->lets));
   assert(!is_closure || std::all_of(n->lets.begin(), n->lets.end(), is_self_assignment));
   return stmt(n);
@@ -178,12 +184,15 @@ stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_c
 stmt let_stmt::make(span<std::pair<var, expr>> lets, stmt body, bool is_closure, int max_symbol_id) {
   let_stmt* n = make_let<let_stmt>(lets, std::move(body));
   n->is_closure = is_closure;
+  n->is_constant = std::all_of(n->lets.begin(), n->lets.end(), is_value_constant);
   n->max_symbol_id = std::max(max_symbol_id, max_decl_id(n->lets));
   assert(!is_closure || std::all_of(n->lets.begin(), n->lets.end(), is_self_assignment));
   return stmt(n);
 }
 
-stmt let_stmt::make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
+stmt let_stmt::make(var sym, expr value, stmt body) {
+  return make({{sym, std::move(value)}}, std::move(body));
+}
 
 namespace {
 

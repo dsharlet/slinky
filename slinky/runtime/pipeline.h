@@ -26,8 +26,8 @@ public:
   void setup(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const;
   void setup(buffers inputs, buffers outputs, eval_context& ctx) const;
 
-  // Run an already set up pipeline.
-  index_t evaluate(eval_context& ctx) const;
+  // Run an already set up pipeline. If `is_set_up` is true, `ctx` must be unmodified from a previous call to `setup` above.
+  index_t evaluate(eval_context& ctx, bool is_set_up = false) const;
 
   // Combines setup + evaluate.
   index_t evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const;

@@ -207,6 +207,9 @@ public:
   // The values of every let must be a `variable` expression.
   bool is_closure;
 
+  // If true, all let values are either `constant` or `constant_buffer` exprs.
+  bool is_constant;
+
   // The maximum symbol id that `evaluate` may assign while evaluating this node, or -1 if it is unknown.
   // Any symbol `x` evaluated by `evaluate` must be contained in a `let_stmt` with `max_symbol_id > x`.
   int max_symbol_id = -1;
