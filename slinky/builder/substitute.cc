@@ -440,21 +440,34 @@ auto mutate_let(substitutor* this_, const T* op) {
   std::vector<std::pair<var, expr>> lets = to_vector(op->lets);
   bool changed = false;
   std::size_t decls_entered = 0;
-  for (auto& s : lets) {
-    expr value = this_->mutate(s.second);
-    changed = changed || !value.same_as(s.second);
-    s.second = std::move(value);
-    var decl = this_->enter_decl(s.first);
+  for (std::size_t i = 0; i < lets.size(); ++i) {
+    var decl = this_->enter_decl(lets[i].first);
     if (!decl.defined()) {
       this_->exit_decls(decls_entered);
-      break;
+      // We got shadowed partway through the lets. We need to stop here, terminate what remains, then add the previously
+      // substituted lets.
+      auto rest = T::make({lets.begin() + i, lets.end()}, op->body);
+      auto terminated_rest = this_->terminate(rest);
+      if (terminated_rest.same_as(rest)) {
+        if (!changed) {
+          return decltype(op->body){op};
+        } else {
+          return T::make(std::move(lets), op->body);
+        }
+      } else if (i == 0) {
+        return terminated_rest;
+      } else {
+        return T::make({lets.begin(), lets.begin() + i}, std::move(terminated_rest));
+      }
     }
-    changed = changed || decl != s.first;
-    s.first = decl;
+    expr value = this_->mutate(lets[i].second);
+    changed = changed || !value.same_as(lets[i].second) || decl != lets[i].first;
+    lets[i].first = decl;
+    lets[i].second = std::move(value);
     ++decls_entered;
   }
 
-  auto body = decls_entered == lets.size() ? this_->mutate(op->body) : op->body;
+  auto body = this_->mutate(op->body);
   changed = changed || !body.same_as(op->body);
   this_->exit_decls(decls_entered);
   if (!changed) {
@@ -489,13 +502,17 @@ void substitutor::visit(const loop* op) {
   expr max_workers = mutate(op->max_workers);
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
-  if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) &&
-      max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
-    set_result(op);
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
+  if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) &&
+      body.same_as(op->body)) {
+    result = stmt(op);
   } else {
-    set_result(loop::make(sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
+    result = loop::make(sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 void substitutor::visit(const allocate* op) {
@@ -509,12 +526,16 @@ void substitutor::visit(const allocate* op) {
   }
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (!changed && sym == op->sym && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
-    set_result(op);
+    result = stmt(op);
   } else {
-    set_result(allocate::make(sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)));
+    result = allocate::make(sym, op->storage, std::move(elem_size), std::move(dims), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 void substitutor::visit(const make_buffer* op) {
@@ -529,13 +550,17 @@ void substitutor::visit(const make_buffer* op) {
   }
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (!changed && sym == op->sym && base.same_as(op->base) && elem_size.same_as(op->elem_size) &&
       body.same_as(op->body)) {
-    set_result(op);
+    result = stmt(op);
   } else {
-    set_result(make_buffer::make(sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+    result = make_buffer::make(sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -554,12 +579,16 @@ void substitutor::visit(const slice_buffer* op) {
   }
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (!changed && sym == op->sym && src == op->src && body.same_as(op->body)) {
-    set_result(op);
+    result = stmt(op);
   } else {
-    set_result(slice_buffer::make(sym, src, std::move(at), std::move(body)));
+    result = slice_buffer::make(sym, src, std::move(at), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 void substitutor::visit(const slice_dim* op) {
@@ -567,12 +596,16 @@ void substitutor::visit(const slice_dim* op) {
   expr at = mutate(op->at);
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (sym == op->sym && src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
-    set_result(op);
+    result = stmt(op);
   } else {
-    set_result(slice_dim::make(sym, src, op->dim, std::move(at), std::move(body)));
+    result = slice_dim::make(sym, src, op->dim, std::move(at), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -615,12 +648,16 @@ void substitutor::visit(const crop_buffer* op) {
   }
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (changed || sym != op->sym || src != op->src || !body.same_as(op->body)) {
-    set_result(crop_buffer::make(sym, src, std::move(bounds), std::move(body)));
+    result = crop_buffer::make(sym, src, std::move(bounds), std::move(body));
   } else {
-    set_result(op);
+    result = stmt(op);
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -629,12 +666,16 @@ void substitutor::visit(const crop_dim* op) {
   interval_expr bounds = substitute_crop_bounds(this, src, op->src, op->dim, op->bounds);
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (sym == op->sym && src == op->src && bounds.same_as(op->bounds) && body.same_as(op->body)) {
-    set_result(op);
+    result = stmt(op);
   } else {
-    set_result(crop_dim::make(sym, src, op->dim, std::move(bounds), std::move(body)));
+    result = crop_dim::make(sym, src, op->dim, std::move(bounds), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -642,12 +683,16 @@ void substitutor::visit(const async* op) {
   var sym = enter_decl(op->sym);
   stmt task = sym.defined() ? mutate(op->task) : op->task;
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (sym == op->sym && task.same_as(op->task) && body.same_as(op->body)) {
-    set_result(op);
+    result = stmt(op);
   } else {
-    set_result(async::make(sym, std::move(task), std::move(body)));
+    result = async::make(sym, std::move(task), std::move(body));
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -695,12 +740,16 @@ void substitutor::visit(const transpose* op) {
   var src = visit_symbol(op->src);
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (sym != op->sym || src != op->src || !body.same_as(op->body)) {
-    set_result(transpose::make(sym, src, op->dims, std::move(body)));
+    result = transpose::make(sym, src, op->dims, std::move(body));
   } else {
-    set_result(op);
+    result = stmt(op);
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -766,12 +815,16 @@ void substitutor::visit(const clone_buffer* op) {
   var src = visit_symbol(op->src);
   var sym = enter_decl(op->sym);
   stmt body = sym.defined() ? mutate(op->body) : op->body;
-  sym = sym.defined() ? sym : op->sym;
+  bool defined = sym.defined();
+  sym = defined ? sym : op->sym;
+  stmt result;
   if (sym != op->sym || src != op->src || !body.same_as(op->body)) {
-    set_result(clone_buffer::make(sym, src, std::move(body)));
+    result = clone_buffer::make(sym, src, std::move(body));
   } else {
-    set_result(op);
+    result = stmt(op);
   }
+  if (!defined) result = terminate(result);
+  set_result(std::move(result));
   exit_decls();
 }
 
@@ -814,6 +867,22 @@ public:
       return replacement_symbol(replacement);
     } else {
       return x;
+    }
+  }
+
+  expr terminate(const expr& e) override {
+    if (depends_on(e, target).any()) {
+      return let::make(target, replacement, e);
+    } else {
+      return e;
+    }
+  }
+
+  stmt terminate(const stmt& s) override {
+    if (depends_on(s, target).any()) {
+      return let_stmt::make(target, replacement, s);
+    } else {
+      return s;
     }
   }
 };
