@@ -156,12 +156,12 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
   // short circuit, so use a non-negative elem_size to keep all of the strides non-negative after an overflow.
   bool overflow = static_cast<index_t>(this->elem_size) < 0;
   const index_t elem_size = overflow ? 0 : static_cast<index_t>(this->elem_size);
-  // We remember the strides of the dims we know about, in sorted order.
+  // We remember the strides of the dims we know about, in no particular order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   // Initialize one past the end of dims to a sentinel value.
   dims->stride = dims->dim_stride = elem_size;
   init_stride_dim* dims_end = dims;
-  // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
+  // Insert d into dims, fusing it with adjacent dims. Also track the flat max index of the buffer, to compute the size.
   index_t flat_max = 0;
 
   auto learn_dim = [&](index_t stride, index_t extent) {
@@ -171,29 +171,28 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
     // dim_stride - stride cannot overflow, both are non-negative.
     overflow |= add_with_overflow(flat_max, dim_stride - stride, flat_max);
 
-    init_stride_dim* at = dims;
-    while (at < dims_end && at->dim_stride < dim_stride) {
-      ++at;
+    // Find the dims this new dimension is adjacent to, if any.
+    init_stride_dim* prev = nullptr;
+    init_stride_dim* next = nullptr;
+    for (init_stride_dim* i = dims; i < dims_end; ++i) {
+      if (i->dim_stride == stride) prev = i;
+      if (i->stride == dim_stride) next = i;
     }
-    const bool merge_prev = at > dims && (at - 1)->dim_stride == stride;
-    const bool merge_next = at < dims_end && dim_stride == at->stride;
 
-    if (merge_prev && merge_next) {
-      // This new dimension can be fused with both the previous and next dimensions.
-      (at - 1)->dim_stride = at->dim_stride;
-      std::copy(at + 1, dims_end, at);
-      --dims_end;
-    } else if (merge_prev) {
+    if (prev && next) {
+      // This new dimension can be fused with both the previous and next dimensions. The dims are not sorted, so we can
+      // remove next by replacing it with the last dim.
+      prev->dim_stride = next->dim_stride;
+      *next = *--dims_end;
+    } else if (prev) {
       // This new dimension can be fused with the previous dimension.
-      (at - 1)->dim_stride = dim_stride;
-    } else if (merge_next) {
+      prev->dim_stride = dim_stride;
+    } else if (next) {
       // This new dimension can be fused with the next dimension.
-      at->stride = stride;
+      next->stride = stride;
     } else {
       // This new dimension can't be fused with any existing dimension.
-      std::copy_backward(at, dims_end, dims_end + 1);
-      *at = {stride, dim_stride};
-      ++dims_end;
+      *dims_end++ = {stride, dim_stride};
     }
   };
 
@@ -256,18 +255,19 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       }
 
       // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
+      index_t best_stride = dim::auto_stride;
       for (const init_stride_dim& dim_j : known_dims) {
         index_t padded_candidate = 0;
-        overflow |= add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
+        if (add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate)) continue;
         index_t candidate = padded_candidate & ~(alignment - 1);
 
-        if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
-          dim_i.set_stride(candidate);
-          learn_dim(candidate, alloc_extent_i);
-          // The dims are sorted, so no subsequent candidate will be better.
-          break;
+        bool candidate_overflow = false;
+        if (candidate < best_stride && is_stride_ok(candidate, alloc_extent_i, known_dims, candidate_overflow)) {
+          best_stride = candidate;
         }
       }
+      dim_i.set_stride(best_stride);
+      learn_dim(best_stride, alloc_extent_i);
       assert(dim_i.stride() != dim::auto_stride || overflow);
     }
   }
