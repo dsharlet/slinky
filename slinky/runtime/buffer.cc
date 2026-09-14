@@ -28,6 +28,7 @@ index_t alloc_extent(const dim& dim) {
 bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min, index_t& flat_max) {
   flat_min = 0;
   flat_max = 0;
+  bool overflow = false;
 
   for (std::size_t i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
@@ -36,21 +37,21 @@ bool calculate_flat_bounds(std::size_t rank, const dim* dims, index_t& flat_min,
     if (extent == 0) {
       flat_min = 0;
       flat_max = 0;
-      return true;
+      return !overflow;
     }
 
     index_t stride = dims[i].stride();
     index_t extent_minus_1;
-    if (sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1)) return false;
+    overflow |= sub_with_overflow(extent, static_cast<index_t>(1), extent_minus_1);
     index_t dim_stride;
-    if (mul_with_overflow(extent_minus_1, stride, dim_stride)) return false;
+    overflow |= mul_with_overflow(extent_minus_1, stride, dim_stride);
     if (stride < 0) {
-      if (add_with_overflow(flat_min, dim_stride, flat_min)) return false;
+      overflow |= add_with_overflow(flat_min, dim_stride, flat_min);
     } else {
-      if (add_with_overflow(flat_max, dim_stride, flat_max)) return false;
+      overflow |= add_with_overflow(flat_max, dim_stride, flat_max);
     }
   }
-  return true;
+  return !overflow;
 }
 
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
@@ -60,18 +61,14 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
 
   index_t flat_min = 0;
   index_t flat_max = 0;
-  if (!calculate_flat_bounds(rank, dims, flat_min, flat_max)) {
-    return 0;
-  }
+  bool overflow = !calculate_flat_bounds(rank, dims, flat_min, flat_max);
 
   index_t span;
-  if (sub_with_overflow(flat_max, flat_min, span)) return 0;
-  assert(span >= 0);
+  overflow |= sub_with_overflow(flat_max, flat_min, span);
+  assert(span >= 0 || overflow);
   std::size_t size;
-  if (add_with_overflow(static_cast<std::size_t>(span), elem_size, size)) {
-    return 0;
-  }
-  return size;
+  overflow |= add_with_overflow(static_cast<std::size_t>(span), elem_size, size);
+  return overflow ? 0 : size;
 }
 
 }  // namespace
@@ -139,10 +136,7 @@ struct init_stride_dim {
 
 SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<init_stride_dim> dims, bool& overflow) {
   index_t dim_stride;
-  if (mul_with_overflow(stride, extent, dim_stride)) {
-    overflow = true;
-    return false;
-  }
+  overflow |= mul_with_overflow(stride, extent, dim_stride);
   for (const init_stride_dim& d : dims) {
     if (d.stride >= dim_stride) {
       // The dim is completely outside the proposed stride.
@@ -158,6 +152,10 @@ SLINKY_INLINE bool is_stride_ok(index_t stride, index_t extent, span<init_stride
 }  // namespace
 
 SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_impl(index_t alignment) {
+  // elem_size is unsigned; a value that doesn't fit in a (signed) index_t is an overflow. The overflow checks below don't
+  // short circuit, so use a non-negative elem_size to keep all of the strides non-negative after an overflow.
+  bool overflow = static_cast<index_t>(this->elem_size) < 0;
+  const index_t elem_size = overflow ? 0 : static_cast<index_t>(this->elem_size);
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   // Initialize one past the end of dims to a sentinel value.
@@ -165,15 +163,13 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
   init_stride_dim* dims_end = dims;
   // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
   index_t flat_max = 0;
-  // elem_size is unsigned; a value that doesn't fit in a (signed) index_t is an overflow.
-  bool overflow = static_cast<index_t>(elem_size) < 0;
 
   auto learn_dim = [&](index_t stride, index_t extent) {
     index_t dim_stride = 0;
-    overflow = overflow || mul_with_overflow(stride, extent, dim_stride);
+    overflow |= mul_with_overflow(stride, extent, dim_stride);
 
-    // dim_stride - stride cannot overflow if the above multiplication did not overflow.
-    overflow = overflow || add_with_overflow(flat_max, dim_stride - stride, flat_max);
+    // dim_stride - stride cannot overflow, both are non-negative.
+    overflow |= add_with_overflow(flat_max, dim_stride - stride, flat_max);
 
     init_stride_dim* at = dims;
     while (at < dims_end && at->dim_stride < dim_stride) {
@@ -212,8 +208,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       if (stride_i == dim::auto_stride) dim_i.set_stride(elem_size);
     } else if (dim_i.stride() != dim::auto_stride) {
       if (stride_i < 0) {
-        overflow |= stride_i == std::numeric_limits<index_t>::min();
-        stride_i = -stride_i;
+        overflow |= sub_with_overflow(static_cast<index_t>(0), stride_i, stride_i);
       }
       learn_dim(stride_i, alloc_extent_i);
     }
@@ -232,15 +227,15 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
 
       if (stride != elem_size) {
         index_t padded_stride = 0;
-        overflow = overflow || add_with_overflow(stride, alignment - 1, padded_stride);
+        overflow |= add_with_overflow(stride, alignment - 1, padded_stride);
         stride = padded_stride & ~(alignment - 1);
       }
       dim_i.set_stride(stride);
 
       index_t dim_stride = 0;
-      overflow = overflow || mul_with_overflow(stride, alloc_extent_i, dim_stride);
-      // dim_stride - stride cannot overflow if the above multiplication did not overflow.
-      overflow = overflow || add_with_overflow(flat_max, dim_stride - stride, flat_max);
+      overflow |= mul_with_overflow(stride, alloc_extent_i, dim_stride);
+      // dim_stride - stride cannot overflow, both are non-negative.
+      overflow |= add_with_overflow(flat_max, dim_stride - stride, flat_max);
       stride = dim_stride;
     }
   } else {
@@ -263,7 +258,7 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
       // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
       for (const init_stride_dim& dim_j : known_dims) {
         index_t padded_candidate = 0;
-        overflow = overflow || add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
+        overflow |= add_with_overflow(dim_j.dim_stride, alignment - 1, padded_candidate);
         index_t candidate = padded_candidate & ~(alignment - 1);
 
         if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims, overflow)) {
@@ -273,13 +268,13 @@ SLINKY_NO_STACK_PROTECTOR std::optional<std::size_t> raw_buffer::init_strides_im
           break;
         }
       }
-      assert(dim_i.stride() != dim::auto_stride);
+      assert(dim_i.stride() != dim::auto_stride || overflow);
     }
   }
 
   index_t size = 0;
-  overflow = overflow || add_with_overflow(flat_max, static_cast<index_t>(elem_size), size);
-  overflow = overflow || add_with_overflow(size, alignment - 1, size);
+  overflow |= add_with_overflow(flat_max, elem_size, size);
+  overflow |= add_with_overflow(size, alignment - 1, size);
   if (overflow) return std::nullopt;
 
   assert(size >= 0);
@@ -526,26 +521,24 @@ SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, 
 bool validate_buffer(const raw_buffer& buf) {
   index_t flat_min = 0;
   index_t flat_max = 0;
-  if (!calculate_flat_bounds(buf.rank, buf.dims, flat_min, flat_max)) {
-    return false;
-  }
-  if (!buf.base) return true;
+  bool overflow = !calculate_flat_bounds(buf.rank, buf.dims, flat_min, flat_max);
+  if (!buf.base) return !overflow;
   uintptr_t base_val = reinterpret_cast<uintptr_t>(buf.base);
 
   // Check the minimum address.
-  assert(flat_min <= 0);
+  assert(flat_min <= 0 || overflow);
   uintptr_t flat_min_abs = -static_cast<uintptr_t>(flat_min);
-  if (base_val < flat_min_abs) return false;
+  overflow |= base_val < flat_min_abs;
 
   // Check the maximum address.
   uintptr_t elem_size_u = static_cast<uintptr_t>(buf.elem_size);
   uintptr_t flat_max_u = static_cast<uintptr_t>(flat_max);
   uintptr_t max_offset;
-  if (add_with_overflow(flat_max_u, elem_size_u, max_offset)) return false;
+  overflow |= add_with_overflow(flat_max_u, elem_size_u, max_offset);
   uintptr_t high_address;
-  if (add_with_overflow(base_val, max_offset, high_address)) return false;
+  overflow |= add_with_overflow(base_val, max_offset, high_address);
 
-  return true;
+  return !overflow;
 }
 
 namespace internal {

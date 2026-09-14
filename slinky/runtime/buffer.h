@@ -435,7 +435,7 @@ public:
       const index_t elem_size = static_cast<index_t>(this->elem_size);
       bool overflow = elem_size < 0;
       index_t size = 0;
-      overflow = overflow || add_with_overflow(elem_size, alignment - 1, size);
+      overflow |= add_with_overflow(elem_size, alignment - 1, size);
       if (overflow) return std::nullopt;
       return static_cast<std::size_t>(size & ~(alignment - 1));
     }
