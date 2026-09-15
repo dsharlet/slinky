@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "slinky/builder/pipeline.h"
+#include "slinky/builder/test/context.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
 
@@ -207,8 +208,10 @@ public:
   void visit(const logical_not*) override { SLINKY_UNREACHABLE; }
 };
 
+// Builds a pipeline that evaluates `e` elementwise, runs it, and checks the result against a reference evaluation of
+// `e`. Returns the number of heap allocations the pipeline needed.
 template <typename T, std::size_t Rank>
-void test_expr_pipeline(node_context& ctx, int split, const expr& e) {
+std::size_t test_expr_pipeline(node_context& ctx, int split, const expr& e) {
   elementwise_pipeline_builder<T, Rank> builder(ctx);
   e.accept(&builder);
 
@@ -240,7 +243,8 @@ void test_expr_pipeline(node_context& ctx, int split, const expr& e) {
   std::vector<const raw_buffer*> outputs;
   outputs.push_back(&output_buf);
 
-  p.evaluate(inputs, outputs);
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
 
   elementwise_pipeline_evaluator<T, Rank> eval;
   eval.extents = extents;
@@ -250,6 +254,8 @@ void test_expr_pipeline(node_context& ctx, int split, const expr& e) {
   e.accept(&eval);
 
   for_each_element([&](T* output, T* eval_result) { ASSERT_EQ(*output, *eval_result); }, output_buf, eval.result);
+
+  return eval_ctx.heap.allocs.size();
 }
 
 namespace {
@@ -271,6 +277,15 @@ expr pow(expr x, int n) {
   }
 }
 
+// Horner's rule produces a chain of elementwise operations, each of which can be computed in place with the previous
+// one. Without loops, the whole chain should be computed in the output buffer, needing no allocations at all.
+void test_horners_pipeline(int split, const expr& e) {
+  std::size_t allocs = test_expr_pipeline<int, 1>(ctx, split, e);
+  if (split == 0) {
+    ASSERT_EQ(allocs, 0);
+  }
+}
+
 }  // namespace
 
 class elementwise : public testing::TestWithParam<int> {};
@@ -289,12 +304,11 @@ TEST_P(elementwise, exp8) {
       ctx, GetParam(), 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4) + pow(x, 5) + pow(x, 6) + pow(x, 7) + pow(x, 8));
 }
 
-TEST_P(elementwise, exp2_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x)); }
-TEST_P(elementwise, exp3_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x))); }
-TEST_P(elementwise, exp4_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x)))); }
+TEST_P(elementwise, exp2_horners) { test_horners_pipeline(GetParam(), 1 + x * (1 + x)); }
+TEST_P(elementwise, exp3_horners) { test_horners_pipeline(GetParam(), 1 + x * (1 + x * (1 + x))); }
+TEST_P(elementwise, exp4_horners) { test_horners_pipeline(GetParam(), 1 + x * (1 + x * (1 + x * (1 + x)))); }
 TEST_P(elementwise, exp8_horners) {
-  test_expr_pipeline<int, 1>(
-      ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
+  test_horners_pipeline(GetParam(), 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
 }
 
 }  // namespace slinky

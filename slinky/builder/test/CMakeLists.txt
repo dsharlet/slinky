@@ -31,7 +31,7 @@ add_builder_test(copy
     slinky_builder_test_util slinky_base slinky_builder slinky_runtime)
 
 add_builder_test(elementwise
-    slinky_base_test_util slinky_builder slinky_runtime)
+    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
 
 add_builder_test(pipeline
     slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)

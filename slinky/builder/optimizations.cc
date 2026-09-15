@@ -1066,6 +1066,18 @@ public:
     return true;
   }
 
+  // Update the available aliasing opportunities to account for an aliasing. This allows a chain of multiple operations
+  // to alias an input and an output to the same buffer.
+  static void inherit_aliases(symbol_map<var>& used, symbol_map<var>& other, var alias, var target) {
+    std::optional<var> inherited = other.lookup(alias);
+    if (inherited && inherited->defined() && *inherited != target) {
+      other[target] = *inherited;
+      if (used.lookup(*inherited) == alias) used[*inherited] = target;
+    } else {
+      other.erase(target);
+    }
+  }
+
   void visit(const allocate* op) override {
     auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym, to_vector(op->dims), loop_level});
     auto set_back = set_value_in_scope(backward, op->sym, var());
@@ -1087,14 +1099,12 @@ public:
 
     if (can_alias && back && back->defined() && buffers.lookup(*back) &&
         fold_factors_strides_same(op->dims, buffers[*back]->dims)) {
-      forward.erase(*back);
+      inherit_aliases(backward, forward, op->sym, *back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
     } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd) &&
                fold_factors_strides_same(op->dims, buffers[*fwd]->dims)) {
-      backward.erase(*fwd);
-
-      stmt cropped = crop_buffer::make(op->sym, op->sym, dims_bounds(op->dims), std::move(body));
-      set_result(clone_buffer::make(op->sym, *fwd, std::move(cropped)));
+      inherit_aliases(forward, backward, op->sym, *fwd);
+      set_result(crop_buffer::make(op->sym, *fwd, dims_bounds(op->dims), std::move(body)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
@@ -1142,8 +1152,12 @@ public:
         }
 
         std::optional<buffer_info>& input_alloc = buffers[op->inputs[i]];
-        if (!input_alloc || !input_alloc->allow_alias || !use_count[input_alloc->root] ||
-            *use_count[input_alloc->root] > 1) {
+        if (!input_alloc) continue;
+        if (input_alloc->root == output_alloc->root) {
+          // This call is already computed in place, there's nothing to alias.
+          continue;
+        }
+        if (!input_alloc->allow_alias || !use_count[input_alloc->root] || *use_count[input_alloc->root] > 1) {
           // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
           // can't alias it.
           continue;
