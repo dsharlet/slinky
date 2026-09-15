@@ -631,10 +631,10 @@ public:
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
         const std::vector<var>& syms = info.shared_alloc_syms;
-        body = crop_buffer::make(op->sym, syms.back(), dims_bounds(op->dims), std::move(body));
         for (std::size_t i = 0; i + 1 < syms.size(); ++i) {
-          body = clone_buffer::make(syms[i], syms[i + 1], std::move(body));
+          body = substitute(body, syms[i], syms.back());
         }
+        body = crop_buffer::make(op->sym, syms.back(), dims_bounds(op->dims), std::move(body));
       }
       stmt result = allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
@@ -1272,8 +1272,7 @@ class sibling_fuser : public stmt_mutator {
   static bool fuse(const T* a, const T* b, stmt& result) {
     if (!a || !b || !can_fuse(a, b)) return false;
 
-    // We can't substitute here because it is possible that b declares a and uses it elsewhere.
-    stmt body = block::make({a->body, clone_buffer::make(b->sym, a->sym, b->body)});
+    stmt body = block::make({a->body, substitute(b->body, b->sym, a->sym)});
     result = clone_with(a, std::move(body));
     return true;
   }
@@ -1977,7 +1976,28 @@ stmt optimize_symbols(const stmt& s, node_context& ctx) {
   reuse_shadows mutator;
   result = mutator.mutate(result);
 
-  if (mutator.max_symbol_id >= 0) {
+  if (const let_stmt* let = result.as<let_stmt>()) {
+    int max_symbol_id = std::max(mutator.max_symbol_id, let->max_symbol_id);
+    if (!let->is_constant) {
+      // We can help optimize `pipeline::evaluate` if we separate the constant and non-constant lets.
+      // This is definitely safe because a constant cannot depend on another let.
+      std::vector<std::pair<var, expr>> constants;
+      std::vector<std::pair<var, expr>> non_constants;
+      constants.reserve(let->lets.size());
+      non_constants.reserve(let->lets.size());
+      for (const auto& p : let->lets) {
+        if (p.second.as<constant>() || p.second.as<constant_buffer>()) {
+          constants.push_back(p);
+        } else {
+          non_constants.push_back(p);
+        }
+      }
+      stmt inner = let_stmt::make(std::move(non_constants), let->body, let->is_closure);
+      result = let_stmt::make(std::move(constants), std::move(inner), /*is_closure=*/false, max_symbol_id);
+    } else if (max_symbol_id >= 0 && max_symbol_id != let->max_symbol_id) {
+      result = let_stmt::make(let->lets, let->body, let->is_closure, max_symbol_id);
+    }
+  } else if (mutator.max_symbol_id >= 0) {
     // Some symbols were declared outside of any let_stmt.
     result = let_stmt::make(
         std::vector<std::pair<var, expr>>{}, std::move(result), /*is_closure=*/false, mutator.max_symbol_id);
