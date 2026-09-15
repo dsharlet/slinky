@@ -631,10 +631,10 @@ public:
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
         const std::vector<var>& syms = info.shared_alloc_syms;
-        body = crop_buffer::make(op->sym, syms.back(), dims_bounds(op->dims), std::move(body));
         for (std::size_t i = 0; i + 1 < syms.size(); ++i) {
-          body = clone_buffer::make(syms[i], syms[i + 1], std::move(body));
+          body = substitute(body, syms[i], syms.back());
         }
+        body = crop_buffer::make(op->sym, syms.back(), dims_bounds(op->dims), std::move(body));
       }
       stmt result = allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
@@ -1258,8 +1258,7 @@ class sibling_fuser : public stmt_mutator {
   static bool fuse(const T* a, const T* b, stmt& result) {
     if (!a || !b || !can_fuse(a, b)) return false;
 
-    // We can't substitute here because it is possible that b declares a and uses it elsewhere.
-    stmt body = block::make({a->body, clone_buffer::make(b->sym, a->sym, b->body)});
+    stmt body = block::make({a->body, substitute(b->body, b->sym, a->sym)});
     result = clone_with(a, std::move(body));
     return true;
   }

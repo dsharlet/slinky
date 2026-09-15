@@ -47,6 +47,9 @@ public:
   virtual var enter_decl(var sym) { return sym; }
   virtual void exit_decls(int n = 1) {}
 
+  virtual expr terminate(const expr& e) { return e; }
+  virtual stmt terminate(const stmt& s) { return s; }
+
   void visit(const variable* op) override;
   void visit(const let* op) override;
   void visit(const call* op) override;

@@ -52,14 +52,27 @@ TEST(substitute, basic) {
 
 TEST(substitute, shadowed) {
   ASSERT_THAT(substitute(let::make(x, y, x + z), x, w), matches(let::make(x, y, x + z)));
+  ASSERT_THAT(substitute(let::make(x, y, x + z), z, x), matches(let::make(z, x, let::make(x, y, x + z))));
+  ASSERT_THAT(substitute(let_stmt::make(x, y, check::make(expr(x) == expr(z))), x, w),
+      matches(let_stmt::make(x, y, check::make(expr(x) == expr(z)))));
+  ASSERT_THAT(substitute(let_stmt::make(x, y, check::make(expr(x) == expr(z))), z, x),
+      matches(let_stmt::make(z, x, let_stmt::make(x, y, check::make(expr(x) == expr(z))))));
 
   ASSERT_THAT(
       substitute(let::make({{x, 1}, {y, 2}}, z + 1), z, z + w), matches(let::make({{x, 1}, {y, 2}}, z + w + 1)));
+  ASSERT_THAT(substitute(let::make({{w, z}, {x, 1}}, x + z), z, x),
+      matches(let::make({{w, x}}, let::make(z, x, let::make(x, 1, x + z)))));
+  ASSERT_THAT(substitute(let::make({{w, z + 1}, {z, 2}}, w + z), z, z + 10),
+      matches(let::make({{w, z + 10 + 1}, {z, 2}}, w + z)));
+  ASSERT_THAT(substitute(let_stmt::make({{w, z}, {x, 1}}, check::make(expr(x) == expr(z))), z, x),
+      matches(let_stmt::make({{w, x}}, let_stmt::make(z, x, let_stmt::make(x, 1, check::make(expr(x) == expr(z)))))));
+  ASSERT_THAT(substitute(let_stmt::make({{w, z + 1}, {z, 2}}, check::make(expr(w) == expr(z))), z, z + 10),
+      matches(let_stmt::make({{w, z + 10 + 1}, {z, 2}}, check::make(expr(w) == expr(z)))));
 
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3)),
-      matches(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3)))));
+      matches(let_stmt::make(y, buffer_max(x, 3), slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))))));
   ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3)),
-      matches(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3)))));
+      matches(let_stmt::make(y, buffer_max(x, 3), slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))))));
   ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(u, 3)),
       matches(slice_dim::make(x, u, 2, 0, check::make(buffer_max(u, 3) == buffer_min(x, 3)))));
 
@@ -73,6 +86,14 @@ TEST(substitute, shadowed) {
       matches(copy_stmt::make(nullptr, x, {y}, w, {z}, v)));
   ASSERT_THAT(substitute(loop::make(x, u, {0, 10}, 1, check::make(x == y)), u, v),
       matches(loop::make(x, v, {0, 10}, 1, check::make(x == y))));
+
+  auto use_buffer = [](var x) { return call_stmt::make(nullptr, span<var>{}, span<var>{&x, 1}, {}, {}); };
+
+  ASSERT_THAT(
+      substitute(
+          allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, block::make({use_buffer(x), use_buffer(y)})), y, x),
+      matches(let_stmt::make(y, x,
+          allocate::make(x, memory_type::heap, 1, span<dim_expr>{}, block::make({use_buffer(x), use_buffer(y)})))));
 }
 
 TEST(match, basic) {
