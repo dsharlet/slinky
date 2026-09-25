@@ -1336,6 +1336,24 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(true && x), true);
 }
 
+TEST(evaluate_constant_bounds, product_of_bounded_operands) {
+  // Neither operand has a known sign, but both have constant bounds.
+  const expr extent = min(max(x, 0), 4095) + 1;
+  const expr step = min(max(y, 0), 255) + 1;
+  ASSERT_EQ(evaluate_constant_lower_bound(extent * step), 1);
+  ASSERT_EQ(evaluate_constant_upper_bound(extent * step), 4096 * 256);
+
+  // Mixed signs: the bounds come from different pairs of endpoints.
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3) * clamp(y, -5, 4)), -15);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -2, 3) * clamp(y, -5, 4)), 12);
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3) * clamp(y, 1, 4)), -8);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -2, 3) * clamp(y, 1, 4)), 12);
+
+  // An unbounded operand leaves the product unbounded.
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3) * y), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -2, 3) * max(y, 1)), std::nullopt);
+}
+
 TEST(evaluate_constant, basic) {
   ASSERT_EQ(evaluate_constant(x || false), std::nullopt);
   ASSERT_EQ(evaluate_constant(false || x), std::nullopt);
