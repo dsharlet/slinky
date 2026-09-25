@@ -2558,6 +2558,23 @@ public:
       set_binary_result(op, std::move(a), mutate(op->b, sign * sign_a));
     } else if (sign_b != 0) {
       set_binary_result(op, mutate(op->a, sign * sign_b), std::move(b));
+    } else if (std::is_same<T, mul>::value) {
+      // Neither operand has a known sign, but both might have constant bounds: the product of intervals is bounded by
+      // the products of their endpoints.
+      std::optional<index_t> a_min = as_constant(mutate(op->a, -1));
+      std::optional<index_t> a_max = as_constant(mutate(op->a, 1));
+      std::optional<index_t> b_min = as_constant(mutate(op->b, -1));
+      std::optional<index_t> b_max = as_constant(mutate(op->b, 1));
+      if (a_min && a_max && b_min && b_max) {
+        const index_t corners[] = {
+            mul_sat(*a_min, *b_min), mul_sat(*a_min, *b_max), mul_sat(*a_max, *b_min), mul_sat(*a_max, *b_max)};
+        set_result(expr(sign < 0 ? *std::min_element(std::begin(corners), std::end(corners))
+                                 : *std::max_element(std::begin(corners), std::end(corners))));
+      } else if (!(a.defined() && b.defined())) {
+        set_result(expr());
+      } else {
+        set_result(op);
+      }
     } else if (!(a.defined() && b.defined())) {
       set_result(expr());
     } else {
