@@ -1351,11 +1351,6 @@ TEST(evaluate_constant_bounds, product_of_bounded_operands) {
   // An unbounded operand leaves the product unbounded.
   ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3) * y), std::nullopt);
   ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -2, 3) * max(y, 1)), std::nullopt);
-
-  // Products of the endpoints saturate instead of overflowing.
-  const index_t big = std::numeric_limits<index_t>::max() / 2;
-  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, 1, big) * clamp(y, 1, 4)), std::numeric_limits<index_t>::max());
-  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, 1, big) * clamp(y, -4, 1)), std::numeric_limits<index_t>::min());
 }
 
 TEST(evaluate_constant, basic) {

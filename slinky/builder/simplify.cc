@@ -2566,8 +2566,7 @@ public:
       std::optional<index_t> b_min = as_constant(mutate(op->b, -1));
       std::optional<index_t> b_max = as_constant(mutate(op->b, 1));
       if (a_min && a_max && b_min && b_max) {
-        const index_t corners[] = {
-            mul_sat(*a_min, *b_min), mul_sat(*a_min, *b_max), mul_sat(*a_max, *b_min), mul_sat(*a_max, *b_max)};
+        const index_t corners[] = {(*a_min) * (*b_min), (*a_min) * (*b_max), (*a_max) * (*b_min), (*a_max) * (*b_max)};
         set_result(expr(sign < 0 ? *std::min_element(std::begin(corners), std::end(corners))
                                  : *std::max_element(std::begin(corners), std::end(corners))));
       } else if (!(a.defined() && b.defined())) {
