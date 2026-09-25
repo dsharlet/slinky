@@ -125,6 +125,7 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify((y + x / -2) / 3), matches((y + x / -2) / 3));
 
   ASSERT_THAT(simplify(((x + 1) - (y - 1)) + 1), matches(x - y + 3));
+  ASSERT_THAT(simplify(2 * y - 2 * z), matches(2 * (y - z)));
 
   ASSERT_THAT(simplify(select(x, y, y)), matches(y));
   ASSERT_THAT(simplify(select(x == x, y, z)), matches(y));
