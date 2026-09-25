@@ -317,6 +317,7 @@ bool apply_sub_rules(Fn&& apply) {
       apply(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x*may_be<1>(c0) - x*may_be<1>(c1), x*eval(c0 - c1)) ||
+      apply(x*y - x*z, x*(y - z)) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
       apply(x - y/c0, x + y/eval(-c0), c0 <= 0) ||
       apply(x - (c0 - y), (x + y) + eval(-c0)) ||
