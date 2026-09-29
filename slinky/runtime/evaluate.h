@@ -127,7 +127,7 @@ public:
   }
 
   // Not used or modified by slinky.
-  void* user_data;
+  void* user_data = nullptr;
 };
 
 index_t evaluate(const expr& e, eval_context& context);
