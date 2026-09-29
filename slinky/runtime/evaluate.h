@@ -1,12 +1,16 @@
 #ifndef SLINKY_RUNTIME_EVALUATE_H
 #define SLINKY_RUNTIME_EVALUATE_H
 
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdlib>
-#include <optional>
+#include <functional>
+#include <vector>
 
 #include "slinky/base/allocator.h"
 #include "slinky/base/util.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/memory_pool.h"
 #include "slinky/runtime/stmt.h"
@@ -16,29 +20,8 @@ namespace slinky {
 class thread_pool;
 
 struct eval_config {
-  // These two functions implement allocation of buffer memory. `allocate` returns a pointer to at least `size` bytes
-  // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`, passing the size it was
-  // allocated with. Freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no
-  // retained block fits, and `free` when a block is released from the pool.
-  std::function<void*(std::size_t, std::size_t)> allocate = slinky::allocate_bytes;
-  std::function<void(void*, std::size_t)> free = slinky::deallocate_bytes;
-
-  // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
-  // and every free calls `free`.
-  bool use_memory_pool = true;
-
-  // Functions called when there is a failure in the pipeline.
-  // If these functions are not defined, the default handler will write a
-  // message to cerr and abort.
-  std::function<void(const expr&)> check_failed;
-  std::function<void(const call_stmt*)> call_failed;
-
   // A pointer to a thread pool, required for parallel
   slinky::thread_pool* thread_pool = nullptr;
-
-  // Functions implementing the `trace_begin` and `trace_end` intrinsics.
-  std::function<index_t(const char*)> trace_begin;
-  std::function<void(index_t)> trace_end;
 
   // Alignment of the base pointer of allocations.
   std::size_t base_alignment = alignof(std::max_align_t);
@@ -48,8 +31,33 @@ struct eval_config {
 
   // Allocations with storage `memory_type::automatic` not bigger than this size (bytes) will be placed on the stack.
   std::size_t auto_stack_threshold = 4 * 1024;
+
+  // Whether to retain freed blocks in the context's `pool` for reuse. If false, every allocation calls `allocate`
+  // and every free calls `free`.
+  bool use_memory_pool = true;
+
+  // These two functions implement allocation of buffer memory. `allocate` returns a pointer to at least `size` bytes
+  // aligned to `alignment` (a power of 2); `free` releases a pointer returned by `allocate`, passing the size it was
+  // allocated with. Freed blocks are retained in the context's `pool` for reuse: `allocate` is only called when no
+  // retained block fits, and `free` when a block is released from the pool.
+  std::function<void*(std::size_t, std::size_t)> allocate = slinky::allocate_bytes;
+  std::function<void(void*, std::size_t)> free = slinky::deallocate_bytes;
+
+  // Functions called when there is a failure in the pipeline.
+  // If these functions are not defined, the default handler will write a
+  // message to cerr and abort.
+  std::function<void(const expr&)> check_failed;
+  std::function<void(const call_stmt*)> call_failed;
+
+  // Functions implementing the `trace_begin` and `trace_end` intrinsics.
+  std::function<index_t(const char*)> trace_begin;
+  std::function<void(index_t)> trace_end;
+
+  // Function called when a context is created for a new thread.
+  std::function<void(eval_context&, const eval_context&)> init_context;
 };
 
+// `eval_context` objects are only used by one thread at a time.
 class eval_context {
   // Leave uninitialized to avoid overhead and to detect uninitialized memory access via msan.
   std::vector<index_t, uninitialized_allocator<index_t>> values_;
@@ -117,6 +125,9 @@ public:
       config->free(b.ptr, b.size);
     }
   }
+
+  // Not used or modified by slinky.
+  void* user_data;
 };
 
 index_t evaluate(const expr& e, eval_context& context);

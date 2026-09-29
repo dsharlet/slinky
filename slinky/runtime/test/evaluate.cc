@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <set>
 
 #include "slinky/base/span.h"
 #include "slinky/base/thread_pool_impl.h"
@@ -430,6 +434,97 @@ TEST(evaluate, async) {
       }));
 
   evaluate(test, ctx);
+}
+
+// A unique identifier for the calling thread.
+void* this_thread_id() {
+  thread_local int id;
+  return &id;
+}
+
+TEST(evaluate, init_context) {
+  // The loop below has fewer tasks than the thread pool has threads, so all of them can run at the same time.
+  const index_t n = 3;
+  thread_pool_impl t(n + 1);
+  eval_config cfg;
+  cfg.thread_pool = &t;
+
+  // Tag each new context with the thread it was made on, and remember the context it came from.
+  std::mutex m;
+  index_t contexts = 0;
+  std::set<void*> parents;
+  cfg.init_context = [&](eval_context& ctx, const eval_context& parent) {
+    ctx.user_data = this_thread_id();
+    std::unique_lock l(m);
+    ++contexts;
+    parents.insert(parent.user_data);
+  };
+
+  eval_context ctx = make_context();
+  ctx.config = &cfg;
+  ctx.user_data = this_thread_id();
+
+  // No iteration returns until all of them have started, so the loop really does run on `n` different threads,
+  // instead of one thread running every iteration before the others wake up.
+  std::set<void*> threads;
+  index_t started = 0;
+  std::condition_variable all_started;
+  stmt c = call_stmt::make(
+      [&](const call_stmt*, eval_context& ctx) -> index_t {
+        std::unique_lock l(m);
+        // This iteration is running on the thread its context was made on.
+        EXPECT_EQ(ctx.user_data, this_thread_id());
+        threads.insert(ctx.user_data);
+        if (++started == n) {
+          all_started.notify_all();
+        } else {
+          // If this times out, the iterations did not run in parallel, and the assertions below fail.
+          all_started.wait_for(l, std::chrono::seconds(1), [&]() { return started == n; });
+        }
+        return 0;
+      },
+      span<var>{}, span<var>{}, {}, {});
+
+  ASSERT_EQ(evaluate(loop::make(x, loop::parallel, range(0, n), 1, c), ctx), 0);
+  ASSERT_EQ(started, n);
+
+  // Each task ran on a thread of its own, in a context `init_context` made for that thread...
+  ASSERT_EQ(threads.size(), static_cast<std::size_t>(n));
+  // ...once per context, not once per iteration...
+  ASSERT_EQ(contexts, n);
+  // ...from the context we passed to `evaluate`, which slinky did not touch.
+  ASSERT_EQ(parents, std::set<void*>({this_thread_id()}));
+  ASSERT_EQ(ctx.user_data, this_thread_id());
+}
+
+TEST(evaluate, init_context_async) {
+  thread_pool_impl t;
+  eval_config cfg;
+  cfg.thread_pool = &t;
+
+  // `init_context` runs on the thread the new context will be used on, which is not the thread its parent came from.
+  void* main_thread = this_thread_id();
+  std::atomic<index_t> contexts = 0;
+  cfg.init_context = [&](eval_context& ctx, const eval_context& parent) {
+    EXPECT_EQ(parent.user_data, main_thread);
+    ctx.user_data = this_thread_id();
+    ++contexts;
+  };
+
+  eval_context ctx = make_context();
+  ctx.config = &cfg;
+  ctx.user_data = main_thread;
+
+  stmt c = call_stmt::make(
+      [&](const call_stmt*, eval_context& ctx) -> index_t {
+        EXPECT_EQ(ctx.user_data, this_thread_id());
+        return 0;
+      },
+      span<var>{}, span<var>{}, {}, {});
+
+  // `async` runs its task and its body in new contexts.
+  ASSERT_EQ(evaluate(async::make(x, c, c), ctx), 0);
+  ASSERT_EQ(contexts, 2);
 }
 
 }  // namespace slinky
