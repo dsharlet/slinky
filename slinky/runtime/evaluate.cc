@@ -534,6 +534,10 @@ SLINKY_NO_INLINE void init_context(
     // We don't have a closure, just copy the whole context.
     context = parent_context;
   }
+
+  if (context.config->init_context) {
+    context.config->init_context(context, parent_context);
+  }
 }
 
 SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers, eval_context& ctx) {
