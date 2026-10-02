@@ -163,29 +163,17 @@ bool mul_overflows(T a, T b) {
  * true. Otherwise set result to the correct value, and returns false. */
 template <class T>
 bool add_with_overflow(T a, T b, T& result) {
-  bool overflows = __builtin_add_overflow(a, b, &result);
-  if (overflows) {
-    result = 0;
-  }
-  return overflows;
+  return __builtin_add_overflow(a, b, &result);
 }
 
 template <class T>
 bool sub_with_overflow(T a, T b, T& result) {
-  bool overflows = __builtin_sub_overflow(a, b, &result);
-  if (overflows) {
-    result = 0;
-  }
-  return overflows;
+  return __builtin_sub_overflow(a, b, &result);
 }
 
 template <class T>
 bool mul_with_overflow(T a, T b, T& result) {
-  bool overflows = __builtin_mul_overflow(a, b, &result);
-  if (overflows) {
-    result = 0;
-  }
-  return overflows;
+  return __builtin_mul_overflow(a, b, &result);
 }
 
 template <typename T>
