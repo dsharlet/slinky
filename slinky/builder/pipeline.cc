@@ -873,7 +873,7 @@ class pipeline_builder {
           allocation_info_[b->sym()].emplace(b);
         }
 
-        if (!f->impl() && f->is_padded_copy()) {
+        if (!f->impl() && (f->is_padded_copy() || f->inputs().size() > 1)) {
           // Collect all buffers which are outputs of the copy
           // and the inputs of the copy as their dependencies.
           copy_inputs_.insert(b->sym());
@@ -894,7 +894,7 @@ class pipeline_builder {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
 
-        if ((!f->impl() && !f->is_padded_copy()) || (input->constant())) {
+        if ((!f->impl() && !f->is_padded_copy() && f->inputs().size() <= 1) || (input->constant())) {
           // Collect all buffers which are inputs to the copy
           // and the outputs of the copy as their dependencies.
           copy_inputs_.insert(input->sym());
