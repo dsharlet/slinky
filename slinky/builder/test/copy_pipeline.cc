@@ -575,6 +575,71 @@ TEST_P(concatenated_output, pipeline) {
   }
 }
 
+TEST_P(concatenated_output, internal) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  int concat_dim = std::get<1>(GetParam());
+  bool with_loops = std::get<2>(GetParam());
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+  auto intm_concat = buffer_expr::make(ctx, "intm_concat", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  test_context eval_ctx;
+
+  func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
+  func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
+  func concatenated = func::make_concat({intm1, intm2}, {intm_concat, {x, y}}, concat_dim,
+      {0, in1->dim(concat_dim).extent(), out->dim(concat_dim).extent()}, eval_ctx.copy);
+  func add3 = func::make(add_1<short>, {{{intm_concat, {point(x), point(y)}}}}, {{{out, {x, y}}}});
+
+  if (with_loops) {
+    var loop_var = concat_dim == 0 ? y : x;
+    concatenated.loops({{loop_var, 1}});
+    add1.compute_at({&concatenated, loop_var});
+    add2.compute_at({&concatenated, loop_var});
+    intm1->store_at({&concatenated, loop_var});
+    intm2->store_at({&concatenated, loop_var});
+  }
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  const int N = 20;
+  const int C1 = 4;
+  const int C2 = 7;
+  auto make_dims = [&](index_t c) { return concat_dim == 0 ? std::vector<index_t>{c, N} : std::vector<index_t>{N, c}; };
+  buffer<short, 2> in1_buf(make_dims(C1));
+  buffer<short, 2> in2_buf(make_dims(C2));
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 2> out_buf(make_dims(C1 + C2));
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  auto at = [&](const buffer<short, 2>& buf, int c, int n) { return concat_dim == 0 ? buf(c, n) : buf(n, c); };
+  for (int c = 0; c < C1 + C2; ++c) {
+    for (int n = 0; n < N; ++n) {
+      ASSERT_EQ(at(out_buf, c, n), (c < C1 ? at(in1_buf, c, n) : at(in2_buf, c - C1, n)) + 2)
+          << "c=" << c << " n=" << n;
+    }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
+  }
+}
+
 class transposed_output : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
 
 auto iota3 = testing::Values(0, 1, 2);
