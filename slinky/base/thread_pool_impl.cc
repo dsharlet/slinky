@@ -1,6 +1,7 @@
 #include "slinky/base/thread_pool_impl.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <condition_variable>
 #include <functional>
@@ -133,6 +134,14 @@ bool work_on_task(thread_pool_impl::task_impl* t, Args... args) {
   return completed;
 }
 
+void yield() {
+#if defined(__aarch64__)
+  asm volatile("yield" ::: "memory");
+#else
+  std::this_thread::yield();
+#endif
+}
+
 }  // namespace
 
 ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
@@ -166,7 +175,7 @@ ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
 void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable& cv) {
   // We want to spin a few times before letting the OS take over.
   const int spin_count = 1000;
-  int spins = 0;
+  int spins = spin_count;
 
   std::unique_lock l(mutex_);
   while (!condition()) {
@@ -188,10 +197,11 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
       }
     } else if (spins-- > 0) {
       l.unlock();
-      std::this_thread::yield();
+      yield();
       l.lock();
     } else {
       cv.wait(l);
+      spins = spin_count;
     }
   }
 }
@@ -253,7 +263,7 @@ void thread_pool_impl::wait_for(task* t) {
     // need to lock the mutex.
     const int spin_count = 1000;
     for (int i = 0; i < spin_count; ++i) {
-      std::this_thread::yield();
+      yield();
       if (task->done()) return;
     }
 
