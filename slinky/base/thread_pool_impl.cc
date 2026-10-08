@@ -9,6 +9,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+#endif
+
 namespace slinky {
 
 thread_pool_impl::task_impl::task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers)
@@ -135,8 +139,10 @@ bool work_on_task(thread_pool_impl::task_impl* t, Args... args) {
 }
 
 void yield() {
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__arm__)
   asm volatile("yield" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+  _mm_pause();
 #else
   std::this_thread::yield();
 #endif
