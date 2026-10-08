@@ -1246,7 +1246,7 @@ TEST(constant, pipeline) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), *reinterpret_cast<short*>(constant->constant()->address_at(x, y)) + 1);
+      ASSERT_EQ(out_buf(x, y), constant->constant()->at<short>(x, y) + 1);
     }
   }
 }
