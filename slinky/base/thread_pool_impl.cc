@@ -1,6 +1,7 @@
 #include "slinky/base/thread_pool_impl.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <condition_variable>
 #include <functional>
@@ -99,7 +100,7 @@ thread_pool_impl::thread_pool_impl(int workers, function_ref<void()> init) : sto
   expect_workers(workers);
   auto worker = [this, init]() {
     if (init) init();
-    run_worker([this]() -> bool { return stop_; });
+    run_worker([this]() -> bool { return stop_.load(std::memory_order_relaxed); }, /*lock_free_condition=*/true);
   };
   for (int i = 0; i < workers; ++i) {
     threads_.push_back(std::thread(worker));
@@ -114,9 +115,9 @@ thread_pool_impl::~thread_pool_impl() {
   }
 }
 
-void thread_pool_impl::run_worker(predicate_ref condition) {
+void thread_pool_impl::run_worker(predicate_ref condition, bool lock_free_condition) {
   ++worker_count_;
-  wait_for(condition, cv_worker_);
+  wait_for(condition, cv_worker_, lock_free_condition);
   --worker_count_;
 }
 
@@ -136,6 +137,7 @@ bool work_on_task(thread_pool_impl::task_impl* t, Args... args) {
 }  // namespace
 
 ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
+  ref_count<task_impl> result = nullptr;
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
     ref_count<task_impl>& loop = *i;
     if (loop->all_work_started()) {
@@ -150,23 +152,28 @@ ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
       if (worker < 0) {
         // No more threads can start working on this loop.
         i = task_queue_.erase(i);
-      } else if (worker == 0) {
-        // This is the last worker for this loop.
-        auto result = std::move(loop);
-        i = task_queue_.erase(i);
-        return result;
       } else {
-        return loop;
+        if (worker == 0) {
+          // This is the last worker for this loop.
+          result = std::move(loop);
+          task_queue_.erase(i);
+        } else {
+          result = loop;
+        }
+        break;
       }
     }
   }
-  return nullptr;
+  if (task_queue_.empty()) {
+    has_queued_work_.store(false, std::memory_order_relaxed);
+  }
+  return result;
 }
 
-void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable& cv) {
+void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable& cv, bool lock_free_condition) {
   // We want to spin a few times before letting the OS take over.
-  const int spin_count = 1000;
-  int spins = 0;
+  const int spin_count = lock_free_condition ? 1000 : 0;
+  int spins = spin_count;
 
   std::unique_lock l(mutex_);
   while (!condition()) {
@@ -186,12 +193,15 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
         // We completed the loop, notify the helper CV in case it is waiting for this loop to complete.
         cv_helper_.notify_all();
       }
-    } else if (spins-- > 0) {
+    } else if (spins > 0 && task_queue_.empty()) {
       l.unlock();
-      std::this_thread::yield();
+      while (spins-- > 0 && !has_queued_work_.load(std::memory_order_acquire) && !condition()) {
+        std::this_thread::yield();
+      }
       l.lock();
     } else {
       cv.wait(l);
+      spins = spin_count;
     }
   }
 }
@@ -235,6 +245,7 @@ ref_count<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body 
   auto loop = task_impl::make(shard_count, n, std::move(t), max_workers);
   std::unique_lock l(mutex_);
   task_queue_.push_back(loop);
+  has_queued_work_.store(true, std::memory_order_release);
   if (max_workers == 1) {
     cv_worker_.notify_one();
     cv_helper_.notify_one();
@@ -258,7 +269,7 @@ void thread_pool_impl::wait_for(task* t) {
     }
 
     // The loop isn't done, work on other tasks while waiting for it to complete.
-    wait_for([&]() { return task->done(); });
+    wait_for([&]() { return task->done(); }, cv_helper_, /*lock_free_condition=*/true);
   }
 }
 

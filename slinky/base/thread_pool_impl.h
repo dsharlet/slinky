@@ -85,7 +85,8 @@ private:
   std::atomic<bool> stop_;
 
   std::deque<ref_count<task_impl>> task_queue_;
-  std::mutex mutex_;
+  alignas(cache_line_size) std::mutex mutex_;
+  alignas(cache_line_size) std::atomic<bool> has_queued_work_{false};
   // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
   // - cv_helper_ is waited on by threads that are helping the worker threads while waiting for a condition.
   // - cv_worker_ is waited on by worker threads.
@@ -94,7 +95,7 @@ private:
   std::condition_variable cv_helper_;
   std::condition_variable cv_worker_;
 
-  void wait_for(predicate_ref condition, std::condition_variable& cv);
+  void wait_for(predicate_ref condition, std::condition_variable& cv, bool lock_free_condition = false);
 
   ref_count<task_impl> dequeue(int& worker);
 
@@ -107,7 +108,7 @@ public:
   ~thread_pool_impl() override;
 
   // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
-  void run_worker(predicate_ref condition);
+  void run_worker(predicate_ref condition, bool lock_free_condition = false);
 
   // Enters the calling thread into the thread pool as a worker. Returns when there is no work to do.
   void work_until_idle();
