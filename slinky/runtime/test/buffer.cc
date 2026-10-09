@@ -129,7 +129,7 @@ TEST(raw_buffer, make_copy) {
 
   for (int i = 0; i < dst->dim(1).extent(); ++i) {
     for (int j = 0; j < dst->dim(0).extent(); ++j) {
-      ASSERT_EQ(src(j, i), *reinterpret_cast<int*>(dst->address_at(j, i)));
+      ASSERT_EQ(src(j, i), dst->at<int>(j, i));
     }
   }
 }
