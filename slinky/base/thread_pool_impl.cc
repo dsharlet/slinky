@@ -9,6 +9,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)
+#include <immintrin.h>
+#endif
+
 namespace slinky {
 
 thread_pool_impl::task_impl::task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers)
@@ -134,6 +138,14 @@ bool work_on_task(thread_pool_impl::task_impl* t, Args... args) {
   return completed;
 }
 
+#if defined(__aarch64__) || defined(__arm__)
+void yield() { asm volatile("yield" ::: "memory"); }
+#elif defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)
+void yield() { _mm_pause(); }
+#else
+void yield() { std::this_thread::yield(); }
+#endif
+
 }  // namespace
 
 ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
@@ -172,7 +184,11 @@ ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
 
 void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable& cv, bool lock_free_condition) {
   // We want to spin a few times before letting the OS take over.
-  const int spin_count = lock_free_condition ? 1000 : 0;
+#if defined(__ANDROID__)
+  const int spin_count = lock_free_condition ? 10000000 : 0;
+#else
+  const int spin_count = lock_free_condition ? 700 : 0;
+#endif
   int spins = spin_count;
 
   std::unique_lock l(mutex_);
@@ -196,7 +212,7 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
     } else if (spins > 0 && task_queue_.empty()) {
       l.unlock();
       while (spins-- > 0 && !has_queued_work_.load(std::memory_order_acquire) && !condition()) {
-        std::this_thread::yield();
+        yield();
       }
       l.lock();
     } else {
@@ -264,7 +280,7 @@ void thread_pool_impl::wait_for(task* t) {
     // need to lock the mutex.
     const int spin_count = 1000;
     for (int i = 0; i < spin_count; ++i) {
-      std::this_thread::yield();
+      yield();
       if (task->done()) return;
     }
 
