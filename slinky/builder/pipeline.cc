@@ -874,8 +874,9 @@ class pipeline_builder {
         }
 
         if (!f->impl() && (f->is_padded_copy() || f->inputs().size() > 1)) {
-          // Collect all buffers which are outputs of the copy
-          // and the inputs of the copy as their dependencies.
+          // For padded or multi-input copies (e.g. concatenate), the inputs
+          // are aliased into slices of the output, so the output must be
+          // allocated outside the inputs.
           copy_inputs_.insert(b->sym());
           for (const auto& i : f->inputs()) {
             const auto& input = i.buffer;
@@ -895,8 +896,8 @@ class pipeline_builder {
         const auto& input = i.buffer;
 
         if ((!f->impl() && !f->is_padded_copy() && f->inputs().size() <= 1) || (input->constant())) {
-          // Collect all buffers which are inputs to the copy
-          // and the outputs of the copy as their dependencies.
+          // For 1-input unpadded copies, the output is aliased into the input,
+          // so the input must be allocated outside the output.
           copy_inputs_.insert(input->sym());
           for (const func::output& o : f->outputs()) {
             const buffer_expr_ptr& b = o.buffer;

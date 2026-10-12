@@ -494,13 +494,13 @@ TEST_P(copied_input, pipeline) {
   ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
-class concatenated_output : public testing::TestWithParam<std::tuple<bool, int, bool>> {};
+class concatenate : public testing::TestWithParam<std::tuple<bool, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output,
+INSTANTIATE_TEST_SUITE_P(schedule, concatenate,
     testing::Combine(testing::Bool(), testing::Values(0, 1), testing::Bool()),
-    test_params_to_string<concatenated_output::ParamType>);
+    test_params_to_string<concatenate::ParamType>);
 
-TEST_P(concatenated_output, pipeline) {
+TEST_P(concatenate, output) {
   bool no_alias_buffers = std::get<0>(GetParam());
   int concat_dim = std::get<1>(GetParam());
   bool with_loops = std::get<2>(GetParam());
@@ -575,7 +575,7 @@ TEST_P(concatenated_output, pipeline) {
   }
 }
 
-TEST_P(concatenated_output, internal) {
+TEST_P(concatenate, internal) {
   bool no_alias_buffers = std::get<0>(GetParam());
   int concat_dim = std::get<1>(GetParam());
   bool with_loops = std::get<2>(GetParam());
