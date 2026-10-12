@@ -267,6 +267,19 @@ public:
   std::ptrdiff_t flat_offset_bytes() const { return 0; }
   void* address_at() const { return base; }
 
+  template <typename T, typename... Indices>
+  T& at(index_t i0, Indices... indices) const {
+    return *reinterpret_cast<T*>(offset_bytes_non_null(base, flat_offset_bytes(i0, indices...)));
+  }
+  template <typename T, typename... Indices>
+  T& at(decltype(slinky::slice) i0, Indices... indices) const {
+    return *reinterpret_cast<T*>(offset_bytes_non_null(base, flat_offset_bytes(i0, indices...)));
+  }
+  template <typename T>
+  T& at() const {
+    return *reinterpret_cast<T*>(base);
+  }
+
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
     return contains_impl(dims, rank, i0, indices...);
@@ -291,6 +304,11 @@ public:
       result = result && dims[i].contains(indices[i]);
     }
     return result;
+  }
+
+  template <typename T>
+  T& at(span<index_t> indices) const {
+    return *reinterpret_cast<T*>(offset_bytes_non_null(base, flat_offset_bytes(indices)));
   }
 
   template <typename... Offsets>
@@ -664,11 +682,11 @@ public:
   // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>
   auto& at(index_t i0, Indices... indices) const {
-    return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
+    return raw_buffer::at<T>(i0, indices...);
   }
   template <typename... Indices>
   auto& at(decltype(slinky::slice) i0, Indices... indices) const {
-    return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
+    return raw_buffer::at<T>(i0, indices...);
   }
   template <typename... Indices>
   auto& operator()(index_t i0, Indices... indices) const {
@@ -679,10 +697,10 @@ public:
     return at(i0, indices...);
   }
 
-  auto& at() const { return *base(); }
-  auto& operator()() const { return *base(); }
+  auto& at() const { return raw_buffer::at<T>(); }
+  auto& operator()() const { return at(); }
 
-  auto& at(span<index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
+  auto& at(span<index_t> indices) const { return raw_buffer::at<T>(indices); }
   auto& operator()(span<index_t> indices) const { return at(indices); }
 
   // This differs from `raw_buffer::dim(std::size_t)` because it will expand the rank with broadcast dimensions if
