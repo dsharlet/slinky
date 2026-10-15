@@ -196,27 +196,15 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
   return result;
 }
 
-// Replace copies between buffers a and b with calls to pad.
+// Remove the copy statement that was aliased.
 class copy_remover : public stmt_mutator {
-  // Track all names of a and b as we go.
-  std::vector<var> as;
-  std::vector<var> bs;
-
-  bool is_a_and_b(var x, var y) const {
-    return (std::find(as.begin(), as.end(), x) != as.end() && std::find(bs.begin(), bs.end(), y) != bs.end()) ||
-           (std::find(as.begin(), as.end(), y) != as.end() && std::find(bs.begin(), bs.end(), x) != bs.end());
-  }
+  const base_stmt_node* copy;
 
 public:
-  copy_remover(var a, var b) : as({a}), bs({b}) {}
+  explicit copy_remover(const base_stmt_node* copy) : copy(copy) {}
 
   void visit(const copy_stmt* op) override {
-    if (!is_a_and_b(op->src, op->dst)) {
-      // Not this copy.
-      set_result(op);
-      return;
-    }
-    if (!op->pad.defined()) {
+    if (op == copy && !op->pad.defined()) {
       // No padding, this copy is now a no-op.
       set_result(stmt());
       return;
@@ -225,8 +213,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    if (op->attrs->name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
-        is_a_and_b(op->inputs[0], op->outputs[0])) {
+    if (op == copy && op->attrs->name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1) {
       expr input_size = buffer_size_bytes(op->inputs[0]);
       expr output_size = buffer_size_bytes(op->outputs[0]);
       set_result(check::make(input_size == output_size));
@@ -234,29 +221,11 @@ public:
       set_result(op);
     }
   }
-
-  template <typename T>
-  void visit_buffer_mutator(const T* op) {
-    bool a_contains = std::find(as.begin(), as.end(), op->src) != as.end();
-    bool b_contains = std::find(bs.begin(), bs.end(), op->src) != bs.end();
-    if (a_contains) as.push_back(op->sym);
-    if (b_contains) bs.push_back(op->sym);
-    stmt_mutator::visit(op);
-    if (a_contains) as.pop_back();
-    if (b_contains) bs.pop_back();
-  }
-
-  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const clone_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
-stmt remove_copy(const stmt& s, var a, var b) {
+stmt remove_copy(const stmt& s, const base_stmt_node* copy) {
   scoped_trace trace("remove_copy");
-  return copy_remover(a, b).mutate(s);
+  return copy_remover(copy).mutate(s);
 }
 
 bool dim_has_stride(const dim_expr& d) {
@@ -273,6 +242,7 @@ class copy_aliaser : public stmt_mutator {
 
   struct alias_info {
     var target;
+    const base_stmt_node* copy = nullptr;
 
     // Parameters for this alias's make_buffer call.
     std::vector<dim_expr> dims;
@@ -620,7 +590,7 @@ public:
         }
 
         // If we aliased the source and destination of a copy with no padding, the copy can be removed.
-        result = remove_copy(result, op->sym, target_var);
+        result = remove_copy(result, alias.copy);
 
         set_result(std::move(result));
         return;
@@ -691,6 +661,7 @@ public:
       if (input_info && output_info) {
         alias_info fwd;
         fwd.target = out;
+        fwd.copy = op;
         fwd.dims = make_contiguous_dims(in, input_info->dims.size());
         fwd.at = buffer_mins(out, output_info->dims.size());
         fwd.is_contiguous_copy = true;
@@ -699,6 +670,7 @@ public:
 
         alias_info back;
         back.target = in;
+        back.copy = op;
         back.dims = make_contiguous_dims(out, output_info->dims.size());
         back.at = buffer_mins(in, input_info->dims.size());
         back.is_contiguous_copy = true;
@@ -722,6 +694,7 @@ public:
 
     alias_info a;
     a.target = op->src;
+    a.copy = op;
     a.at = to_vector(op->src_x);
     a.permutation.assign(info->dims.size(), transpose::new_dim);
     a.dims.resize(info->dims.size());
@@ -774,6 +747,7 @@ public:
 
     alias_info a;
     a.target = op->dst;
+    a.copy = op;
     a.at.resize(op->dst_x.size());
     a.dims.resize(info->dims.size());
     a.permutation.assign(info->dims.size(), transpose::new_dim);

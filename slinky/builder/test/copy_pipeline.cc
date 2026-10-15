@@ -640,6 +640,62 @@ TEST_P(concatenate, internal) {
   }
 }
 
+TEST_P(concatenate, duplicate_input) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  int concat_dim = std::get<1>(GetParam());
+  bool with_loops = std::get<2>(GetParam());
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+  auto intm_concat = buffer_expr::make(ctx, "intm_concat", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  test_context eval_ctx;
+
+  func add1 = func::make(add_1<short>, {{{in, {point(x), point(y)}}}}, {{{intm, {x, y}}}});
+  func concatenated = func::make_concat({intm, intm}, {intm_concat, {x, y}}, concat_dim,
+      {0, in->dim(concat_dim).extent(), out->dim(concat_dim).extent()}, eval_ctx.copy);
+  func add2 = func::make(add_1<short>, {{{intm_concat, {point(x), point(y)}}}}, {{{out, {x, y}}}});
+
+  if (with_loops) {
+    var loop_var = concat_dim == 0 ? y : x;
+    concatenated.loops({{loop_var, 1}});
+    add1.compute_at({&concatenated, loop_var});
+    intm->store_at({&concatenated, loop_var});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  const int N = 20;
+  const int C = 4;
+  auto make_dims = [&](index_t c) { return concat_dim == 0 ? std::vector<index_t>{c, N} : std::vector<index_t>{N, c}; };
+  buffer<short, 2> in_buf(make_dims(C));
+  init_random(in_buf);
+
+  buffer<short, 2> out_buf(make_dims(2 * C));
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  auto at = [&](const buffer<short, 2>& buf, int c, int n) { return concat_dim == 0 ? buf(c, n) : buf(n, c); };
+  for (int c = 0; c < 2 * C; ++c) {
+    for (int n = 0; n < N; ++n) {
+      ASSERT_EQ(at(out_buf, c, n), at(in_buf, c % C, n) + 2) << "c=" << c << " n=" << n;
+    }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+    ASSERT_EQ(eval_ctx.copy_calls, with_loops ? N : 1);
+  }
+}
+
 class transposed_output : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
 
 auto iota3 = testing::Values(0, 1, 2);
