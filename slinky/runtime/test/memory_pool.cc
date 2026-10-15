@@ -71,7 +71,8 @@ TEST(memory_pool, alignment_is_respected) {
   pool.free(a, 4096);
 
   // The block can only serve requests its address is aligned for.
-  const std::size_t alignment = (reinterpret_cast<uintptr_t>(a) & 4095) == 0 ? 8192 : 4096;
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(a);
+  const std::size_t alignment = (addr & (~addr + 1)) * 2;
   ASSERT_EQ(pool.allocate(4096, alignment).ptr, nullptr);
   ASSERT_EQ(pool.allocate(4096, 64).ptr, a);
   deallocate_bytes(a);
