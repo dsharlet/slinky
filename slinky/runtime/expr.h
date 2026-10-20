@@ -431,11 +431,18 @@ public:
 
   void accept(expr_visitor* v) const override;
 
-  static expr_ref get(index_t value);
+  template <index_t Value>
+  SLINKY_NO_INLINE static expr_ref get() {
+    static const expr_ref result = make_static(Value);
+    return result;
+  }
   static expr make(index_t value);
   static expr make(const void* value);
 
   static constexpr expr_node_type static_type = expr_node_type::constant;
+
+private:
+  static const constant* make_static(index_t value);
 };
 
 class constant_buffer : public expr_node<constant_buffer> {
