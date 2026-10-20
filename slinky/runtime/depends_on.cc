@@ -29,6 +29,11 @@ public:
   // If non-null, we'll also add dependencies of variables as we find them.
   std::map<var, depends_on_result>* unknown_deps = nullptr;
 
+  // If non-null, we can stop visiting stmts once this has any dependency.
+  const depends_on_result* stop_if_any = nullptr;
+
+  bool done() const { return stop_if_any && stop_if_any->any(); }
+
   dependencies() {}
   dependencies(std::map<var, depends_on_result>& unknown_deps) : unknown_deps(&unknown_deps) {}
   dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
@@ -114,15 +119,22 @@ public:
         var_deps.push_back({p.first, &dummy_deps});
       }
     }
-    op->body.accept(this);
+    if (!done()) op->body.accept(this);
     var_deps.resize(var_deps_count);
   }
 
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  void visit(const block* op) override {
+    for (const auto& s : op->stmts) {
+      if (done()) return;
+      if (s.defined()) s.accept(this);
+    }
+  }
+
   void visit_sym_body(var sym, depends_on_result* src_deps, const stmt& body) {
-    if (!body.defined()) return;
+    if (!body.defined() || done()) return;
     size_t var_deps_count = var_deps.size();
     if (no_dummy(src_deps)) {
       // We have src_deps we want to transitively add to via this declaration.
@@ -142,7 +154,7 @@ public:
 
   void visit_sym_body(var sym, var src, depends_on_result* src_deps, const stmt& body) {
     if (sym == src) {
-      if (!body.defined()) return;
+      if (!body.defined() || done()) return;
       body.accept(this);
     } else {
       visit_sym_body(sym, src_deps, body);
@@ -330,6 +342,16 @@ depends_on_result depends_on(stmt_ref s, var x) {
   depends_on_result r;
   depends_on(s, x, r);
   return r;
+}
+
+bool depends_on_any(stmt_ref s, var x) {
+  depends_on_result r;
+  if (!s.defined()) return false;
+  std::pair<var, depends_on_result&> var_deps[] = {{x, r}};
+  dependencies v(var_deps);
+  v.stop_if_any = &r;
+  s.accept(&v);
+  return r.any();
 }
 
 depends_on_result depends_on(expr_ref e, span<var> xs) {

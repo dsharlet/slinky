@@ -1381,6 +1381,8 @@ public:
           // so produce make_buffer, because some other buffers might use metadata from them.
           const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
           if (!maybe_dims) continue;
+          // Don't make buffers that are unused (e.g. because they are redefined by an inner loop).
+          if (!depends_on_any(body.body, b->sym())) continue;
           body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
         } else {
           body.body = add_crop(body.body, b->sym(), *inferred_bounds_[b->sym()], dependent_dims[b->sym()]);
@@ -1437,6 +1439,8 @@ public:
         const buffer_expr_ptr& b = o.buffer;
         const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
         if (!maybe_dims) continue;
+        // Don't make buffers that are unused (e.g. because they are redefined by an inner loop).
+        if (!depends_on_any(body, b->sym())) continue;
         body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, std::move(body));
       }
     }

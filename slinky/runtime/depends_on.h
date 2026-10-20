@@ -42,6 +42,8 @@ void depends_on(stmt_ref s, var x, depends_on_result& deps);
 depends_on_result depends_on(expr_ref e, var x);
 depends_on_result depends_on(const interval_expr& e, var x);
 depends_on_result depends_on(stmt_ref s, var x);
+// Equivalent to `depends_on(s, x).any()`, but stops searching at the first dependency found.
+bool depends_on_any(stmt_ref s, var x);
 depends_on_result depends_on(expr_ref e, span<var> xs);
 depends_on_result depends_on(stmt_ref s, span<var> xs);
 
