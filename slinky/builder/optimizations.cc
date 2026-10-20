@@ -1834,7 +1834,7 @@ public:
     // If we don't know about a buffer, we assume we cannot mutate it in place. This covers input and output buffers.
     bool can_mutate_src = can_mutate[op->src] && *can_mutate[op->src];
     // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
-    if (can_mutate_src && !depends_on(body, op->src).any()) {
+    if (can_mutate_src && !depends_on_any(body, op->src)) {
       // We can re-use the src because the body doesn't use it, and it will not create a data race.
       sym = op->src;
       body = substitute(body, op->sym, sym);

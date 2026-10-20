@@ -879,7 +879,7 @@ public:
   }
 
   stmt terminate(const stmt& s) override {
-    if (depends_on(s, target).any()) {
+    if (depends_on_any(s, target)) {
       return let_stmt::make(target, replacement, s);
     } else {
       return s;
