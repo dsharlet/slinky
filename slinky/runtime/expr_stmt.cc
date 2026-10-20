@@ -165,7 +165,9 @@ int max_decl_id(span<std::pair<var, expr>> lets) {
   return result;
 }
 
+#ifndef NDEBUG
 bool is_self_assignment(const std::pair<var, expr>& let) { return is_variable(let.second, let.first); }
+#endif
 bool is_value_constant(const std::pair<var, expr>& let) {
   return let.second.as<constant>() || let.second.as<constant_buffer>();
 }
@@ -196,15 +198,6 @@ stmt let_stmt::make(var sym, expr value, stmt body) {
 
 namespace {
 
-template <std::int64_t value>
-const constant* make_static_constant() {
-  static constant result;
-  // Don't let the ref counting free this object.
-  result.add_ref();
-  result.value = value;
-  return &result;
-}
-
 const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
@@ -213,20 +206,9 @@ const variable* make_variable(var sym) {
   return n;
 }
 
-const constant* get_constant(std::int64_t value) {
-  if (value == 0) {
-    static const constant* zero = make_static_constant<0>();
-    return zero;
-  } else if (value == 1) {
-    static const constant* one = make_static_constant<1>();
-    return one;
-  } else {
-    return nullptr;
-  }
-}
-
-const constant* make_constant(std::int64_t value) {
-  if (const constant* n = get_constant(value)) return n;
+expr_ref make_constant(std::int64_t value) {
+  if (value == 0) return constant::get<0>();
+  if (value == 1) return constant::get<1>();
 
   assert(value <= std::numeric_limits<index_t>::max());
   assert(value >= std::numeric_limits<index_t>::min());
@@ -279,7 +261,14 @@ expr variable::make(var sym, buffer_field field, int dim) {
   return expr(n);
 }
 
-expr_ref constant::get(index_t value) { return get_constant(value); }
+const constant* constant::make_static(index_t value) {
+  auto n = new constant();
+  n->value = value;
+  // Don't let the ref counting free this object.
+  n->add_ref();
+  return n;
+}
+
 expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 

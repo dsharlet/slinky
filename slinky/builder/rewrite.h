@@ -257,7 +257,8 @@ SLINKY_UNIQUE bool match(const pattern_binary<T, pattern_optional<A, DefaultA>, 
   if (const T* t = x.as<T>()) {
     return match_binary<matched>(p, t->a, t->b, ctx);
   } else {
-    return match<matched>(p.a, constant::get(DefaultA), ctx) && match<matched | pattern_info<A>::matched>(p.b, x, ctx);
+    return match<matched>(p.a, constant::get<DefaultA>(), ctx) &&
+           match<matched | pattern_info<A>::matched>(p.b, x, ctx);
   }
 }
 
@@ -266,7 +267,8 @@ SLINKY_UNIQUE bool match(const pattern_binary<T, A, pattern_optional<B, DefaultB
   if (const T* t = x.as<T>()) {
     return match_binary<matched>(p, t->a, t->b, ctx);
   } else {
-    return match<matched>(p.a, x, ctx) && match<matched | pattern_info<A>::matched>(p.b, constant::get(DefaultB), ctx);
+    return match<matched>(p.a, x, ctx) &&
+           match<matched | pattern_info<A>::matched>(p.b, constant::get<DefaultB>(), ctx);
   }
 }
 
