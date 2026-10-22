@@ -17,6 +17,7 @@ TEST(contiguous_copy, pipeline) {
   auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 0, sizeof(int));
   auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
+  intm->dim(0).stride = sizeof(int);
 
   var x(ctx, "x");
   func add_one = func::make(add_1<int>, {{in, {point(x)}}}, {{intm, {x}}});

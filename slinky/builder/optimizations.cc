@@ -636,18 +636,6 @@ public:
     }
   }
 
-  // Make dimensions that assign strides that are contiguous and ascending.
-  static std::vector<dim_expr> make_contiguous_dims(var buf, std::size_t rank) {
-    std::vector<dim_expr> dims(rank);
-    expr stride = buffer_elem_size(buf);
-    for (int i = 0; i < static_cast<int>(rank); ++i) {
-      dims[i].bounds = buffer_bounds(buf, i);
-      dims[i].stride = stride;
-      stride *= dims[i].bounds.extent();
-    }
-    return dims;
-  }
-
   void visit(const call_stmt* op) override {
     set_result(op);
     if (op->attrs->name == "memcpy") {
@@ -662,7 +650,7 @@ public:
         alias_info fwd;
         fwd.target = out;
         fwd.copy = op;
-        fwd.dims = make_contiguous_dims(in, input_info->dims.size());
+        fwd.dims = input_info->dims;
         fwd.at = buffer_mins(out, output_info->dims.size());
         fwd.is_contiguous_copy = true;
         fwd.assume_in_bounds = true;
@@ -671,7 +659,7 @@ public:
         alias_info back;
         back.target = in;
         back.copy = op;
-        back.dims = make_contiguous_dims(out, output_info->dims.size());
+        back.dims = output_info->dims;
         back.at = buffer_mins(in, input_info->dims.size());
         back.is_contiguous_copy = true;
         back.assume_in_bounds = true;
