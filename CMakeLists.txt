@@ -1,10 +1,23 @@
 cmake_minimum_required(VERSION 3.23)
-project(slinky LANGUAGES CXX)
+project(slinky VERSION 0.1.0 LANGUAGES CXX)
+
+include(CMakeDependentOption)
 
 option(SLINKY_ENABLE_TESTS
     "Enable building and running tests and benchmarks"
     ${PROJECT_IS_TOP_LEVEL}
 )
+
+cmake_dependent_option(
+    SLINKY_INSTALL_RULES "Include slinky's install() rules"
+    ${PROJECT_IS_TOP_LEVEL} "NOT CMAKE_SKIP_INSTALL_RULES" OFF
+)
+
+# Let projects that include us choose the library type independently of the
+# BUILD_SHARED_LIBS they use for everything else.
+if (DEFINED SLINKY_SHARED_LIBS)
+    set(BUILD_SHARED_LIBS "${SLINKY_SHARED_LIBS}")
+endif ()
 
 # Don't impose a choice of language extensions on projects that include us.
 if (PROJECT_IS_TOP_LEVEL)
@@ -16,6 +29,11 @@ endif ()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(SlinkyHelpers)
 
+# Static libraries that use std::thread need -pthread, not just -lpthread, on
+# older glibc.
+if (PROJECT_IS_TOP_LEVEL)
+    option(THREADS_PREFER_PTHREAD_FLAG "Prefer -pthread to -lpthread" ON)
+endif ()
 find_package(Threads REQUIRED)
 
 if (SLINKY_ENABLE_TESTS)
@@ -31,4 +49,8 @@ add_subdirectory(slinky/builder)
 
 if (SLINKY_ENABLE_TESTS)
     add_subdirectory(slinky/apps)
+endif ()
+
+if (SLINKY_INSTALL_RULES)
+    add_subdirectory(cmake/packaging)
 endif ()

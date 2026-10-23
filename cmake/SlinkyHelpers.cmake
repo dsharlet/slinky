@@ -41,6 +41,11 @@ function(slinky_add_library name)
     add_library(slinky::${name} ALIAS ${target})
 
     target_compile_features(${target} PUBLIC cxx_std_17)
+    set_target_properties(${target} PROPERTIES
+        EXPORT_NAME ${name}
+        VERSION "${slinky_VERSION}"
+        SOVERSION "${slinky_VERSION_MAJOR}"
+    )
 
     if (ARG_HEADERS)
         target_sources(
