@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -47,7 +47,22 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
+
+      - name: Find the minimum supported CMake version
+        id: minimum_cmake
+        shell: bash
+        run: |
+          minimum=$(sed -n 's/^cmake_minimum_required(VERSION \([0-9][0-9.]*\)).*/\1/p' CMakeLists.txt)
+          echo "version=${minimum}.x" >> "$GITHUB_OUTPUT"
+
+      - name: Install the minimum supported CMake
+        uses: jwlawson/actions-setup-cmake@v2.2.0
+        with:
+          cmake-version: ${{ steps.minimum_cmake.outputs.version }}
+
+      - name: Show the CMake version
+        run: cmake --version
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
