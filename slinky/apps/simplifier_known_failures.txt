@@ -1,0 +1,11 @@
+# Queries (from simplifier_to_smt) that are known to produce a counterexample,
+# i.e. real rule bugs that have not been fixed yet. Used by
+# verify_simplifier_rules.py --known-failures.
+#
+# Format: one query id per line (the file name without .smt2), optionally
+# followed by "# reason". Blank lines and comment lines are ignored.
+#
+#   simplify_042_r1  # x/c0*c0 is wrong for negative c0
+#
+# CI fails on a sat result for an id not listed here, and also when a listed id
+# is now proven (remove the stale entry).

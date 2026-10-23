@@ -1,0 +1,113 @@
+name: verify_rules
+on:
+  pull_request:
+    paths:
+      - slinky/builder/simplify_rules.h
+      - slinky/builder/rewrite.h
+      - slinky/base/arithmetic.*
+      - slinky/apps/simplifier_to_smt.cc
+      - slinky/apps/verify_simplifier_rules.py
+      - slinky/apps/simplifier_known_failures.txt
+      - .github/workflows/verify_rules.yml
+  push:
+    branches:
+      - main
+    paths:
+      - slinky/builder/simplify_rules.h
+      - slinky/builder/rewrite.h
+      - slinky/base/arithmetic.*
+      - slinky/apps/simplifier_to_smt.cc
+      - slinky/apps/verify_simplifier_rules.py
+      - slinky/apps/simplifier_known_failures.txt
+      - .github/workflows/verify_rules.yml
+  workflow_dispatch:
+
+jobs:
+  verify_rules:
+    # Pinned (rather than ubuntu-latest) so that the apt version of z3 is stable.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      # cvc5 static Linux x86_64 release. The sha256 is the digest GitHub
+      # publishes for the release asset (the release API's "digest" field).
+      CVC5_VERSION: "1.4.2"
+      CVC5_SHA256: 7eb18f8c814c36a46c5a7d003983e9cfbc4b0a9828d6dd596239291bd4cc61d8
+      # yices static Linux x86_64 release (sha256 from the release API digest).
+      YICES_VERSION: "2.7.0"
+      YICES_SHA256: 49566b6f817692820538df78fe406878400d79810631c9372b2495bc81d3e00a
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+
+      - name: Install z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3
+          z3 --version
+
+      - name: Install cvc5
+        run: |
+          asset=cvc5-Linux-x86_64-static.zip
+          curl -fsSL -o "$RUNNER_TEMP/$asset" \
+            "https://github.com/cvc5/cvc5/releases/download/cvc5-${CVC5_VERSION}/$asset"
+          echo "${CVC5_SHA256}  $RUNNER_TEMP/$asset" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$asset" -d "$RUNNER_TEMP/cvc5"
+          echo "$RUNNER_TEMP/cvc5/cvc5-Linux-x86_64-static/bin" >> "$GITHUB_PATH"
+
+      - name: Install yices
+        run: |
+          asset=yices-${YICES_VERSION}-x86_64-pc-linux-gnu-static-gmp.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$asset" \
+            "https://github.com/SRI-CSL/yices2/releases/download/yices-${YICES_VERSION}/$asset"
+          echo "${YICES_SHA256}  $RUNNER_TEMP/$asset" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/yices"
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/yices"
+          echo "$RUNNER_TEMP/yices/yices-${YICES_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Show solver versions
+        run: |
+          z3 --version
+          cvc5 --version | head -n 1
+          yices-smt2 --version | head -n 1
+
+      - name: Build the emitter and write the self-test queries
+        run: bazel run //slinky/apps:simplifier_to_smt -- --self-test -o "$RUNNER_TEMP/self"
+
+      - name: Check that the self-test queries are all sat
+        run: |
+          python3 slinky/apps/verify_simplifier_rules.py --expect-all-sat \
+            --jobs $(nproc) --timeout 60 \
+            --copy-failures "$RUNNER_TEMP/failures" \
+            "$RUNNER_TEMP/self"
+
+      - name: Write the rule queries
+        run: bazel run //slinky/apps:simplifier_to_smt -- -o "$RUNNER_TEMP/rules"
+
+      - name: Verify the simplifier rules
+        run: |
+          python3 slinky/apps/verify_simplifier_rules.py \
+            --jobs $(nproc) --timeout 60 \
+            --json "$RUNNER_TEMP/report.json" \
+            --known-failures slinky/apps/simplifier_known_failures.txt \
+            --copy-failures "$RUNNER_TEMP/failures" \
+            "$RUNNER_TEMP/rules"
+
+      - name: Upload the report and failing queries
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verify-rules-report
+          path: |
+            ${{ runner.temp }}/report.json
+            ${{ runner.temp }}/failures
+          if-no-files-found: ignore
+
+      - name: Shut down bazel
+        if: always()
+        run: bazel shutdown

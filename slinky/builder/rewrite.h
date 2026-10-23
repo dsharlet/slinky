@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <utility>
 
 #include "slinky/base/util.h"
@@ -598,6 +600,7 @@ public:
   static constexpr int matched = 0;
   T a;
   Fn fn;
+  const char* name;
 };
 
 template <typename T, typename Fn>
@@ -606,13 +609,13 @@ SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match
 }
 
 template <typename T, typename Fn>
-SLINKY_UNIQUE replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
-  return {t, fn};
+SLINKY_UNIQUE replacement_predicate<T, Fn> make_predicate(T t, Fn fn, const char* name) {
+  return {t, fn, name};
 }
 
 template <typename T, typename Fn>
-SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>&) {
-  return os << "<unknown predicate>";
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>& p) {
+  return os << p.name << '(' << p.a << ')';
 }
 
 template <typename T>
@@ -679,12 +682,14 @@ SLINKY_UNIQUE index_t substitute(
   index_t a2 = substitute(r.a2, ctx, overflowed);
   index_t b2 = substitute(r.b2, ctx, overflowed);
   index_t c2 = substitute(r.c2, ctx, overflowed);
-  interval<int> bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
-  if (r.bound_sign < 0) {
-    return bounds.min ? *bounds.min : std::numeric_limits<index_t>::min();
-  } else {
-    return bounds.max ? *bounds.max : std::numeric_limits<index_t>::max();
+  interval<std::int64_t> bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
+  const std::optional<std::int64_t>& bound = r.bound_sign < 0 ? bounds.min : bounds.max;
+  if (!bound || *bound < std::numeric_limits<index_t>::min() || *bound > std::numeric_limits<index_t>::max()) {
+    // An unbounded (or unrepresentable) result can't satisfy any predicate on the bound, so the rule must not fire.
+    overflowed = true;
+    return 0;
   }
+  return static_cast<index_t>(*bound);
 }
 
 template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
@@ -778,17 +783,17 @@ SLINKY_UNIQUE auto negative_infinity() { return pattern_call<>{intrinsic::negati
 SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
 
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
+SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite, "is_finite"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }); }
+SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }, "is_constant"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
+SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero, "is_zero"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(x, slinky::is_non_negative); }
+SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(x, slinky::is_non_negative, "is_non_negative"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive); }
+SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive, "is_non_positive"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
+SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean, "is_boolean"); }
 
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::and_then, {a, b}}; }
