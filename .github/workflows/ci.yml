@@ -46,6 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-binary-cache
+
     steps:
       - uses: actions/checkout@v7
 
@@ -64,8 +67,17 @@ jobs:
       - name: Show the CMake version
         run: cmake --version
 
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
