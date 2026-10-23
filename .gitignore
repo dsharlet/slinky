@@ -50,3 +50,4 @@ perf.data*
 run-clang-format.sh
 run-clang-tidy.sh
 
+!/vcpkg.json

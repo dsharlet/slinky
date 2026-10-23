@@ -46,6 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-binary-cache
+
     steps:
       - uses: actions/checkout@v7
 
@@ -64,8 +67,30 @@ jobs:
       - name: Show the CMake version
         run: cmake --version
 
+      # vcpkg's package hashes depend on the compiler and on the runner's own
+      # vcpkg checkout, both of which change with the runner image. A cache
+      # that hits on its key is never saved again, so the key must change too.
+      # A new image or manifest still starts from the latest cache for this OS,
+      # so only the packages whose hashes changed are rebuilt.
+      - name: Compute the vcpkg cache key
+        id: vcpkg_cache_key
+        shell: bash
+        run: |
+          echo "prefix=vcpkg-${ImageOS}-" >> "$GITHUB_OUTPUT"
+          echo "key=vcpkg-${ImageOS}-${ImageVersion}-${{ hashFiles('vcpkg.json') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.vcpkg_cache_key.outputs.key }}
+          restore-keys: ${{ steps.vcpkg_cache_key.outputs.prefix }}
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
