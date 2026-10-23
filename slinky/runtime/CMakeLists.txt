@@ -1,23 +1,34 @@
-add_library(slinky_runtime
-    buffer.cc
-    depends_on.cc
-    evaluate.cc
-    expr_stmt.cc
-    memory_pool.cc
-    pipeline.cc
-    print.cc
-)
-target_link_libraries(slinky_runtime PUBLIC
-    slinky_base
-    slinky_chrome_trace
-    slinky_thread_pool
+slinky_add_library(runtime
+    SOURCES
+        buffer.cc
+        depends_on.cc
+        evaluate.cc
+        expr_stmt.cc
+        memory_pool.cc
+        pipeline.cc
+        print.cc
+    HEADERS
+        buffer.h
+        depends_on.h
+        evaluate.h
+        expr.h
+        memory_pool.h
+        pipeline.h
+        print.h
+        stmt.h
+    LINK
+        PUBLIC
+            slinky::base
+            slinky::thread_pool
+        PRIVATE slinky::chrome_trace
 )
 
-add_library(slinky_visualize
-    visualize.cc
+slinky_add_library(visualize
+    SOURCES visualize.cc
+    HEADERS visualize.h
+    LINK PUBLIC slinky::runtime
 )
-target_link_libraries(slinky_visualize PUBLIC slinky_runtime slinky_base)
 
-if(SLINKY_ENABLE_TESTS)
+if (SLINKY_ENABLE_TESTS)
     add_subdirectory(test)
-endif()
+endif ()

@@ -1,20 +1,30 @@
-add_library(slinky_builder
-    pipeline.cc
-    compact_nodes.cc
-    node_mutator.cc
-    optimizations.cc
-    simplify.cc
-    simplify_bounds.cc
-    simplify_exprs.cc
-    slide_and_fold_storage.cc
-    substitute.cc
-)
-target_link_libraries(slinky_builder PUBLIC
-    slinky_base
-    slinky_chrome_trace
-    slinky_runtime
+slinky_add_library(builder
+    SOURCES
+        compact_nodes.cc
+        node_mutator.cc
+        optimizations.cc
+        pipeline.cc
+        simplify.cc
+        simplify_bounds.cc
+        simplify_exprs.cc
+        slide_and_fold_storage.cc
+        substitute.cc
+    HEADERS
+        node_mutator.h
+        optimizations.h
+        pipeline.h
+        rewrite.h
+        simplify.h
+        simplify_rules.h
+        slide_and_fold_storage.h
+        substitute.h
+    LINK
+        PUBLIC
+            slinky::base
+            slinky::runtime
+        PRIVATE slinky::chrome_trace
 )
 
-if(SLINKY_ENABLE_TESTS)
+if (SLINKY_ENABLE_TESTS)
     add_subdirectory(test)
-endif()
+endif ()

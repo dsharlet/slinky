@@ -1,21 +1,34 @@
-add_library(slinky_base
-    arithmetic.cc
+slinky_add_library(base
+    SOURCES arithmetic.cc
+    HEADERS
+    allocator.h
+    arithmetic.h
+    atomic_wait.h
+    function_ref.h
+    modulus_remainder.h
+    ref_count.h
+    set.h
+    span.h
+    util.h
 )
 
-add_library(slinky_thread_pool
-    thread_pool.cc
-)
-target_link_libraries(slinky_thread_pool PUBLIC slinky_base)
-
-add_library(slinky_thread_pool_impl
-    thread_pool_impl.cc
-)
-target_link_libraries(slinky_thread_pool_impl PUBLIC slinky_thread_pool)
-
-add_library(slinky_chrome_trace
-    chrome_trace.cc
+slinky_add_library(thread_pool
+    SOURCES thread_pool.cc
+    HEADERS thread_pool.h
+    LINK PUBLIC slinky::base
 )
 
-if(SLINKY_ENABLE_TESTS)
+slinky_add_library(thread_pool_impl
+    SOURCES thread_pool_impl.cc
+    HEADERS thread_pool_impl.h
+    LINK PUBLIC slinky::thread_pool Threads::Threads
+)
+
+slinky_add_library(chrome_trace
+    SOURCES chrome_trace.cc
+    HEADERS chrome_trace.h
+)
+
+if (SLINKY_ENABLE_TESTS)
     add_subdirectory(test)
-endif()
+endif ()
