@@ -53,4 +53,7 @@ endif ()
 
 if (SLINKY_INSTALL_RULES)
     add_subdirectory(cmake/packaging)
+    if (SLINKY_ENABLE_TESTS)
+        add_subdirectory(cmake/test)
+    endif ()
 endif ()
