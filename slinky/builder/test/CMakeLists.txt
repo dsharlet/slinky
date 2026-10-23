@@ -1,79 +1,40 @@
-add_library(slinky_builder_test_util
-    context.cc
-    util.cc
+slinky_add_library(builder_test_util
+    SOURCES
+        context.cc
+        util.cc
+    HEADERS
+        context.h
+        funcs.h
+        util.h
+    LINK
+        PUBLIC
+        slinky::runtime
+        slinky::visualize
+        slinky::chrome_trace
+        slinky::thread_pool_impl
+        slinky::base_test_util
+        GTest::gmock
+        GTest::gtest
 )
-target_link_libraries(slinky_builder_test_util PUBLIC
-    slinky_runtime
-    slinky_visualize
-    slinky_chrome_trace
-    slinky_thread_pool_impl
-    slinky_base_test_util
-    GTest::gmock
-    GTest::gtest
-)
-target_compile_features(slinky_builder_test_util PUBLIC cxx_std_20)
 
-# Helper macro to reduce repetition.
-# Tests that read source or golden files run from the repo root so that
-# get_bazel_file_path() relative paths resolve correctly.
-macro(add_builder_test name)
-    add_executable(slinky_builder_${name}_test ${name}.cc)
-    target_link_libraries(slinky_builder_${name}_test PRIVATE ${ARGN} GTest::gtest_main)
-    target_compile_features(slinky_builder_${name}_test PRIVATE cxx_std_20)
-    gtest_discover_tests(slinky_builder_${name}_test
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-endmacro()
+set(common slinky::builder_test_util slinky::builder slinky::runtime)
 
-add_builder_test(checks
-    slinky_builder_test_util slinky_builder slinky_runtime)
-
-add_builder_test(copy
-    slinky_builder_test_util slinky_base slinky_builder slinky_runtime)
-
-add_builder_test(elementwise
-    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
-
-add_builder_test(pipeline
-    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
-
-add_builder_test(copy_pipeline
-    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
-
-add_builder_test(pyramid
-    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
-
-add_builder_test(softmax
-    slinky_builder_test_util slinky_base_test_util slinky_builder
-    slinky_runtime slinky_visualize)
-
-add_builder_test(l2_norm
-    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
-
-add_builder_test(aligned_producer
-    slinky_builder_test_util slinky_builder slinky_runtime)
-
-add_builder_test(tile_area
-    slinky_builder_test_util slinky_thread_pool_impl slinky_builder slinky_runtime)
-
-add_builder_test(auto_stack_threshold
-    slinky_builder_test_util slinky_builder slinky_runtime)
-
-add_builder_test(cannot_alias
-    slinky_builder_test_util slinky_builder slinky_runtime)
-
-add_builder_test(substitute
-    slinky_builder slinky_runtime GTest::gmock)
-
-add_builder_test(optimizations
-    slinky_builder slinky_runtime GTest::gmock)
-
-add_builder_test(stencil
-    slinky_builder_test_util slinky_builder slinky_runtime)
-
-add_builder_test(stencil_pipeline
-    slinky_builder_test_util slinky_base_test_util slinky_builder slinky_runtime)
-
-add_builder_test(rewrite
-    slinky_builder GTest::gmock)
+slinky_add_test(checks LINK ${common})
+slinky_add_test(copy LINK ${common} slinky::base)
+slinky_add_test(elementwise LINK ${common} slinky::base_test_util)
+slinky_add_test(pipeline LINK ${common} slinky::base_test_util)
+slinky_add_test(copy_pipeline LINK ${common} slinky::base_test_util)
+slinky_add_test(pyramid LINK ${common} slinky::base_test_util)
+slinky_add_test(softmax LINK ${common} slinky::base_test_util slinky::visualize)
+slinky_add_test(l2_norm LINK ${common} slinky::base_test_util)
+slinky_add_test(aligned_producer LINK ${common})
+slinky_add_test(tile_area LINK ${common} slinky::thread_pool_impl)
+slinky_add_test(auto_stack_threshold LINK ${common})
+slinky_add_test(cannot_alias LINK ${common})
+slinky_add_test(substitute LINK slinky::builder slinky::runtime GTest::gmock)
+slinky_add_test(optimizations LINK slinky::builder slinky::runtime GTest::gmock)
+slinky_add_test(stencil LINK ${common})
+slinky_add_test(stencil_pipeline LINK ${common} slinky::base_test_util)
+slinky_add_test(rewrite LINK slinky::builder GTest::gmock)
 
 add_subdirectory(simplify)

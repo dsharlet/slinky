@@ -1,8 +1,13 @@
-add_executable(slinky_app_memcpy memcpy.cc)
-target_link_libraries(slinky_app_memcpy PRIVATE slinky_base benchmark::benchmark_main)
-target_compile_features(slinky_app_memcpy PRIVATE cxx_std_20)
+slinky_add_test(memcpy BENCHMARK
+    SOURCES
+        memcpy.cc
+        benchmark.h
+    LINK slinky::base
+)
 
-add_executable(slinky_app_performance performance.cc)
-target_link_libraries(slinky_app_performance PRIVATE
-    slinky_base slinky_builder slinky_runtime benchmark::benchmark_main)
-target_compile_features(slinky_app_performance PRIVATE cxx_std_20)
+slinky_add_test(performance BENCHMARK
+    SOURCES
+        performance.cc
+        benchmark.h
+    LINK slinky::base slinky::builder slinky::runtime
+)
