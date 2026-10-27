@@ -1,0 +1,20 @@
+# Optional development environment for slinky. Nothing in the build or CI
+# depends on this file. See README.md in this directory.
+#
+# The base image matches the `ubuntu-latest` runner used by CI.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        clang-format \
+        cmake \
+        gdb \
+        git \
+        ninja-build \
+        openssh-client \
+        rsync \
+    && rm -rf /var/lib/apt/lists/*
