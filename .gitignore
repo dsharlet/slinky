@@ -2,6 +2,8 @@
 bazel-*
 out/*
 
+build/
+
 *.lock
 
 # Compiled Object files
@@ -36,6 +38,9 @@ out/*
 # Visual Studio folder status
 .vs
 .vscode
+
+# JetBrains (CLion) folder status
+.idea
 
 # Mac nonsense
 .DS_Store

@@ -1,46 +1,43 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.23)
 project(slinky LANGUAGES CXX)
 
-option(SLINKY_ENABLE_TESTS "Enable building and running tests and benchmarks" ON)
+option(SLINKY_ENABLE_TESTS
+    "Enable building and running tests and benchmarks"
+    ${PROJECT_IS_TOP_LEVEL}
+)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Mirror the flags from .bazelrc
-if(MSVC)
-    add_compile_options(
-        /Zi        # debug info
-        /GR-       # disable RTTI
-        /EHs-      # exception handling
-        /EHa-
-        /wd4018    # sign-compare warnings
+# Don't impose a choice of language extensions on projects that include us.
+if (PROJECT_IS_TOP_LEVEL)
+    option(CMAKE_CXX_EXTENSIONS
+        "Enable compiler-specific language extensions" OFF
     )
-else()
-    add_compile_options(
-        -g
-        -fstrict-aliasing
-        -Wno-sign-compare
-        -fno-rtti
-        -fno-exceptions
-    )
-endif()
+endif ()
 
-if(SLINKY_ENABLE_TESTS)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(SlinkyHelpers)
+
+# Nothing marks symbols for export from a DLL yet, so a shared build on
+# Windows would produce DLLs without import libraries.
+if (WIN32 AND BUILD_SHARED_LIBS)
+    message(FATAL_ERROR
+        "Shared libraries are not yet supported on Windows. "
+        "Configure with -DBUILD_SHARED_LIBS=OFF."
+    )
+endif ()
+
+find_package(Threads REQUIRED)
+
+if (SLINKY_ENABLE_TESTS)
     enable_testing()
     find_package(GTest REQUIRED)
     find_package(benchmark REQUIRED)
     include(GoogleTest)
-endif()
-
-# All targets include from the repo root so that "slinky/base/foo.h" style
-# includes resolve correctly.
-include_directories(${CMAKE_SOURCE_DIR})
+endif ()
 
 add_subdirectory(slinky/base)
 add_subdirectory(slinky/runtime)
 add_subdirectory(slinky/builder)
 
-if(SLINKY_ENABLE_TESTS)
+if (SLINKY_ENABLE_TESTS)
     add_subdirectory(slinky/apps)
-endif()
+endif ()
