@@ -5,7 +5,8 @@ CMake build, the Bazel build, or CI uses it; ignore this directory if you
 don't need it.
 
 The image is based on Ubuntu 24.04 (like GHA's `ubuntu-latest`) and contains
-CMake, Ninja, GCC, Clang, `clang-format`, GDB, and `rsync`.
+CMake, Ninja, GCC, Clang, `clang-format`, GDB, `rsync`, and the GoogleTest and
+Google Benchmark packages that the CMake build finds via `find_package`.
 
 This is a convenience for developers working on atomic (i.e. rpm-ostree) based
 Linux distributions (such as Fedora Atomic), or those who simply want an isolated
