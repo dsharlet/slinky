@@ -1,0 +1,98 @@
+name: verify_rules
+on:
+  pull_request:
+    paths:
+      - slinky/builder/simplify_rules.h
+      - slinky/builder/rewrite.h
+      - slinky/base/arithmetic.*
+      - slinky/builder/test/simplify/verifier/simplifier_to_smt.cc
+      - slinky/builder/test/simplify/verifier/verify_simplifier_rules.py
+      - slinky/builder/test/simplify/verifier/known_gaps.toml
+      - .github/workflows/verify_rules.yml
+  push:
+    branches:
+      - main
+    paths:
+      - slinky/builder/simplify_rules.h
+      - slinky/builder/rewrite.h
+      - slinky/base/arithmetic.*
+      - slinky/builder/test/simplify/verifier/simplifier_to_smt.cc
+      - slinky/builder/test/simplify/verifier/verify_simplifier_rules.py
+      - slinky/builder/test/simplify/verifier/known_gaps.toml
+      - .github/workflows/verify_rules.yml
+  workflow_dispatch:
+
+jobs:
+  verify_rules:
+    name: verify_rules (${{ matrix.solver }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # z3 gates the rules. cvc5 is an advisory cross-check: its job fails only when it disagrees with z3, and that
+    # doesn't fail the workflow.
+    continue-on-error: ${{ matrix.solver == 'cvc5' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # z3's rlimit decides which rules are inconclusive, and the script's default timeout is a backstop for it.
+          - solver: z3
+          # cvc5's timeouts are ignored, so it doesn't need to wait as long.
+          - solver: cvc5
+            args: --timeout 20
+
+    env:
+      Z3_VERSION: "5.3.2"
+      Z3_SHA256: 26d463cddad3901cbf86e3868c784914539f4e3f9b4de1a0b8dc2969806d60e2
+      CVC5_VERSION: "1.4.2"
+      CVC5_SHA256: 7eb18f8c814c36a46c5a7d003983e9cfbc4b0a9828d6dd596239291bd4cc61d8
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtest-dev libgmock-dev libbenchmark-dev
+
+      - name: Install z3
+        if: matrix.solver == 'z3'
+        run: |
+          asset=z3-${Z3_VERSION}-x64-glibc-2.39.zip
+          curl -fsSL -o "$RUNNER_TEMP/$asset" \
+            "https://github.com/Z3Prover/z3/releases/download/z3-${Z3_VERSION}/$asset"
+          echo "${Z3_SHA256}  $RUNNER_TEMP/$asset" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$asset" -d "$RUNNER_TEMP/z3"
+          echo "$RUNNER_TEMP/z3/z3-${Z3_VERSION}-x64-glibc-2.39/bin" >> "$GITHUB_PATH"
+
+      - name: Install cvc5
+        if: matrix.solver == 'cvc5'
+        run: |
+          asset=cvc5-Linux-x86_64-static.zip
+          curl -fsSL -o "$RUNNER_TEMP/$asset" \
+            "https://github.com/cvc5/cvc5/releases/download/cvc5-${CVC5_VERSION}/$asset"
+          echo "${CVC5_SHA256}  $RUNNER_TEMP/$asset" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$asset" -d "$RUNNER_TEMP/cvc5"
+          echo "$RUNNER_TEMP/cvc5/cvc5-Linux-x86_64-static/bin" >> "$GITHUB_PATH"
+
+      - name: Show solver version
+        run: |
+          case "${{ matrix.solver }}" in
+            z3) z3 --version ;;
+            cvc5) cvc5 --version | head -n 1 ;;
+          esac
+
+      - name: Build the emitter
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel $(nproc) --target simplifier_to_smt
+
+      - name: Write the rule queries
+        run: build/slinky/builder/test/simplify/verifier/simplifier_to_smt -o "$RUNNER_TEMP/rules"
+
+      - name: Verify the simplifier rules
+        run: |
+          python3 slinky/builder/test/simplify/verifier/verify_simplifier_rules.py \
+            --solver ${{ matrix.solver }} ${{ matrix.args }} \
+            "$RUNNER_TEMP/rules"
