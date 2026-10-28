@@ -34,9 +34,7 @@ bool apply_min_rules(Fn&& apply) {
   return
       // One side is the min
       apply(min(x, std::numeric_limits<index_t>::max()), x) ||
-      apply(min(x, rewrite::positive_infinity()), x) ||
       apply(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
-      apply(min(x, rewrite::negative_infinity()), rewrite::negative_infinity()) ||
       apply(min(x, x + may_be<0>(c0)),
         when(c0 >= 0, x),
         x + c0 /*c0 < 0*/) ||
@@ -161,9 +159,7 @@ bool apply_max_rules(Fn&& apply) {
   return
       // One side is the max.
       apply(max(x, std::numeric_limits<index_t>::min()), x) ||
-      apply(max(x, rewrite::negative_infinity()), x) ||
       apply(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
-      apply(max(x, rewrite::positive_infinity()), rewrite::positive_infinity()) ||
       apply(max(x, x + may_be<0>(c0)),
         when(c0 > 0, x + c0),
         x /*c0 <= 0*/) ||
@@ -278,8 +274,6 @@ bool apply_max_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_add_rules(Fn&& apply) {
   return
-      apply(x + rewrite::positive_infinity(), when(is_finite(x), rewrite::positive_infinity())) ||
-      apply(x + rewrite::negative_infinity(), when(is_finite(x), rewrite::negative_infinity())) ||
       apply(x*may_be<1>(c0) + x*may_be<1>(c1), x*eval(c0 + c1)) ||
       apply(x + (x - y), x*2 - y) ||
       apply(x + (y - x), y) ||
@@ -316,8 +310,6 @@ bool apply_add_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_sub_rules(Fn&& apply) {
   return
-      apply(x - rewrite::positive_infinity(), when(is_finite(x), rewrite::negative_infinity())) ||
-      apply(x - rewrite::negative_infinity(), when(is_finite(x), rewrite::positive_infinity())) ||
       apply(x*may_be<1>(c0) - x*may_be<1>(c1), x*eval(c0 - c1)) ||
       apply(x*y - x*z, x*(y - z)) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
@@ -395,12 +387,6 @@ bool apply_sub_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_mul_rules(Fn&& apply) {
   return
-      apply(rewrite::positive_infinity()*c0,
-        when(c0 > 0, rewrite::positive_infinity()),
-        when(c0 < 0, rewrite::negative_infinity())) ||
-      apply(rewrite::negative_infinity()*c0,
-        when(c0 > 0, rewrite::negative_infinity()),
-        when(c0 < 0, rewrite::positive_infinity())) ||
       apply((x*c0)*c1, x*eval(c0*c1)) ||
       apply((x + c0)*c1, x*c1 + eval(c0*c1)) ||
       apply((c0 - x)*c1, x*eval(-c1) + eval(c0*c1)) ||
@@ -415,14 +401,6 @@ bool apply_mul_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_div_rules(Fn&& apply) {
   return
-      apply(x/rewrite::positive_infinity(), when(is_finite(x), 0)) ||
-      apply(x/rewrite::negative_infinity(), when(is_finite(x), 0)) ||
-      apply(rewrite::positive_infinity()/c0,
-        when(c0 > 0, rewrite::positive_infinity()),
-        when(c0 < 0, rewrite::negative_infinity())) ||
-      apply(rewrite::negative_infinity()/c0,
-        when(c0 > 0, rewrite::negative_infinity()),
-        when(c0 < 0, rewrite::positive_infinity())) ||
       apply(x/-1, -x) ||
       apply(x/x, x != 0) ||
 
@@ -484,10 +462,6 @@ bool apply_mod_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_less_rules(Fn&& apply) {
   return
-      apply(rewrite::positive_infinity() < x, false) ||
-      apply(x < rewrite::negative_infinity(), false) ||
-      apply(rewrite::negative_infinity() < x, when(is_finite(x), true)) ||
-      apply(x < rewrite::positive_infinity(), when(is_finite(x), true)) ||
       apply(x < x, false) ||
       apply(x < y + 1, x <= y) ||
 

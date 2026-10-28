@@ -17,17 +17,6 @@
 
 namespace slinky {
 
-namespace {
-
-bool contains_infinity(expr x) {
-  expr no_infinity = x;
-  no_infinity = substitute(no_infinity, positive_infinity(), std::numeric_limits<index_t>::max());
-  no_infinity = substitute(no_infinity, negative_infinity(), std::numeric_limits<index_t>::min());
-  return !no_infinity.same_as(x);
-}
-
-}  // namespace
-
 namespace rewrite {
 
 // We need a version of substitute from rewrite.h that does not eagerly apply optimization.
@@ -116,11 +105,6 @@ public:
       return;
     }
     applied = true;
-
-    if (contains_infinity(pattern)) {
-      // TODO: Maybe there's a way to test this...
-      return;
-    }
 
     eval_context ctx;
     for (int test = 0; test < 100; ++test) {
