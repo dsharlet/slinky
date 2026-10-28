@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -95,9 +96,13 @@ struct pattern_info<long> {
 };
 #endif
 
+// The rules assume that every wildcard matches a finite value, so an expression to match must not contain an infinity
+// or indeterminate (see simplify_exprs.cc).
 class pattern_expr {
 public:
   expr_ref e;
+
+  explicit pattern_expr(expr_ref x) : e(x) { assert(!contains_non_finite(x)); }
 };
 
 template <>
@@ -844,12 +849,7 @@ template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto boolean(const T& x) { return replacement_boolean<T>{x}; }
-SLINKY_UNIQUE auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
-SLINKY_UNIQUE auto negative_infinity() { return pattern_call<>{intrinsic::negative_infinity, {}}; }
-SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
 
-template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite, "is_finite"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }, "is_constant"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
@@ -1056,8 +1056,9 @@ public:
 
 class rewriter : public base_rewriter<expr_ref> {
 public:
-  rewriter(const expr& x) : base_rewriter(x) {}
-  rewriter(expr_ref x) : base_rewriter(x) {}
+  // As for pattern_expr, x must not contain an infinity or indeterminate.
+  rewriter(const expr& x) : base_rewriter(x) { assert(!contains_non_finite(x)); }
+  rewriter(expr_ref x) : base_rewriter(x) { assert(!contains_non_finite(x)); }
   using base_rewriter::operator();
 };
 

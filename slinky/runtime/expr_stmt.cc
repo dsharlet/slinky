@@ -556,13 +556,31 @@ interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
 interval_expr operator-(const expr& a, const interval_expr& b) { return -b + a; }
 
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
+
+namespace {
+
+// Returns a bound in the direction `sign` (-1 for a min, 1 for a max) of select(c, t, f). A select can't have an
+// infinite value, so if t or f is infinite, we loosen the bound instead: an infinity in the direction of the bound
+// means that side is unbounded, and an infinity in the opposite direction means that interval is empty, so we can use
+// the other value.
+expr select_bound(const expr& c, expr t, expr f, int sign) {
+  int inf_t = is_infinity(t);
+  int inf_f = is_infinity(f);
+  if (inf_t == sign || inf_f == sign) return infinity(sign);
+  if (inf_t) return f;
+  if (inf_f) return t;
+  return select(c, std::move(t), std::move(f));
+}
+
+}  // namespace
+
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
-  if (t.is_point() && f.is_point()) {
+  if (t.is_point() && f.is_point() && !is_infinity(t.min) && !is_infinity(f.min)) {
     return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
-        select(c, std::move(t.min), std::move(f.min)),
-        select(c, std::move(t.max), std::move(f.max)),
+        select_bound(c, std::move(t.min), std::move(f.min), -1),
+        select_bound(c, std::move(t.max), std::move(f.max), 1),
     };
   }
 }
@@ -1026,6 +1044,30 @@ bool is_finite(expr_ref x) {
     return c->intrinsic == intrinsic::buffer_at;
   }
   return false;
+}
+
+namespace {
+
+class non_finite_finder : public recursive_node_visitor {
+public:
+  bool found = false;
+
+  void visit(const call* op) override {
+    if (is_infinity(op) || is_indeterminate(op)) {
+      found = true;
+    } else {
+      recursive_node_visitor::visit(op);
+    }
+  }
+};
+
+}  // namespace
+
+bool contains_non_finite(expr_ref x) {
+  if (!x.defined()) return false;
+  non_finite_finder finder;
+  x.accept(&finder);
+  return finder.found;
 }
 
 expr boolean(const expr& x) {

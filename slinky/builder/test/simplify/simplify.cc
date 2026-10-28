@@ -253,6 +253,146 @@ TEST(simplify, basic) {
       matches(min(x, (min(z, (min(u, (w + -4)) + 8)) + -7)) + 4));
 }
 
+TEST(simplify, infinity) {
+  const expr& oo = positive_infinity();
+  const expr& neg_oo = negative_infinity();
+
+  // Infinities are only meaningful as literals: every other expression is finite. The simplifier eliminates operands
+  // that are infinities, so they never appear nested in another expression.
+  ASSERT_THAT(simplify(x + oo), matches(oo));
+  ASSERT_THAT(simplify(neg_oo + x), matches(neg_oo));
+  ASSERT_THAT(simplify((x + oo) + y), matches(oo));
+  ASSERT_THAT(simplify(x - oo), matches(neg_oo));
+  ASSERT_THAT(simplify(x - neg_oo), matches(oo));
+  ASSERT_THAT(simplify(oo - x), matches(oo));
+  ASSERT_THAT(simplify(oo - oo), matches(indeterminate()));
+  ASSERT_THAT(simplify(oo - neg_oo), matches(oo));
+
+  ASSERT_THAT(simplify(oo * 2), matches(oo));
+  ASSERT_THAT(simplify(oo * -2), matches(neg_oo));
+  ASSERT_THAT(simplify(neg_oo * -2), matches(oo));
+  // As in mul::make and div::make, x * 0 and x / 0 are 0. The constructors fold these, so call the simplifier
+  // directly.
+  ASSERT_THAT(simplify(static_cast<const mul*>(nullptr), oo, 0), matches(0));
+  ASSERT_THAT(simplify(oo * y), matches(indeterminate()));
+  ASSERT_THAT(simplify(y * neg_oo), matches(indeterminate()));
+  // We know the sign of the result if is_positive or is_negative holds for the other operand. The only non-constant
+  // finite expressions they accept are like abs(5), which the simplifier would fold, so call it directly.
+  ASSERT_THAT(simplify(static_cast<const mul*>(nullptr), oo, abs(5)), matches(oo));
+  ASSERT_THAT(simplify(static_cast<const mul*>(nullptr), abs(5), neg_oo), matches(neg_oo));
+
+  ASSERT_THAT(simplify(x / oo), matches(0));
+  ASSERT_THAT(simplify(x / neg_oo), matches(0));
+  ASSERT_THAT(simplify(oo / 2), matches(oo));
+  ASSERT_THAT(simplify(oo / -2), matches(neg_oo));
+  ASSERT_THAT(simplify(neg_oo / -2), matches(oo));
+  ASSERT_THAT(simplify(static_cast<const div*>(nullptr), oo, 0), matches(0));
+  ASSERT_THAT(simplify(static_cast<const div*>(nullptr), neg_oo, abs(5)), matches(neg_oo));
+  ASSERT_THAT(simplify(oo / y), matches(indeterminate()));
+  ASSERT_THAT(simplify(oo / oo), matches(indeterminate()));
+
+  ASSERT_THAT(simplify(x % oo), matches(indeterminate()));
+  ASSERT_THAT(simplify(oo % 3), matches(indeterminate()));
+
+  ASSERT_THAT(simplify(min(x, oo)), matches(x));
+  ASSERT_THAT(simplify(min(x, neg_oo)), matches(neg_oo));
+  ASSERT_THAT(simplify(max(x, oo)), matches(oo));
+  ASSERT_THAT(simplify(max(x, neg_oo)), matches(x));
+  ASSERT_THAT(simplify(min(oo, neg_oo)), matches(neg_oo));
+  ASSERT_THAT(simplify(max(oo, neg_oo)), matches(oo));
+  ASSERT_THAT(simplify(min(x - oo, y)), matches(neg_oo));
+
+  ASSERT_THAT(simplify(x < oo), matches(true));
+  ASSERT_THAT(simplify(neg_oo < x), matches(true));
+  ASSERT_THAT(simplify(oo < x), matches(false));
+  ASSERT_THAT(simplify(x < neg_oo), matches(false));
+  ASSERT_THAT(simplify(neg_oo < neg_oo), matches(false));
+  ASSERT_THAT(simplify(neg_oo < oo), matches(true));
+  ASSERT_THAT(simplify(x <= oo), matches(true));
+  ASSERT_THAT(simplify(neg_oo <= x), matches(true));
+  ASSERT_THAT(simplify(oo <= x), matches(false));
+  ASSERT_THAT(simplify(x <= neg_oo), matches(false));
+  ASSERT_THAT(simplify(oo <= oo), matches(true));
+  ASSERT_THAT(simplify(oo <= neg_oo), matches(false));
+
+  ASSERT_THAT(simplify(x == oo), matches(false));
+  ASSERT_THAT(simplify(x != neg_oo), matches(true));
+  ASSERT_THAT(simplify(oo == oo), matches(true));
+  ASSERT_THAT(simplify(oo == neg_oo), matches(false));
+
+  // Infinities are truthy.
+  ASSERT_THAT(simplify(x && oo), matches(x != 0));
+  ASSERT_THAT(simplify(neg_oo && y < z), matches(y < z));
+  ASSERT_THAT(simplify(x || neg_oo), matches(true));
+  ASSERT_THAT(simplify(!oo), matches(false));
+  ASSERT_THAT(simplify(and_then(oo, x)), matches(x != 0));
+  ASSERT_THAT(simplify(or_else(x, neg_oo)), matches(or_else(x, true)));
+  ASSERT_THAT(simplify(select(oo, x, y)), matches(x));
+  ASSERT_THAT(simplify(select(neg_oo, x, y)), matches(x));
+
+  // We can't represent a select with an infinite value.
+  ASSERT_THAT(simplify(select(x, oo, y)), matches(indeterminate()));
+  ASSERT_THAT(simplify(select(x, y, neg_oo)), matches(indeterminate()));
+  ASSERT_THAT(simplify(select(x, oo, oo)), matches(oo));
+
+  ASSERT_THAT(simplify(abs(oo)), matches(oo));
+  ASSERT_THAT(simplify(abs(neg_oo)), matches(oo));
+
+  // Indeterminate propagates.
+  ASSERT_THAT(simplify(x + indeterminate()), matches(indeterminate()));
+  ASSERT_THAT(simplify(x % indeterminate()), matches(indeterminate()));
+  ASSERT_THAT(simplify(x < indeterminate()), matches(indeterminate()));
+  ASSERT_THAT(simplify(x == indeterminate()), matches(indeterminate()));
+  ASSERT_THAT(simplify(x && indeterminate()), matches(indeterminate()));
+  ASSERT_THAT(simplify(select(x, y, indeterminate())), matches(indeterminate()));
+  ASSERT_THAT(simplify(abs(indeterminate())), matches(indeterminate()));
+
+  // and_then and or_else don't evaluate b if a determines the result.
+  ASSERT_THAT(simplify(and_then(false, indeterminate())), matches(false));
+  ASSERT_THAT(simplify(or_else(true, indeterminate())), matches(true));
+  ASSERT_THAT(simplify(and_then(true, x)), matches(x != 0));
+  ASSERT_THAT(simplify(or_else(false, x < y)), matches(x < y));
+  ASSERT_THAT(simplify(and_then(true, indeterminate())), matches(indeterminate()));
+  ASSERT_THAT(simplify(and_then(x, indeterminate())), matches(indeterminate()));
+  ASSERT_THAT(simplify(or_else(indeterminate(), x)), matches(indeterminate()));
+}
+
+TEST(simplify, bounds_of_infinity) {
+  const expr& oo = positive_infinity();
+  const expr& neg_oo = negative_infinity();
+
+  symbol_map<interval_expr> bounds;
+  bounds[x] = slinky::bounds(neg_oo, 5);
+  bounds[y] = slinky::bounds(0, 10);
+  // An infinite arm of a select makes that side of its bounds infinite.
+  ASSERT_THAT(bounds_of(select(z, x, y), bounds).min, matches(neg_oo));
+  ASSERT_THAT(bounds_of(select(z, y, x), bounds).min, matches(neg_oo));
+
+  // An empty arm of a select doesn't contribute to its bounds.
+  bounds[x] = interval_expr::none();
+  ASSERT_THAT(bounds_of(select(z, x, y), bounds), matches(slinky::bounds(0, 10)));
+  ASSERT_THAT(bounds_of(select(z, y, x), bounds), matches(slinky::bounds(0, 10)));
+
+  // x * 0 is 0, even if x is unbounded.
+  ASSERT_THAT(bounds_of(static_cast<const mul*>(nullptr), interval_expr::all(), point(0)), matches(point(0)));
+
+  // Products and quotients of infinities with values of unknown sign are unbounded, not indeterminate.
+  bounds[x] = slinky::bounds(0, oo);
+  ASSERT_THAT(bounds_of(x * z, bounds), matches(interval_expr::all()));
+  ASSERT_THAT(bounds_of(x * y, bounds), matches(slinky::bounds(0, oo)));
+  ASSERT_THAT(bounds_of(x / z, bounds), matches(interval_expr::all()));
+  bounds[y] = slinky::bounds(1, 10);
+  ASSERT_THAT(bounds_of(x / y, bounds), matches(slinky::bounds(0, oo)));
+
+  // Indeterminate bounds don't tell us anything.
+  ASSERT_THAT(simplify_intersection({indeterminate(), x}, {y, indeterminate()}), matches(slinky::bounds(y, x)));
+  stmt body = dummy_call({}, {b2});
+  ASSERT_THAT(
+      simplify(crop_dim::make(b2, b0, 0, {oo * y, x}, body)), matches(crop_dim::make(b2, b0, 0, {expr(), x}, body)));
+  ASSERT_THAT(simplify(crop_dim::make(b2, b0, 0, {x, select(z, y, oo)}, body)),
+      matches(crop_dim::make(b2, b0, 0, {x, expr()}, body)));
+}
+
 TEST(simplify, staircase) {
   ASSERT_THAT(simplify(min(((x + 7) / 8) * 8, x)), matches(x));
   ASSERT_THAT(simplify(max(((x + 7) / 8) * 8, x)), matches(((x + 7) / 8) * 8));

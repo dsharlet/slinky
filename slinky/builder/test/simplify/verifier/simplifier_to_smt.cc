@@ -8,30 +8,17 @@
 // predicates and replacements (e.g. c0 + c1) in C++, and doesn't apply the rule if that
 // overflows, so the query assumes that those fit in int64 too.
 //
-// Wildcards can also be infinite (extended semantics). A value is an element of
-// the SMT datatype
+// Wildcards are finite. The only values in slinky that aren't are the literals
+// positive_infinity(), negative_infinity() and indeterminate(), and simplify() (in
+// simplify_exprs.cc) eliminates them before it applies the rules, so a wildcard never
+// matches one. No rule mentions them either.
 //
-//   X = fin(val Int) | pinf | ninf | ind
+// Each operation in a rule that depends on a wildcard becomes a named term
+// (define-fun nK () Int ...). An operation on constants only is written inline.
 //
-// where ind is indeterminate. Wildcards are never ind, because simplify() returns early
-// on indeterminate operands, and constants are always finite, so they are plain Ints.
-// The int64 assumptions above only apply to finite values.
-//
-// Each operation in a rule becomes a named term (define-fun nK () X ...), built from
-// the x* helpers in x_prelude. They follow simplify() in simplify_exprs.cc:
-//
-//   - ind propagates through everything;
-//   - inf + -inf, inf * 0, inf / inf, inf / 0 and mod with an infinity are ind;
-//   - finite / inf is 0;
-//   - min, max and comparisons use the order -inf < Z < +inf;
-//   - infinities are truthy.
-//
-// An operation whose operands are all finite is written as plain Int arithmetic
-// instead, and only wrapped in fin where it meets a term that may not be finite.
-//
-// A rewrite is correct if the pattern is ind (anything goes), or if it equals the
-// replacement. Predicates on wildcards (e.g. is_non_negative(x)) can't be encoded
-// exactly, so they are approximated from both sides (see pred_result).
+// A rewrite is correct if the pattern equals the replacement. Predicates on wildcards
+// (e.g. is_non_negative(x)) can't be encoded exactly, so they are approximated from
+// both sides (see pred_result).
 
 #include <array>
 #include <cassert>
@@ -95,19 +82,11 @@ struct pred_result {
   std::string may, must;
 };
 
-// An SMT term for a DSL node. If fin is true, the node is known to be finite (e.g. it
-// is a constant, or all its operands are finite), and s is an Int expression.
-// Otherwise, s is an expression of type X.
+// An SMT term for a DSL node, which is an Int expression. If constant is true, the node
+// doesn't depend on any wildcard (e.g. c0 + 1).
 struct term {
   std::string s;
-  bool fin = false;
-
-  // This term as an X.
-  std::string x() const { return fin ? str("fin", s) : s; }
-  // The Int value of this term, which is only meaningful if the term is finite.
-  std::string val() const { return fin ? s : str("val", s); }
-  // True iff the term has the given constructor (fin, pinf, ninf or ind).
-  std::string is(const char* constructor) const { return "((_ is " + std::string(constructor) + ") " + s + ")"; }
+  bool constant = false;
 };
 
 // Dependencies of the terms translated since the last call to take().
@@ -154,36 +133,39 @@ private:
   std::map<std::string, term> nodes;
   side_info side;
 
-  static term fin_term(std::string v) { return {std::move(v), true}; }
+  static term constant_term(std::string v) { return {std::move(v), true}; }
 
-  // Names a node, which has type X.
+  // Names a node.
   term def(const std::string& value) {
     auto [i, inserted] = nodes.try_emplace(value);
     if (inserted) {
       const std::string n = "n" + std::to_string(node_count++);
-      side.defs.push_back("(define-fun " + n + " () X " + value + ")\n");
+      side.defs.push_back("(define-fun " + n + " () Int " + value + ")\n");
       i->second = {n, false};
     }
     return i->second;
   }
 
+  // The term for an operation with the given value. Operations on constants are written inline, and the others are
+  // named.
+  term op_term(std::string value, bool constant) { return constant ? constant_term(std::move(value)) : def(value); }
+
   term note(int wildcards_before, term s) {
     if (in_pattern && wildcard_uses != wildcards_before) {
-      // Wildcards aren't known to be finite, so neither is any term that contains one.
-      assert(!s.fin);
-      assumes.push_back(str("=>", s.is("fin"), str("in64", s.val())));
+      // This term contains a wildcard, so it is part of the pattern, which is assumed to be in range.
+      assert(!s.constant);
+      assumes.push_back(str("in64", s.s));
     }
     return s;
   }
 
   // Binary arithmetic and logic, for pattern_binary, staircase, and_then and or_else.
   term binop(expr_node_type t, const term& a, const term& b) {
-    if (a.fin && b.fin) return fin_term(fin_binop(t, a.s, b.s));
-    return def(str(x_binop(t), a.x(), b.x()));
+    return op_term(binop_value(t, a.s, b.s), a.constant && b.constant);
   }
 
-  // The Int expression for a binary operation on finite operands.
-  static std::string fin_binop(expr_node_type t, const std::string& a, const std::string& b) {
+  // The Int expression for a binary operation.
+  static std::string binop_value(expr_node_type t, const std::string& a, const std::string& b) {
     switch (t) {
     case expr_node_type::add: return str("+", a, b);
     case expr_node_type::sub: return str("-", a, b);
@@ -202,30 +184,10 @@ private:
     }
   }
 
-  // The helper in the prelude for a binary operation on X.
-  static const char* x_binop(expr_node_type t) {
-    switch (t) {
-    case expr_node_type::add: return "xadd";
-    case expr_node_type::sub: return "xsub";
-    case expr_node_type::mul: return "xmul";
-    case expr_node_type::div: return "xdiv";
-    case expr_node_type::mod: return "xmod";
-    case expr_node_type::min: return "xmin";
-    case expr_node_type::max: return "xmax";
-    case expr_node_type::less: return "xlt";
-    case expr_node_type::less_equal: return "xle";
-    case expr_node_type::equal: return "xeq";
-    case expr_node_type::not_equal: return "xne";
-    case expr_node_type::logical_and: return "xland";
-    case expr_node_type::logical_or: return "xlor";
-    default: assert(false); return "";
-    }
-  }
-
 public:
   template <typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
   term to(T v) {
-    return fin_term(lit(static_cast<index_t>(v)));
+    return constant_term(lit(static_cast<index_t>(v)));
   }
 
   template <int N>
@@ -238,7 +200,7 @@ public:
   template <int N>
   term to(const rewrite::pattern_constant<N>&) {
     consts[N] = rewrite::pattern_constant<N>::name;
-    return fin_term(consts[N]);
+    return constant_term(consts[N]);
   }
 
   // The default is one of the values of the free variable, so it needs no special case.
@@ -271,8 +233,7 @@ public:
     static_assert(T::static_type == expr_node_type::logical_not);
     const int w = wildcard_uses;
     term a = to(p.a);
-    if (a.fin) return note(w, fin_term(str("b2i", str("=", a.s, "0"))));
-    return note(w, def(str("xnot", a.s)));
+    return note(w, op_term(str("b2i", str("=", a.s, "0")), a.constant));
   }
 
   template <typename C, typename T, typename F>
@@ -281,23 +242,17 @@ public:
     term c = to(p.c);
     term t = to(p.t);
     term f = to(p.f);
-    if (c.fin && t.fin && f.fin) return note(w, fin_term(str("ite", truthy(c.s), t.s, f.s)));
-    return note(w, def(str("xsel", c.x(), t.x(), f.x())));
+    return note(w, op_term(str("ite", truthy(c.s), t.s, f.s), c.constant && t.constant && f.constant));
   }
 
   term call_term(intrinsic fn, const std::vector<term>& args, int w) {
     switch (fn) {
-    case intrinsic::abs:
-      if (args[0].fin) {
-        const std::string& a = args[0].s;
-        return note(w, fin_term(str("ite", str("<", a, "0"), str("-", a), a)));
-      }
-      return note(w, def(str("xabs", args[0].s)));
+    case intrinsic::abs: {
+      const std::string& a = args[0].s;
+      return note(w, op_term(str("ite", str("<", a, "0"), str("-", a), a), args[0].constant));
+    }
     case intrinsic::and_then: return note(w, binop(expr_node_type::logical_and, args[0], args[1]));
     case intrinsic::or_else: return note(w, binop(expr_node_type::logical_or, args[0], args[1]));
-    case intrinsic::positive_infinity: return {"pinf", false};
-    case intrinsic::negative_infinity: return {"ninf", false};
-    case intrinsic::indeterminate: return {"ind", false};
     default: break;
     }
     std::stringstream ss;
@@ -339,8 +294,7 @@ public:
   template <typename T>
   term to(const rewrite::replacement_boolean<T>& r) {
     term a = to(r.a);
-    if (a.fin) return fin_term(str("b2i", truthy(a.s)));
-    return def(str("xbool", a.s));
+    return op_term(str("b2i", truthy(a.s)), a.constant);
   }
 
   // staircase_sum_bounds (in arithmetic.cc) computes the exact range of
@@ -360,7 +314,7 @@ public:
   // keeps the queries quantifier-free.
   template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
   term to(const rewrite::replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>& r) {
-    // These are all constants, so they are finite.
+    // These are all constants.
     std::string a1 = to(r.a1).s;
     std::string b1 = to(r.b1).s;
     std::string c1 = to(r.c1).s;
@@ -393,25 +347,19 @@ public:
     pre.push_back(str("or", both_zero, periodic));
     const std::string pre_all = conj(pre);
     side.conds.push_back(pre_all);
-    const std::string g = str("+", term(x.val(), a1, b1, c1), term(x.val(), a2, b2, c2));
+    const std::string g = str("+", term(x.s, a1, b1, c1), term(x.s, a2, b2, c2));
     const bool is_min = r.bound_sign < 0;
     side.hyps.push_back("(declare-const " + m + " Int)");
-    // The bound only applies when x is finite.
-    side.hyps.push_back(str("assert", str("=>", conj({x.is("fin"), pre_all}), str(is_min ? ">=" : "<=", g, m))));
-    return fin_term(m);
+    side.hyps.push_back(str("assert", str("=>", pre_all, str(is_min ? ">=" : "<=", g, m))));
+    return constant_term(m);
   }
 
-  // Adds an instance of a lemma (see the hints in rewrite.h). Lemmas are facts about
-  // integers, so the instance only applies when its arguments are finite.
+  // Adds an instance of a lemma (see the hints in rewrite.h).
   void add_lemma(const char* name, std::initializer_list<term> args) {
-    std::vector<std::string> finite;
     std::string call = std::string("(") + name;
-    for (const term& a : args) {
-      if (!a.fin) finite.push_back(a.is("fin"));
-      call += " " + a.val();
-    }
-    call += ')';
-    side.lemmas.push_back(finite.empty() ? call : str("=>", conj(finite), call));
+    for (const term& a : args)
+      call += " " + a.s;
+    side.lemmas.push_back(call + ")");
   }
 
   template <typename U, typename V, typename D, typename K>
@@ -441,26 +389,20 @@ public:
   // Predicates. Wildcard predicates have no exact encoding, so we use may/must approximations.
   template <typename T, typename Fn>
   pred_result pred(const rewrite::replacement_predicate<T, Fn>& p) {
-    const term t = to(p.a);
-    const std::string a = t.val();
+    const std::string a = to(p.a).s;
     const char* name = p.name;
-    // A condition on the value only holds if the term is finite (finite_and), and some
-    // predicates also hold for an infinity (inf_or).
-    auto finite_and = [&](const std::string& c) { return t.fin ? c : str("and", t.is("fin"), c); };
-    auto inf_or = [&](const char* inf, const std::string& c) {
-      return t.fin ? c : str("or", t.is(inf), finite_and(c));
-    };
     std::string may;
     if (!std::strcmp(name, "is_zero")) {
-      may = finite_and(str("=", a, "0"));
+      may = str("=", a, "0");
     } else if (!std::strcmp(name, "is_non_negative")) {
-      may = inf_or("pinf", str(">=", a, "0"));
+      may = str(">=", a, "0");
     } else if (!std::strcmp(name, "is_non_positive")) {
-      may = inf_or("ninf", str("<=", a, "0"));
+      may = str("<=", a, "0");
     } else if (!std::strcmp(name, "is_boolean")) {
-      may = finite_and(str("or", str("=", a, "0"), str("=", a, "1")));
-    } else if (!std::strcmp(name, "is_constant") || !std::strcmp(name, "is_finite")) {
-      may = t.fin ? "true" : t.is("fin");
+      may = str("or", str("=", a, "0"), str("=", a, "1"));
+    } else if (!std::strcmp(name, "is_constant")) {
+      // Any value may be a constant.
+      may = "true";
     } else if (!std::strcmp(name, "no_overflow")) {
       // Translating the argument already added the condition that it doesn't overflow.
       may = "true";
@@ -542,46 +484,6 @@ const char* const lemma_prelude =
     "(define-fun euclid ((a Int) (d Int)) Bool (=> (distinct d 0) (= a (+ (* d (ediv a d)) (emod a d)))))\n"
     "(define-fun negdiv ((s Int) (t Int) (d Int)) Bool\n"
     "  (=> (and (> d 0) (= s (- (- d 1) t))) (= (ediv s d) (- (ediv t d)))))\n";
-
-// Extended values and the helpers for them. See the header comment.
-const char* const x_prelude =
-    "(declare-datatype X ((fin (val Int)) (pinf) (ninf) (ind)))\n"
-    "(define-fun xanyind ((a X) (b X)) Bool (or ((_ is ind) a) ((_ is ind) b)))\n"
-    "(define-fun xboth ((a X) (b X)) Bool (and ((_ is fin) a) ((_ is fin) b)))\n"
-    "(define-fun xsgn ((a X)) Int\n"
-    "  (ite ((_ is pinf) a) 1 (ite ((_ is ninf) a) (- 1) (ite (> (val a) 0) 1 (ite (< (val a) 0) (- 1) 0)))))\n"
-    "(define-fun xinf ((s Int)) X (ite (= s 1) pinf (ite (= s (- 1)) ninf ind)))\n"
-    "(define-fun xtruthy ((a X)) Bool (not (= a (fin 0))))\n"
-    "(define-fun xrank ((a X)) Int (ite ((_ is ninf) a) (- 1) (ite ((_ is pinf) a) 1 0)))\n"
-    "(define-fun xless ((a X) (b X)) Bool\n"
-    "  (or (< (xrank a) (xrank b)) (and (xboth a b) (< (val a) (val b)))))\n"
-    "(define-fun xneg ((a X)) X\n"
-    "  (ite ((_ is fin) a) (fin (- (val a))) (ite ((_ is pinf) a) ninf (ite ((_ is ninf) a) pinf ind))))\n"
-    "(define-fun xadd ((a X) (b X)) X\n"
-    "  (ite (xanyind a b) ind\n"
-    "  (ite ((_ is fin) a) (ite ((_ is fin) b) (fin (+ (val a) (val b))) b)\n"
-    "  (ite ((_ is fin) b) a (ite (= a b) a ind)))))\n"
-    "(define-fun xsub ((a X) (b X)) X (xadd a (xneg b)))\n"
-    "(define-fun xmul ((a X) (b X)) X\n"
-    "  (ite (xanyind a b) ind (ite (xboth a b) (fin (* (val a) (val b))) (xinf (* (xsgn a) (xsgn b))))))\n"
-    "(define-fun xdiv ((a X) (b X)) X\n"
-    "  (ite (xanyind a b) ind\n"
-    "  (ite ((_ is fin) a) (ite ((_ is fin) b) (fin (ediv (val a) (val b))) (fin 0))\n"
-    "  (ite ((_ is fin) b) (xinf (* (xsgn a) (xsgn b))) ind))))\n"
-    "(define-fun xmod ((a X) (b X)) X (ite (xboth a b) (fin (emod (val a) (val b))) ind))\n"
-    "(define-fun xmin ((a X) (b X)) X (ite (xanyind a b) ind (ite (xless b a) b a)))\n"
-    "(define-fun xmax ((a X) (b X)) X (ite (xanyind a b) ind (ite (xless a b) b a)))\n"
-    "(define-fun xlt ((a X) (b X)) X (ite (xanyind a b) ind (fin (b2i (xless a b)))))\n"
-    "(define-fun xle ((a X) (b X)) X (ite (xanyind a b) ind (fin (b2i (not (xless b a))))))\n"
-    "(define-fun xeq ((a X) (b X)) X (ite (xanyind a b) ind (fin (b2i (= a b)))))\n"
-    "(define-fun xne ((a X) (b X)) X (ite (xanyind a b) ind (fin (b2i (not (= a b))))))\n"
-    "(define-fun xland ((a X) (b X)) X (ite (xanyind a b) ind (fin (b2i (and (xtruthy a) (xtruthy b))))))\n"
-    "(define-fun xlor ((a X) (b X)) X (ite (xanyind a b) ind (fin (b2i (or (xtruthy a) (xtruthy b))))))\n"
-    "(define-fun xnot ((a X)) X (ite ((_ is ind) a) ind (fin (b2i (not (xtruthy a))))))\n"
-    "(define-fun xbool ((a X)) X (ite ((_ is ind) a) ind (fin (b2i (xtruthy a)))))\n"
-    "(define-fun xabs ((a X)) X\n"
-    "  (ite ((_ is ind) a) ind (ite ((_ is fin) a) (fin (ite (< (val a) 0) (- (val a)) (val a))) pinf)))\n"
-    "(define-fun xsel ((c X) (p X) (q X)) X (ite ((_ is ind) c) ind (ite (xtruthy c) p q)))\n";
 
 // Writes DIR/ID.smt2, exiting on failure.
 void write_file(const std::string& dir, const std::string& id, const std::string& contents) {
@@ -673,16 +575,13 @@ private:
     const std::vector<repl_data>& repls = rule_data.repls;
 
     std::string decls;
-    for (const std::string& v : tr.vars) {
-      if (v.empty()) continue;
-      decls += "(declare-const " + v + " X)\n";
-      decls += "(assert (not ((_ is ind) " + v + ")))\n";
-      decls += "(assert (=> ((_ is fin) " + v + ") (in64 (val " + v + "))))\n";
-    }
-    for (const std::string& v : tr.consts) {
-      if (v.empty()) continue;
-      decls += "(declare-const " + v + " Int)\n(assert (in64 " + v + "))\n";
-    }
+    auto declare = [&](const std::string& v) {
+      if (!v.empty()) decls += "(declare-const " + v + " Int)\n(assert (in64 " + v + "))\n";
+    };
+    for (const std::string& v : tr.vars)
+      declare(v);
+    for (const std::string& v : tr.consts)
+      declare(v);
     for (const std::string& i : rule_data.pattern_defs)
       decls += i;
     for (const std::string& i : tr.assumes)
@@ -711,13 +610,11 @@ private:
 
       std::string body = "; " + id + "\n; " + d.text + "\n";
       body += prelude;
-      body += x_prelude;
       if (has_lemmas) body += lemma_prelude;
       body += decls + hyps;
       body += "(assert " + conj(all) + ")\n";
-      // Correct if the pattern is indeterminate, or the replacement is the same value.
-      const std::string p = rule_data.pattern.x();
-      body += "(assert " + str("not", str("or", "((_ is ind) " + p + ")", str("=", p, d.r.x()))) + ")\n";
+      // Correct if the replacement has the same value as the pattern.
+      body += "(assert " + str("distinct", rule_data.pattern.s, d.r.s) + ")\n";
       body += "(check-sat)\n(get-model)\n";
       write_file(dir_, id, body);
       write_row(manifest_, id, ruleset_, d.text);
@@ -761,21 +658,18 @@ bool apply_selftest_rules(Fn&& apply) {
       apply(x + c0 < y, x < y + c0) ||
       // Both replacements are wrong (the second only when c0 < 0, i.e. when we fell through).
       apply(min(x, x + may_be<0>(c0)), when(c0 >= 1, x + c0), x - c0) ||
-      // Wildcard predicates.
+      // Wildcard predicates. Wrong when x is 1 and c0 != 1.
       apply(x * c0, when(is_boolean(x), x)) ||
-      // Infinities (extended semantics). Wrong for x < 0 (the result is -inf).
-      apply(x * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
-      // Wrong for c0 < 0 (the result is -inf).
-      apply(rewrite::positive_infinity() * c0, rewrite::positive_infinity()) ||
-      // Wrong for finite x.
-      apply(max(x, rewrite::positive_infinity()), x) ||
-      // Wrong for x = 0 and for infinite x, where the pattern is indeterminate or an infinity.
-      apply(x + y, when(is_finite(x), rewrite::positive_infinity())) ||
-      // Wrong when x is -inf (the pattern is -inf).
+      // Wrong when x is a nonzero constant.
+      apply(x + y, when(is_constant(x), y)) ||
+      // Wrong when x is 0 and y != z.
+      apply(select(x, y, z), when(is_non_negative(x), y)) ||
+      // Wrong when x < 0.
       apply(abs(x), x) ||
-      // Wrong for every truthy non-negative x, including +inf (the result is -inf).
-      apply(select(x, rewrite::negative_infinity(), rewrite::positive_infinity()),
-          when(is_non_negative(x), rewrite::positive_infinity())) ||
+      // Wrong when x is truthy and y is 0.
+      apply(and_then(x, y), boolean(x)) ||
+      // Wrong when c0 % c1 != 0. The hint must not make it look correct.
+      apply((x + c0) % c1, when(c1 != 0, x % c1, euclid(c0, c1))) ||
       false;
 }
 // clang-format on
