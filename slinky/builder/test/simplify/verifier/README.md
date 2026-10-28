@@ -162,12 +162,9 @@ it.
 Some rules use `staircase_sum_min`/`staircase_sum_max`, the bounds that `staircase_sum_bounds` in
 [`arithmetic.cc`](../../../../base/arithmetic.cc) computes for `g(k) = ((k + a1)/b1)*c1 + ((k + a2)/b2)*c2`. Rather
 than encoding that search, the emitter introduces a fresh constant `m`, and assumes that it bounds `g` when the C++
-returns a bound. `staircase_sum_bounds` takes `int`, so it sees the arguments truncated to 32 bits, and it returns a
-bound when, for those, `|b1|, |b2| <= 1024`, and either `b1 == b2 == 0` (both terms are constant) or `b1, b2 != 0` and
-`c1*b2 == -c2*b1` (`g` is periodic). Otherwise, `rewrite.h` uses `INT64_MIN` or `INT64_MAX` as the bound, and the rule
-can still fire. The encoding assumes that the `int` arithmetic in `staircase_sum_bounds` doesn't overflow. The bound
-is only instantiated at the rule's own wildcard `k = x`, which is a weaker hypothesis than a bound for all `k`, but
-keeps the queries quantifier-free.
+would return a bound: `|b1|, |b2| <= 1024`, and either `b1 == b2 == 0` (both terms are constant) or
+`b1, b2 != 0` and `c1*b2 == -c2*b1` (`g` is periodic). The bound is only instantiated at the rule's own wildcard
+`k = x`, which is a weaker hypothesis than a bound for all `k`, but keeps the queries quantifier-free.
 
 ### Lemmas
 
