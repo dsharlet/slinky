@@ -1020,15 +1020,6 @@ const expr& dim_expr::get_field(buffer_field field) const {
   return fold_factor;
 }
 
-bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }
-bool is_negative_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::negative_infinity); }
-bool is_indeterminate(expr_ref x) { return as_intrinsic(x, intrinsic::indeterminate); }
-int is_infinity(expr_ref x) {
-  if (is_positive_infinity(x)) return 1;
-  if (is_negative_infinity(x)) return -1;
-  return 0;
-}
-
 bool is_finite(expr_ref x) {
   if (x.as<constant>()) return true;
   if (const call* c = x.as<call>()) {
