@@ -170,8 +170,7 @@ TEST_P(stencil, 2d) {
 
 class stencil_variable : public testing::TestWithParam<std::tuple<bool, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(alias_size_split, stencil_variable,
-    testing::Combine(testing::Bool(), testing::Values(0, 3)),
+INSTANTIATE_TEST_SUITE_P(alias_size_split, stencil_variable, testing::Combine(testing::Bool(), testing::Values(0, 3)),
     test_params_to_string<stencil_variable::ParamType>);
 
 TEST_P(stencil_variable, 1d) {

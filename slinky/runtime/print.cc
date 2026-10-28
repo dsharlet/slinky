@@ -1,9 +1,9 @@
 #include "slinky/runtime/print.h"
 
 #include <cassert>
+#include <iomanip>
 #include <sstream>
 #include <string>
-#include <iomanip>
 
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"

@@ -36,8 +36,7 @@ public:
   // Enqueues a loop task over `n` work items `[0, n)`. The tasks queued in this thread pool are instances of `task`
   // plus a task body `t` that executes each iteration. Tasks are complete when all work items are done. Each thread
   // calling `t` uses its own instance of `t`.
-  virtual ref_count<task> enqueue(
-      std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) = 0;
+  virtual ref_count<task> enqueue(std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
   // Does not return until the task is complete. The task object must have been created by the `enqueue` function of
   // this thread pool.

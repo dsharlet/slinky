@@ -179,11 +179,11 @@ TEST(evaluate, allocate) {
   eval_context ctx = make_context();
   expr elem_size = 1;
   evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}}, make_check(x, {4}, not_null)), ctx);
-  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast()},
-               make_check(x, {4}, not_null)),
+  evaluate(allocate::make(
+               x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4}, not_null)),
       ctx);
-  evaluate(allocate::make(x, memory_type::automatic, elem_size,
-               {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4}, not_null)),
+  evaluate(allocate::make(x, memory_type::automatic, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()},
+               make_check(x, {4}, not_null)),
       ctx);
 }
 
@@ -193,8 +193,7 @@ TEST(evaluate, make_buffer) {
   expr elem_size = 1;
   evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}}, make_check(x, {4})), ctx);
   evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast()}, make_check(x, {4})), ctx);
-  evaluate(
-      make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4})),
+  evaluate(make_buffer::make(x, base, elem_size, {{{0, 3}, 1}, dim::broadcast(), dim::broadcast()}, make_check(x, {4})),
       ctx);
 }
 
@@ -345,7 +344,8 @@ TEST(evaluate, transpose) {
                    make_check(y, {30, 20}, buf.base()),
                })),
       ctx);
-  evaluate(transpose::make(y, x, std::vector<int>{0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10}, buf.base())), ctx);
+  evaluate(
+      transpose::make(y, x, std::vector<int>{0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10}, buf.base())), ctx);
 
   // The last dimension is a broadcast and is dropped.
   evaluate(transpose::make(y, x, std::vector<int>{0, 5}, make_check(y, {10}, buf.base())), ctx);

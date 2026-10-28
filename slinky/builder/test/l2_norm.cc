@@ -93,9 +93,8 @@ TEST_P(l2_norm, pipeline) {
   func pass3 = func::make(reciprocal_sqrt, {{sum_in_sq, {point(b)}}}, {{inv_sqrt_sum, {b}}},
       call_stmt::attributes{.name = "reciprocal_sqrt"});
   func broadcast = func::make_copy({inv_sqrt_sum, {point(b)}}, {inv_sqrt_broadcast, {c, b}});
-  func pass4 =
-      func::make(multiply<float>, {{in, {point(c), point(b)}}, {inv_sqrt_broadcast, {point(c), point(b)}}},
-          {{out, {c, b}}}, call_stmt::attributes{.name = "multiply"});
+  func pass4 = func::make(multiply<float>, {{in, {point(c), point(b)}}, {inv_sqrt_broadcast, {point(c), point(b)}}},
+      {{out, {c, b}}}, call_stmt::attributes{.name = "multiply"});
 
   if (split > 0) {
     pass4.loops({{b, split}});

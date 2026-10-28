@@ -1620,7 +1620,8 @@ TEST(add_slices, pipeline) {
   func slice1 = func::make_copy({in, {point(x), point(1), point(y)}}, {in1, {x, y}});
 
   // Subtract the two slices.
-  func sub_slices = func::make(subtract<short>, {{in0, {point(x), point(y)}}, {in1, {point(x), point(y)}}}, {{out, {x, y}}});
+  func sub_slices =
+      func::make(subtract<short>, {{in0, {point(x), point(y)}}, {in1, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

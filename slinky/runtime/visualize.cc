@@ -141,8 +141,7 @@ public:
   }
   void visit(const constant* c) override { *this << c->value; }
   void visit(const constant_buffer* n) override {
-    *this << "make_buffer('<constant>', 0, "
-          << (n->value ? n->value->elem_size : 0) << ", [";
+    *this << "make_buffer('<constant>', 0, " << (n->value ? n->value->elem_size : 0) << ", [";
     if (n->value && n->value->rank > 0) {
       print_vector(span<dim>{n->value->dims, n->value->rank}, ", ");
     }
@@ -215,7 +214,7 @@ public:
   }
 
   void visit(const async* a) override {
-    *this << indent() << "{ let "; 
+    *this << indent() << "{ let ";
     if (a->sym.defined()) {
       *this << name(a->sym);
     } else {
