@@ -448,14 +448,13 @@ public:
     add_lemma("negdiv", {to(h.s), to(h.t), to(h.d)});
   }
 
-  template <typename Predicate, typename... Hints>
-  pred_result pred(const rewrite::replacement_hinted<Predicate, Hints...>& p) {
-    pred_result result = pred(p.pr);
-    // Hints only add lemmas. Any conditions that come with their terms are dropped, so they can't become premises.
+  // Adds the lemmas for a case's hints. Any conditions that come with their terms are dropped, so they can't become
+  // premises.
+  template <typename... Hints>
+  void hints(const std::tuple<const Hints&...>& hints) {
     const std::vector<std::string> conds = side.conds;
-    std::apply([&](const auto&... h) { (hint(h), ...); }, p.hints);
+    std::apply([&](const auto&... h) { (hint(h), ...); }, hints);
     side.conds = conds;
-    return result;
   }
 
   // Predicates. Wildcard predicates have no exact encoding, so we use may/must approximations.
@@ -624,23 +623,25 @@ class smt_rule_emitter {
   void add_repls(translator&, std::vector<repl_data>&, const P&) {}
   template <typename P, typename R>
   void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p, const R& r) {
-    add_repl(tr, repls, p, r, 1);
+    add_repl(tr, repls, p, rewrite::when(1, r));
   }
-  template <typename P, typename Pr, typename R, typename... Rest>
-  void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p, const rewrite::replacement_when<Pr, R>& w,
-      const Rest&... rest) {
-    add_repl(tr, repls, p, w.r, w.pr);
+  template <typename P, typename Pr, typename R, typename... Hints, typename... Rest>
+  void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p,
+      const rewrite::replacement_when<Pr, R, Hints...>& w, const Rest&... rest) {
+    add_repl(tr, repls, p, w);
     add_repls(tr, repls, p, rest...);
   }
 
-  template <typename P, typename R, typename Pr>
-  void add_repl(translator& tr, std::vector<repl_data>& repls, const P& p, const R& r, const Pr& pr) {
+  template <typename P, typename Pr, typename R, typename... Hints>
+  void add_repl(
+      translator& tr, std::vector<repl_data>& repls, const P& p, const rewrite::replacement_when<Pr, R, Hints...>& w) {
     repl_data d;
-    d.pr = tr.pred(pr);
-    d.r = tr.to(r);
+    d.pr = tr.pred(w.pr);
+    if constexpr (sizeof...(Hints) > 0) tr.hints(w.hints);
+    d.r = tr.to(w.r);
     d.side = tr.take();
     std::stringstream ss;
-    ss << p << " -> " << r << " if " << pr;
+    ss << p << " -> " << w.r << " if " << w.pr;
     d.text = sanitize(ss.str());
     repls.push_back(std::move(d));
   }

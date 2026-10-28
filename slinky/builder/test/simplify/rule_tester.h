@@ -183,8 +183,8 @@ public:
     return test_case(p, rewrite::when(1, r));
   }
 
-  template <typename Pattern, typename Predicate, typename Replacement>
-  bool test_case(const Pattern& p, const rewrite::replacement_when<Predicate, Replacement>& w) {
+  template <typename Pattern, typename Predicate, typename Replacement, typename... Hints>
+  bool test_case(const Pattern& p, const rewrite::replacement_when<Predicate, Replacement, Hints...>& w) {
     const Predicate& pr = w.pr;
     const Replacement& r = w.r;
     // This function needs to be kept small and simple, because it is instantiated by hundreds of different rules.

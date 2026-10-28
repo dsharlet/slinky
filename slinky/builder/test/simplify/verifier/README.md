@@ -173,8 +173,9 @@ keeps the queries quantifier-free.
 ### Lemmas
 
 Nonlinear integer arithmetic (division and modulo by symbolic constants) is hard for SMT solvers. A rule can help the
-solver by attaching hints to its predicate with `with_hints` (see [`rewrite.h`](../../../rewrite.h)). Hints are
-ignored when rules are applied. Each hint applies a lemma that holds for all integers:
+solver by passing hints to `when` after the replacement, as in `when(c0 > 0, r, euclid(c1, c0))` (see
+[`rewrite.h`](../../../rewrite.h)). Hints are ignored when rules are applied. Each hint applies a lemma that holds for
+all integers:
 
 - `cong(u, v, d, k)`: if `d != 0` and `u == v + d*k`, then `u % d == v % d` and `u / d == v / d + k`;
 - `euclid(a, d)`: if `d != 0`, then `a == d*(a/d) + a%d`;
