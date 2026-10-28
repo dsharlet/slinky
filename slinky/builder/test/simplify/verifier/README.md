@@ -71,10 +71,10 @@ To look at a single rule, find its id in the output or in `manifest.tsv` and run
 
 ## The SMT encoding
 
-A rule is `apply(pattern, r0, p0, r1, p1, ...)`: the pattern is rewritten to the first replacement `ri` whose predicate
-`pi` holds. The emitter writes a query for each replacement that asserts the conditions under which the simplifier
-would use it, and that its result differs from the pattern's. If the solver finds that unsatisfiable, the replacement
-is correct.
+A rule is `apply(pattern, when(p0, r0), when(p1, r1), ..., rn)`: the pattern is rewritten to the first replacement `ri`
+whose predicate `pi` holds, or to the last replacement `rn` (which is optional) if none of them do. The emitter writes a
+query for each replacement that asserts the conditions under which the simplifier would use it, and that its result
+differs from the pattern's. If the solver finds that unsatisfiable, the replacement is correct.
 
 ### Values
 
