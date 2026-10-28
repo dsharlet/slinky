@@ -111,9 +111,9 @@ The prelude of each query defines a helper `xop` for each operation, which follo
 Division and modulo are Euclidean, and `x / 0 == x % 0 == 0`, as in slinky. These are the prelude's `ediv` and `emod`.
 
 Each non-trivial node of a rule becomes a named term, `(define-fun nK () X (xadd x (fin c0)))`. Structurally identical
-nodes share a name. When all of a node's operands are known to be finite (e.g. arithmetic on constants), the emitter
-skips the helpers and writes plain integer arithmetic. Such a term is an `Int` expression, and is only wrapped in `fin`
-where it meets a term that isn't known to be finite.
+nodes share a name, which helps the solvers, especially with lemmas (see below). When all of a node's operands are known
+to be finite (e.g. arithmetic on constants), the emitter skips the helpers and writes plain integer arithmetic. Such a
+term is an `Int` expression, and is only wrapped in `fin` where it meets a term that isn't known to be finite.
 
 Optional subpatterns such as `may_be<0>(c0)` need no special handling: when the pattern matches without them, they
 take their default value, and the solver already considers that value for the free constant.
@@ -169,6 +169,20 @@ bound when, for those, `|b1|, |b2| <= 1024`, and either `b1 == b2 == 0` (both te
 can still fire. The encoding assumes that the `int` arithmetic in `staircase_sum_bounds` doesn't overflow. The bound
 is only instantiated at the rule's own wildcard `k = x`, which is a weaker hypothesis than a bound for all `k`, but
 keeps the queries quantifier-free.
+
+### Lemmas
+
+Nonlinear integer arithmetic (division and modulo by symbolic constants) is hard for SMT solvers. A rule can help the
+solver by attaching hints to its predicate with `with_hints` (see [`rewrite.h`](../../../rewrite.h)). Hints are
+ignored when rules are applied. Each hint applies a lemma that holds for all integers:
+
+- `cong(u, v, d, k)`: if `d != 0` and `u == v + d*k`, then `u % d == v % d` and `u / d == v / d + k`;
+- `euclid(a, d)`: if `d != 0`, then `a == d*(a/d) + a%d`;
+- `negdiv(s, t, d)`: if `d > 0` and `s == d - 1 - t`, then `s / d == -(t / d)`.
+
+The emitter asserts each hint, instantiated with the rule's terms, as a hypothesis of the query (for finite values
+only). This is sound because the lemmas are proven separately: every run also writes the queries `lemma_cong`,
+`lemma_euclid` and `lemma_negdiv`, which are `unsat` iff each lemma holds.
 
 ### Self-test
 
