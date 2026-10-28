@@ -615,6 +615,21 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predi
   return os << "<unknown predicate>";
 }
 
+// A case of a rule that substitutes r only if the predicate pr is true. This refers to pr and r rather than copying
+// them, so it is only valid until the end of the full expression that calls `when`. Copying them makes it harder for
+// the compiler to optimize the rules, which are often too big to inline everything.
+template <typename Predicate, typename Replacement>
+class replacement_when {
+public:
+  const Predicate& pr;
+  const Replacement& r;
+};
+
+template <typename Predicate, typename Replacement>
+SLINKY_INLINE replacement_when<Predicate, Replacement> when(const Predicate& pr, const Replacement& r) {
+  return {pr, r};
+}
+
 template <typename T>
 class replacement_eval {
 public:
@@ -930,18 +945,18 @@ class base_rewriter {
     return !overflowed;
   }
 
-  template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
+  template <typename Pattern, typename Predicate, typename Replacement, typename... Cases>
   SLINKY_INLINE bool find_replacement(
-      const match_context& ctx, Replacement r, Predicate pr, ReplacementPredicates... r_pr) {
+      const match_context& ctx, replacement_when<Predicate, Replacement> w, Cases... cases) {
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
     bool overflowed = false;
-    if (substitute(pr, ctx, overflowed) && !overflowed) {
-      result = substitute(r, ctx, overflowed);
+    if (substitute(w.pr, ctx, overflowed) && !overflowed) {
+      result = substitute(w.r, ctx, overflowed);
       if (!overflowed) return true;
     }
     // Try the next replacement
-    return find_replacement<Pattern>(ctx, r_pr...);
+    return find_replacement<Pattern>(ctx, cases...);
   }
 
 public:
@@ -950,17 +965,17 @@ public:
   base_rewriter(Target x) : x(std::move(x)) {}
   base_rewriter(const base_rewriter&) = delete;
 
-  // If the pattern p matches the target, substitute with the replacement r if the predicate pr is true.
-  // If the predicate is false, consider the next replacement and predicate.
-  // The last predicate is optional and defaults to true.
-  template <typename Pattern, typename... ReplacementPredicate>
-  SLINKY_INLINE bool operator()(Pattern p, ReplacementPredicate... r_pr) {
+  // If the pattern p matches the target, substitute with the first case that applies. A case is either
+  // `when(pr, r)`, which substitutes r if the predicate pr is true, or an unconditional replacement r, which must be
+  // the last case.
+  template <typename Pattern, typename... Cases>
+  SLINKY_INLINE bool operator()(Pattern p, Cases... cases) {
     if (!could_match(p, x)) return false;
 
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
-    return find_replacement<Pattern>(ctx, r_pr...);
+    return find_replacement<Pattern>(ctx, cases...);
   }
 };
 
