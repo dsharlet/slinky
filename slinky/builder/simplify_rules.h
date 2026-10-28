@@ -64,7 +64,7 @@ bool apply_min_rules(Fn&& apply) {
         when(eval(c0 + c1 == c2), max(x + c2, min(z, y + c1)))) ||
       apply(min(x, min(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         when(c0 + c1 >= 0, min(x, y + c1)),
-        min(y, x + c0) + c1 /*c0 + c1 < 0*/) ||
+        when(no_overflow(c0 + c1), min(y, x + c0) + c1)) ||
       apply(min(x + may_be<0>(c0), max(y, min(x, z) + may_be<0>(c1))), when(c1 >= c0, min(x + c0, max(y, z + c1)))) ||
       apply(min(max(x, min(y, c0)), c1), when(c0 >= c1, min(max(x, y), c1))) ||
       apply(min(min(x, y), max(x, z)), min(x, y)) ||
@@ -183,7 +183,7 @@ bool apply_max_rules(Fn&& apply) {
         when(eval(c0 + c1 == c2), min(x + c2, max(z, y + c1)))) ||
       apply(max(x, max(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         when(c0 + c1 <= 0, max(x, y + c1)),
-        max(y, x + c0) + c1 /*c0 + c1 > 0)*/) ||
+        when(no_overflow(c0 + c1), max(y, x + c0) + c1)) ||
       apply(max(x + may_be<0>(c0), min(y, max(x, z) + may_be<0>(c1))), when(c1 < c0, max(x + c0, min(y, z + c1)))) ||
       apply(max(min(x, max(y, c0)), c1), when(c0 <= c1, max(min(x, y), c1))) ||
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
