@@ -856,6 +856,10 @@ template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive, "is_non_positive"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean, "is_boolean"); }
+// Always true. Like any constant expression in a rule, evaluating x stops the rule from firing if it overflows, so this
+// states that requirement explicitly.
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto no_overflow(const T& x) { return make_predicate(x, [](index_t) { return true; }, "no_overflow"); }
 
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::and_then, {a, b}}; }
