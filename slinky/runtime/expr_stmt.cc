@@ -151,9 +151,7 @@ T* make_let(Lets&& lets, Body body) {
 expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 expr let::make(span<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
 
-expr let::make(var sym, expr value, expr body) {
-  return make({{sym, std::move(value)}}, std::move(body));
-}
+expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
 namespace {
 
@@ -192,9 +190,7 @@ stmt let_stmt::make(span<std::pair<var, expr>> lets, stmt body, bool is_closure,
   return stmt(n);
 }
 
-stmt let_stmt::make(var sym, expr value, stmt body) {
-  return make({{sym, std::move(value)}}, std::move(body));
-}
+stmt let_stmt::make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
 namespace {
 

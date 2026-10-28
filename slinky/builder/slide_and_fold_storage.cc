@@ -62,8 +62,7 @@ void define_undef_bounds(box_expr& bounds, var sym) {
 }
 
 // Keep substituting substitutions until nothing happens.
-std::vector<dim_expr> recursive_substitute(
-    std::vector<dim_expr> dims, span<std::pair<expr, expr>> substitutions) {
+std::vector<dim_expr> recursive_substitute(std::vector<dim_expr> dims, span<std::pair<expr, expr>> substitutions) {
   scoped_trace trace("recursive_substitute");
   while (true) {
     bool changed = false;

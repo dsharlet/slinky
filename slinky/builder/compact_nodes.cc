@@ -8,7 +8,6 @@
 
 #include "slinky/base/ref_count.h"
 #include "slinky/base/util.h"
-#include "slinky/base/util.h"
 #include "slinky/builder/node_mutator.h"
 #include "slinky/builder/optimizations.h"
 #include "slinky/runtime/expr.h"
@@ -97,9 +96,7 @@ std::size_t size_of(const block& n) { return sizeof(arena_node<block>) + size_of
 std::size_t size_of(const call_stmt& n) {
   return sizeof(arena_node<call_stmt>) + size_of(n.inputs) + size_of(n.outputs) + size_of(n.scalars);
 }
-std::size_t size_of(const copy_stmt& n) {
-  return sizeof(arena_node<copy_stmt>) + size_of(n.src_x) + size_of(n.dst_x);
-}
+std::size_t size_of(const copy_stmt& n) { return sizeof(arena_node<copy_stmt>) + size_of(n.src_x) + size_of(n.dst_x); }
 std::size_t size_of(const allocate& n) { return sizeof(arena_node<allocate>) + size_of(n.dims); }
 std::size_t size_of(const make_buffer& n) { return sizeof(arena_node<make_buffer>) + size_of(n.dims); }
 std::size_t size_of(const crop_buffer& n) { return sizeof(arena_node<crop_buffer>) + size_of(n.bounds); }

@@ -162,8 +162,8 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
   if (a.is_point() && b.is_point()) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
-  } 
-  
+  }
+
   constant_interval a_const(a);
   constant_interval b_const(b);
 

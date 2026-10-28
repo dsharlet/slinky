@@ -77,7 +77,8 @@ public:
   }
 };
 
-template <class PingPong> void BM_ping_pong(benchmark::State &state) {
+template <class PingPong>
+void BM_ping_pong(benchmark::State& state) {
   const int rounds = 100000;
   while (state.KeepRunningBatch(rounds)) {
     PingPong game(rounds);
@@ -91,4 +92,4 @@ template <class PingPong> void BM_ping_pong(benchmark::State &state) {
 BENCHMARK(BM_ping_pong<atomic_ping_pong>);
 BENCHMARK(BM_ping_pong<cond_var_ping_pong>);
 
-} // anonymous namespace
+}  // anonymous namespace

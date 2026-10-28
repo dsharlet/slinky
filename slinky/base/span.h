@@ -3,10 +3,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <iterator>
 #include <limits>
 #include <type_traits>
-#include <cassert>
 #include <vector>
 
 namespace slinky {

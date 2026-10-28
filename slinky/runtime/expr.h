@@ -601,9 +601,7 @@ struct dim_expr {
 
   const expr& get_field(buffer_field field) const;
 
-  expr is_broadcast() const {
-    return bounds.min == 0 && bounds.max == 0 && stride == 0;
-  }
+  expr is_broadcast() const { return bounds.min == 0 && bounds.max == 0 && stride == 0; }
 };
 
 class expr_visitor {

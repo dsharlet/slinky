@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "slinky/builder/rewrite.h"
 #include "slinky/builder/simplify_rules.h"
@@ -200,6 +200,7 @@ expr simplify(const less* op, expr a, expr b) {
 expr simplify(const less_equal* op, expr a, expr b) {
   // Do a few quick checks before rewriting to less.
   auto r = make_rewriter(pattern_expr{a} <= pattern_expr{b});
+  // clang-format off
   if (r(rewrite::negative_infinity() <= x, true) ||
       r(x <= rewrite::positive_infinity(), true) || 
       r(x <= x, true) ||
@@ -207,6 +208,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r(x - 1 <= y, x < y)) {
     return r.result;
   }
+  // clang-format on
 
   // Rewrite to !(b < a) and simplify that instead.
   expr result = simplify(static_cast<const logical_not*>(nullptr),

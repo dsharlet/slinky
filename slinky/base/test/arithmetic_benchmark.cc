@@ -1,5 +1,5 @@
-#include <benchmark/benchmark.h>
 #include <algorithm>
+#include <benchmark/benchmark.h>
 #include <cstdlib>
 
 #include "slinky/base/arithmetic.h"
