@@ -145,7 +145,7 @@ expr simplify(const mul* op, expr a, expr b) {
 expr simplify(const div* op, expr a, expr b) {
   auto ca = as_constant(a);
   auto cb = as_constant(b);
-  if (ca && cb) {
+  if (ca && cb && !div_overflows(*ca, *cb)) {
     return euclidean_div(*ca, *cb);
   }
 

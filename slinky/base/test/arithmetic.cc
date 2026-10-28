@@ -1,12 +1,33 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <random>
 
 #include "slinky/base/arithmetic.h"
 #include "slinky/base/test/seeded_test.h"
 
 namespace slinky {
+
+TEST(arithmetic, euclidean_div_mod_negative_one) {
+  constexpr int64_t min = std::numeric_limits<int64_t>::min();
+  constexpr int64_t max = std::numeric_limits<int64_t>::max();
+  for (int64_t a : {min, min + 1, int64_t{-5}, int64_t{-1}, int64_t{0}, int64_t{1}, int64_t{5}, max}) {
+    // Negation must wrap rather than overflow, so min maps to min.
+    const int64_t neg = static_cast<int64_t>(uint64_t{0} - static_cast<uint64_t>(a));
+    ASSERT_EQ(euclidean_div<int64_t>(a, -1), neg);
+    ASSERT_EQ(euclidean_mod<int64_t>(a, -1), 0);
+  }
+  ASSERT_TRUE(div_overflows<int64_t>(min, -1));
+  ASSERT_FALSE(div_overflows<int64_t>(min + 1, -1));
+  ASSERT_FALSE(div_overflows<int64_t>(min, 1));
+  ASSERT_FALSE(div_overflows<int64_t>(min, -2));
+  ASSERT_EQ(euclidean_div<int8_t>(-128, -1), -128);
+  ASSERT_EQ(euclidean_mod<int8_t>(-128, -1), 0);
+  ASSERT_EQ(euclidean_div<uint32_t>(7, 2), 3u);
+  ASSERT_EQ(euclidean_mod<uint32_t>(0xFFFFFFFFu, 0xFFFFFFFFu), 0u);
+}
 
 TEST(arithmetic, euclidean_div_mod) {
   for (int i = 0; i < 1000; ++i) {
