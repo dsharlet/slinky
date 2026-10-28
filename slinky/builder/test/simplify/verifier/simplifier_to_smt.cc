@@ -575,10 +575,10 @@ class smt_rule_emitter {
   void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p, const R& r) {
     add_repl(tr, repls, p, r, 1);
   }
-  template <typename P, typename R, typename Pr, typename... Rest>
-  void add_repls(
-      translator& tr, std::vector<repl_data>& repls, const P& p, const R& r, const Pr& pr, const Rest&... rest) {
-    add_repl(tr, repls, p, r, pr);
+  template <typename P, typename Pr, typename R, typename... Rest>
+  void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p, const rewrite::replacement_when<Pr, R>& w,
+      const Rest&... rest) {
+    add_repl(tr, repls, p, w.r, w.pr);
     add_repls(tr, repls, p, rest...);
   }
 
@@ -600,8 +600,8 @@ class smt_rule_emitter {
     return ruleset + buf;
   }
 
-  template <typename P, typename R, typename... Rest>
-  translated_rule translate(const std::string& rule, const P& p, const R& r, const Rest&... rest) {
+  template <typename P, typename... Cases>
+  translated_rule translate(const std::string& rule, const P& p, const Cases&... cases) {
     translated_rule result;
     translator& tr = result.tr;
     tr.rule = rule;
@@ -610,7 +610,7 @@ class smt_rule_emitter {
     tr.in_pattern = false;
     // A pattern has no conditions or hypotheses (its range assumptions are in tr.assumes), only definitions.
     result.pattern_defs = tr.take().defs;
-    add_repls(tr, result.repls, p, r, rest...);
+    add_repls(tr, result.repls, p, cases...);
     return result;
   }
 
@@ -618,18 +618,13 @@ public:
   smt_rule_emitter(std::string dir, std::string ruleset, std::ofstream& manifest)
       : dir_(std::move(dir)), ruleset_(std::move(ruleset)), manifest_(manifest) {}
 
-  template <typename P, typename R>
-  bool operator()(const P& p, const R& r) {
-    return operator()(p, r, 1);
-  }
-
-  template <typename P, typename R, typename Pr, typename... Rest>
-  bool operator()(const P& p, const R& r, const Pr& pr, const Rest&... rest) {
+  template <typename P, typename... Cases>
+  bool operator()(const P& p, const Cases&... cases) {
     const std::string rule = rule_id(ruleset_, index_++);
 
     std::stringstream ss;
     ss << p;
-    translated_rule rule_data = translate(rule + " (" + sanitize(ss.str()) + ")", p, r, pr, rest...);
+    translated_rule rule_data = translate(rule + " (" + sanitize(ss.str()) + ")", p, cases...);
 
     emit_rule(rule, rule_data);
     return false;
@@ -704,9 +699,9 @@ bool apply_selftest_rules(Fn&& apply) {
       apply(min(x, y), x) ||
       apply(x + c0 < y, x < y + c0) ||
       // Both replacements are wrong (the second only when c0 < 0, i.e. when we fell through).
-      apply(min(x, x + may_be<0>(c0)), x + c0, c0 >= 1, x - c0) ||
+      apply(min(x, x + may_be<0>(c0)), when(c0 >= 1, x + c0), x - c0) ||
       // Wildcard predicates.
-      apply(x * c0, x, is_boolean(x)) ||
+      apply(x * c0, when(is_boolean(x), x)) ||
       // Infinities (extended semantics). Wrong for x < 0 (the result is -inf).
       apply(x * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
       // Wrong for c0 < 0 (the result is -inf).
@@ -714,12 +709,12 @@ bool apply_selftest_rules(Fn&& apply) {
       // Wrong for finite x.
       apply(max(x, rewrite::positive_infinity()), x) ||
       // Wrong for x = 0 and for infinite x, where the pattern is indeterminate or an infinity.
-      apply(x + y, rewrite::positive_infinity(), is_finite(x)) ||
+      apply(x + y, when(is_finite(x), rewrite::positive_infinity())) ||
       // Wrong when x is -inf (the pattern is -inf).
       apply(abs(x), x) ||
       // Wrong for every truthy non-negative x, including +inf (the result is -inf).
-      apply(select(x, rewrite::negative_infinity(), rewrite::positive_infinity()), rewrite::positive_infinity(),
-          is_non_negative(x)) ||
+      apply(select(x, rewrite::negative_infinity(), rewrite::positive_infinity()),
+          when(is_non_negative(x), rewrite::positive_infinity())) ||
       false;
 }
 // clang-format on
