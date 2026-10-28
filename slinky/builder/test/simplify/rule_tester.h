@@ -179,12 +179,14 @@ public:
   }
 
   template <typename Pattern, typename Replacement>
-  bool operator()(const Pattern& p, const Replacement& r) {
-    return operator()(p, r, 1);
+  bool test_case(const Pattern& p, const Replacement& r) {
+    return test_case(p, rewrite::when(1, r));
   }
 
-  template <typename Pattern, typename Replacement, typename Predicate>
-  bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
+  template <typename Pattern, typename Predicate, typename Replacement>
+  bool test_case(const Pattern& p, const rewrite::replacement_when<Predicate, Replacement>& w) {
+    const Predicate& pr = w.pr;
+    const Replacement& r = w.r;
     // This function needs to be kept small and simple, because it is instantiated by hundreds of different rules.
     std::stringstream rule_str;
     rule_str << p << " -> " << r << " if " << pr;
@@ -215,9 +217,9 @@ public:
     return true;
   }
 
-  template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicate>
-  bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr, ReplacementPredicate... r_pr) {
-    return operator()(p, r, pr) && operator()(p, r_pr...);
+  template <typename Pattern, typename... Cases>
+  bool operator()(const Pattern& p, const Cases&... cases) {
+    return (test_case(p, cases) && ...);
   }
 };
 
