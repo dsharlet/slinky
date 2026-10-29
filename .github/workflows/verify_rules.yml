@@ -1,25 +1,9 @@
 name: verify_rules
 on:
   pull_request:
-    paths:
-      - slinky/builder/simplify_rules.h
-      - slinky/builder/rewrite.h
-      - slinky/base/arithmetic.*
-      - slinky/builder/test/simplify/verifier/simplifier_to_smt.cc
-      - slinky/builder/test/simplify/verifier/verify_simplifier_rules.py
-      - slinky/builder/test/simplify/verifier/known_gaps.toml
-      - .github/workflows/verify_rules.yml
   push:
     branches:
       - main
-    paths:
-      - slinky/builder/simplify_rules.h
-      - slinky/builder/rewrite.h
-      - slinky/base/arithmetic.*
-      - slinky/builder/test/simplify/verifier/simplifier_to_smt.cc
-      - slinky/builder/test/simplify/verifier/verify_simplifier_rules.py
-      - slinky/builder/test/simplify/verifier/known_gaps.toml
-      - .github/workflows/verify_rules.yml
   workflow_dispatch:
 
 jobs:
