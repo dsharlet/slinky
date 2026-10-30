@@ -334,6 +334,11 @@ class copy_aliaser : public stmt_mutator {
     if (!assume_in_bounds) {
       bool in_bounds = true;
       for (std::size_t d = 0; d < alloc_dims.size(); ++d) {
+        if (d < alias.permutation.size() && alias.permutation[d] == transpose::new_dim) {
+          // This dimension is not a dimension of the target (e.g. a broadcast, or a dimension of extent 1), so it
+          // can't be out of bounds of the target.
+          continue;
+        }
         const dim_expr& alias_dim = alias_dims[d];
         if (!prove_true(alloc_dims[d].bounds.min >= alias_dim.bounds.min) ||
             !prove_true(alloc_dims[d].bounds.max <= alias_dim.bounds.max)) {
@@ -772,11 +777,16 @@ public:
       }
     }
 
-    for (const dim_expr& d : a.dims) {
-      if (!d.stride.defined()) {
+    for (std::size_t src_d = 0; src_d < a.dims.size(); ++src_d) {
+      dim_expr& d = a.dims[src_d];
+      if (d.stride.defined()) continue;
+      const dim_expr& src_dim = info->dims[src_d];
+      if (a.permutation[src_d] != transpose::new_dim || !prove_true(src_dim.bounds.min == src_dim.bounds.max)) {
         // We didn't define all the dimensions of the buffer we want to replace.
         return;
       }
+      // This dimension of the src is not a dimension of the dst, but it has extent 1, so the stride doesn't matter.
+      d.stride = src_dim.stride.defined() ? src_dim.stride : expr(0);
     }
 
     a.assume_in_bounds = false;
