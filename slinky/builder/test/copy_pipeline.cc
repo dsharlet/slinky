@@ -765,6 +765,74 @@ TEST_P(transposed_output, pipeline) {
   }
 }
 
+class squeezed_output : public testing::TestWithParam<std::tuple<bool, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(schedule, squeezed_output, testing::Combine(testing::Bool(), iota3),
+    test_params_to_string<squeezed_output::ParamType>);
+
+TEST_P(squeezed_output, pipeline) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  const int squeezed_dim = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(short));
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+  test_context eval_ctx;
+
+  // In this pipeline, the result is copied to the output, removing a dimension of extent 1. We should just compute the
+  // result directly in the output.
+  func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
+  std::vector<interval_expr> intm_bounds = {point(x), point(y)};
+  intm_bounds.insert(intm_bounds.begin() + squeezed_dim, point(0));
+  func squeezed = func::make_copy({intm, intm_bounds}, {out, {x, y}}, eval_ctx.copy);
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  std::vector<index_t> in_extents = {W, H};
+  in_extents.insert(in_extents.begin() + squeezed_dim, 1);
+  buffer<short, 3> in_buf(in_extents);
+  init_random(in_buf);
+
+  buffer<short, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      std::vector<index_t> in_coords = {x, y};
+      in_coords.insert(in_coords.begin() + squeezed_dim, 0);
+      ASSERT_EQ(out_buf(x, y), in_buf(in_coords) + 1);
+    }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  }
+}
+
 TEST(stacked_output, pipeline) {
   // Make the pipeline
   node_context ctx;
