@@ -98,7 +98,7 @@ def main():
     parser.add_argument("--pr-label", default="PR", help="description of the PR revision for the report")
     parser.add_argument("--rounds", type=int, default=21, help="number of measured rounds")
     parser.add_argument("--warmup", type=int, default=1, help="number of unmeasured rounds to run first")
-    parser.add_argument("--threshold", type=float, default=5, help="percent change to flag")
+    parser.add_argument("--threshold", type=float, default=2, help="percent change to flag")
     parser.add_argument("--cpu", type=int, help="pin each run to this CPU with taskset")
     parser.add_argument("--markdown", required=True, help="path to write the Markdown report")
     parser.add_argument("--json", help="path to write the raw results")
