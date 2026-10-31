@@ -67,7 +67,7 @@ Useful options:
 To look at a single rule, find its id in the output or in `manifest.tsv` and run a solver on its query directly, e.g.
 `z3 /tmp/rules/min_012_r0.smt2`. Each query starts with a comment giving the rule, and ends with `(get-model)`, so a
 `sat` result prints a counterexample in SMT-LIB format. The script normalizes counterexamples to one line, e.g.
-`x=+inf, y=3, c0=2`.
+`x=-1, y=3, c0=2`.
 
 ## The SMT encoding
 
@@ -78,42 +78,31 @@ differs from the pattern's. If the solver finds that unsatisfiable, the replacem
 
 ### Values
 
-Integers are SMT `Int`s, with booleans as 0/1. The rules use *extended* semantics, in which a wildcard (`x`, `y`, ...)
-ranges over the integers plus `+inf` and `-inf`. A value is an element of the SMT datatype
+Integers are SMT `Int`s, with booleans as 0/1. Wildcards (`x`, `y`, ...) and constants (`c0`, `c1`, ...) are `Int`s in
+the `int64` range:
 
 ```
-(declare-datatype X ((fin (val Int)) (pinf) (ninf) (ind)))
+(declare-const x Int)
+(assert (in64 x))
 ```
 
-where `(fin v)` is the finite value `v`, `pinf` is `+inf`, `ninf` is `-inf` and `ind` is indeterminate. A wildcard
-`x` is a constant of type `X`, which is never indeterminate, because `simplify()` returns early on indeterminate
-operands, and which is in the `int64` range when it is finite:
-
-```
-(declare-const x X)
-(assert (not ((_ is ind) x)))
-(assert (=> ((_ is fin) x) (in64 (val x))))
-```
-
-Constants (`c0`, `c1`, ...) are always finite, so they are plain `Int`s, written `(fin c0)` where they meet an `X`.
+That wildcards are finite is an invariant of the simplifier, not an assumption about the programs it simplifies. The
+only values in slinky that aren't finite are the literals `positive_infinity()`, `negative_infinity()` and
+`indeterminate()`, which are used as the endpoints of unbounded intervals. Every other expression (a variable, buffer
+metadata, or any compound expression) denotes a finite value. The `simplify()` functions in
+[`simplify_exprs.cc`](../../../simplify_exprs.cc) eliminate operands that are infinities or indeterminate before they
+apply any rule: the result is an infinity, a constant, or indeterminate when it can't be represented (e.g. `+inf * y` or
+`select(c, +inf, y)`). So a wildcard never matches one of these literals, and they never appear inside another
+expression. No rule mentions them either. Debug builds assert this whenever the rules match an expression.
 
 ### Operations
 
-The prelude of each query defines a helper `xop` for each operation, which follow `simplify()` in
-[`simplify_exprs.cc`](../../../simplify_exprs.cc):
+Each operation is the corresponding SMT integer arithmetic or comparison. Division and modulo are Euclidean, and
+`x / 0 == x % 0 == 0`, as in slinky. These are the prelude's `ediv` and `emod`.
 
-- indeterminate propagates through everything (a poison value);
-- `inf + -inf`, `inf * 0`, `inf / inf`, `inf / 0` and `mod` with an infinity are indeterminate;
-- `finite / inf` is 0;
-- `min`, `max` and comparisons use the total order `-inf < Z < +inf`;
-- infinities are truthy.
-
-Division and modulo are Euclidean, and `x / 0 == x % 0 == 0`, as in slinky. These are the prelude's `ediv` and `emod`.
-
-Each non-trivial node of a rule becomes a named term, `(define-fun nK () X (xadd x (fin c0)))`. Structurally identical
-nodes share a name, which helps the solvers, especially with lemmas (see below). When all of a node's operands are known
-to be finite (e.g. arithmetic on constants), the emitter skips the helpers and writes plain integer arithmetic. Such a
-term is an `Int` expression, and is only wrapped in `fin` where it meets a term that isn't known to be finite.
+Each node of a rule that depends on a wildcard becomes a named term, `(define-fun nK () Int (+ x c0))`. Structurally
+identical nodes share a name, which helps the solvers, especially with lemmas (see below). A node that only depends on
+constants is written inline.
 
 Optional subpatterns such as `may_be<0>(c0)` need no special handling: when the pattern matches without them, they
 take their default value, and the solver already considers that value for the free constant.
@@ -122,9 +111,9 @@ take their default value, and the solver already considers that value for the fr
 
 The rules are applied to `int64` expressions, but SMT Ints are unbounded. The encoding bridges the two like this:
 
-- Finite wildcards and constants are assumed to be in the `int64` range (`in64`).
-- Every finite subterm of the pattern that contains a wildcard is assumed to be in range too: the pattern is an
-  expression that already exists, and the rules don't need to be correct for one that overflows.
+- Wildcards and constants are assumed to be in the `int64` range (`in64`).
+- Every subterm of the pattern that contains a wildcard is assumed to be in range too: the pattern is an expression that
+  already exists, and the rules don't need to be correct for one that overflows.
 - Subterms that `rewrite.h` constant folds (those evaluated on `index_t`, e.g. `c0 + c1` in a replacement or a
   predicate) get the same overflow checks that `rewrite.h` does. A rule doesn't fire if folding overflows, so "nothing
   overflows" is a premise of the query.
@@ -139,23 +128,21 @@ The query for replacement `i` assumes that:
 
 Predicates on wildcards (`is_non_negative(x)`, `is_constant(x)`, ...) are decided by the simplifier from what it knows
 about an expression, so they have no exact SMT encoding. Instead, the emitter computes two approximations of each
-predicate `P`: *may* (`P => may`) and *must* (`must => P`). For example, `is_non_negative(x)` *may* hold when `x` is
-`+inf` or a finite value `>= 0`, and its *must* is `false`. When the argument is a constant expression, such as
-`is_non_negative(c0 - c1)`, the predicate is exact and *may* and *must* are the same. Condition 1 uses *may*, and
-condition 3 uses *not must*. Both overapproximate the cases in which replacement `i` is used, so an `unsat` result
-covers every case the simplifier can actually reach. `!` swaps the two approximations, and `&&`/`||` combine them
-pointwise.
+predicate `P`: *may* (`P => may`) and *must* (`must => P`). For example, `is_non_negative(x)` *may* hold when `x >= 0`,
+and its *must* is `false`. When the argument is a constant expression, such as `is_non_negative(c0 - c1)`, the predicate
+is exact and *may* and *must* are the same. Condition 1 uses *may*, and condition 3 uses *not must*. Both
+overapproximate the cases in which replacement `i` is used, so an `unsat` result covers every case the simplifier can
+actually reach. `!` swaps the two approximations, and `&&`/`||` combine them pointwise.
 
 ### The correctness condition
 
 The final assertion is that the replacement is wrong:
 
 ```
-(assert (not (or ((_ is ind) pattern) (= pattern replacement))))
+(assert (distinct pattern replacement))
 ```
 
-That is, a rewrite is correct if the pattern is indeterminate (any result is allowed), or the replacement is equal to
-it.
+That is, a rewrite is correct if the replacement is equal to the pattern.
 
 ### Staircase bounds
 
@@ -177,13 +164,13 @@ all integers:
 - `euclid(a, d)`: if `d != 0`, then `a == d*(a/d) + a%d`;
 - `negdiv(s, t, d)`: if `d > 0` and `s == d - 1 - t`, then `s / d == -(t / d)`.
 
-The emitter asserts each hint, instantiated with the rule's terms, as a hypothesis of the query (for finite values
-only). This is sound because the lemmas are proven separately: every run also writes the queries `lemma_cong`,
-`lemma_euclid` and `lemma_negdiv`, which are `unsat` iff each lemma holds.
+The emitter asserts each hint, instantiated with the rule's terms, as a hypothesis of the query. This is sound because
+the lemmas are proven separately: every run also writes the queries `lemma_cong`, `lemma_euclid` and `lemma_negdiv`,
+which are `unsat` iff each lemma holds.
 
 ### Self-test
 
 A bug in the encoding could add contradictory assumptions, which would make every query `unsat`, so every rule would
 look proven. To guard against that, the emitter always writes queries for a few deliberately wrong rules. They exercise
-each part of the encoding: constants, fall-through between replacements, wildcard predicates and infinities. All of them
-must be `sat`, and the verifier fails the run if any of them isn't.
+each part of the encoding: constants, fall-through between replacements, wildcard predicates, `select`, `abs`,
+`and_then` and lemma hints. All of them must be `sat`, and the verifier fails the run if any of them isn't.

@@ -30,6 +30,14 @@ expr simplify(op_simplified, const T* op, expr a, expr b) {
   }
 }
 
+// Simplifying a bound can produce indeterminate, e.g. the upper bound of x*y is oo*y if x is unbounded. Indeterminate
+// means that we don't know anything about the bound, so we replace it with an infinity, which is always a valid bound.
+interval_expr unbounded_if_indeterminate(interval_expr x) {
+  if (is_indeterminate(x.min)) x.min = slinky::negative_infinity();
+  if (is_indeterminate(x.max)) x.max = slinky::positive_infinity();
+  return x;
+}
+
 template <typename T>
 interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
   if (a.is_point() && b.is_point()) {
@@ -121,7 +129,7 @@ void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr&
 }  // namespace
 
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
-  interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
+  interval_expr result = unbounded_if_indeterminate(bounds_of_linear(op, std::move(a), std::move(b)));
   if (op) {
     tighten_correlated_bounds(result, op->a, op->b, 1);
   }
@@ -130,7 +138,7 @@ interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
 interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
   // -b => bounds are {-max, -min}.
   std::swap(b.min, b.max);
-  interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
+  interval_expr result = unbounded_if_indeterminate(bounds_of_linear(op, std::move(a), std::move(b)));
   if (op) {
     tighten_correlated_bounds(result, op->a, op->b, -1);
   }
@@ -166,9 +174,7 @@ struct constant_interval {
   bool is_non_positive() const { return max && *max <= 0; }
 };
 
-}  // namespace
-
-interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
+interval_expr bounds_of_mul(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
   if (a.is_point() && b.is_point()) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
@@ -226,8 +232,6 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   }
 }
 
-namespace {
-
 expr negate(expr a) { return simplify(static_cast<const sub*>(nullptr), 0, std::move(a)); }
 interval_expr negate(interval_expr x) {
   if (x.is_point()) {
@@ -244,9 +248,7 @@ interval_expr union_x_negate_x(interval_expr x) {
   };
 }
 
-}  // namespace
-
-interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
+interval_expr bounds_of_div(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
@@ -285,6 +287,15 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
     }
   }
   return union_x_negate_x(std::move(a));
+}
+
+}  // namespace
+
+interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
+  return unbounded_if_indeterminate(bounds_of_mul(op, std::move(a), std::move(b)));
+}
+interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
+  return unbounded_if_indeterminate(bounds_of_div(op, std::move(a), std::move(b)));
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   if (a.is_point() && b.is_point()) {

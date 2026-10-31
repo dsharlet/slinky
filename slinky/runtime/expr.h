@@ -708,6 +708,8 @@ SLINKY_INLINE int is_infinity(expr_ref x) {
   return 0;
 }
 bool is_finite(expr_ref x);
+// Returns true if `x` contains an infinity or indeterminate anywhere in its tree.
+bool contains_non_finite(expr_ref x);
 
 SLINKY_INLINE index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
 expr boolean(const expr& x);
