@@ -1,0 +1,62 @@
+name: simplifier-perf-comment
+
+# Posts the report from simplifier-perf.yml as a PR comment. This is a separate
+# workflow_run workflow so that it has write access even for PRs from forks.
+# It runs from the default branch and never checks out or runs PR code, so the
+# artifact it downloads is untrusted data.
+
+on:
+  workflow_run:
+    workflows: [simplifier-perf]
+    types: [completed]
+
+permissions:
+  actions: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: simplifier-perf
+          path: ${{ runner.temp }}/simplifier-perf
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Post or update the comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RESULTS: ${{ runner.temp }}/simplifier-perf
+        run: |
+          marker='<!-- simplifier-perf -->'
+
+          # The PR number comes from the artifact, so make sure it names the PR
+          # that the run actually built before commenting on it.
+          pr=$(head -c 16 "$RESULTS/pr_number")
+          if ! [[ "$pr" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid PR number in artifact"
+            exit 1
+          fi
+          pr_head=$(gh api "repos/$GH_REPO/pulls/$pr" --jq .head.sha)
+          if [ "$pr_head" != "$HEAD_SHA" ]; then
+            echo "PR #$pr is now at $pr_head, not $HEAD_SHA; skipping the stale report."
+            exit 0
+          fi
+
+          { echo "$marker"; head -c 60000 "$RESULTS/comment.md"; } > comment.md
+
+          comment_id=$(gh api --paginate "repos/$GH_REPO/issues/$pr/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" \
+            | head -n 1)
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -F body=@comment.md > /dev/null
+          else
+            gh api --method POST "repos/$GH_REPO/issues/$pr/comments" -F body=@comment.md > /dev/null
+          fi
