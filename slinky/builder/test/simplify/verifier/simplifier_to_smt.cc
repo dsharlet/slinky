@@ -50,6 +50,7 @@
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "slinky/base/util.h"
@@ -119,6 +120,8 @@ struct side_info {
   std::vector<std::string> hyps;
   // Definitions of the nodes in the terms.
   std::vector<std::string> defs;
+  // Lemma instances (see rewrite::hint_cong).
+  std::vector<std::string> lemmas;
 };
 
 // Translates DSL nodes to SMT terms, mirroring the substitute overloads in
@@ -149,7 +152,8 @@ private:
   int staircase_bounds = 0;
   int undefined_values = 0;
   int node_count = 0;
-  // Structurally identical nodes share a name.
+  // Structurally identical nodes share a name. Solvers do much better when lemmas are
+  // stated over the same nodes as the rest of the query.
   std::map<std::string, term> nodes;
   side_info side;
 
@@ -416,6 +420,43 @@ public:
     return fin_term(m);
   }
 
+  // Adds an instance of a lemma (see the hints in rewrite.h). Lemmas are facts about
+  // integers, so the instance only applies when its arguments are finite.
+  void add_lemma(const char* name, std::initializer_list<term> args) {
+    std::vector<std::string> finite;
+    std::string call = std::string("(") + name;
+    for (const term& a : args) {
+      if (!a.fin) finite.push_back(a.is("fin"));
+      call += " " + a.val();
+    }
+    call += ')';
+    side.lemmas.push_back(finite.empty() ? call : str("=>", conj(finite), call));
+  }
+
+  template <typename U, typename V, typename D, typename K>
+  void hint(const rewrite::hint_cong<U, V, D, K>& h) {
+    add_lemma("cong", {to(h.u), to(h.v), to(h.d), to(h.k)});
+  }
+
+  template <typename A, typename D>
+  void hint(const rewrite::hint_euclid<A, D>& h) {
+    add_lemma("euclid", {to(h.a), to(h.d)});
+  }
+
+  template <typename S, typename T, typename D>
+  void hint(const rewrite::hint_negdiv<S, T, D>& h) {
+    add_lemma("negdiv", {to(h.s), to(h.t), to(h.d)});
+  }
+
+  // Adds the lemmas for a case's hints. Any conditions that come with their terms are dropped, so they can't become
+  // premises.
+  template <typename... Hints>
+  void hints(const std::tuple<const Hints&...>& hints) {
+    const std::vector<std::string> conds = side.conds;
+    std::apply([&](const auto&... h) { (hint(h), ...); }, hints);
+    side.conds = conds;
+  }
+
   // Predicates. Wildcard predicates have no exact encoding, so we use may/must approximations.
   template <typename T, typename Fn>
   pred_result pred(const rewrite::replacement_predicate<T, Fn>& p) {
@@ -509,6 +550,15 @@ const char* const prelude =
     "(define-fun emod ((a Int) (b Int)) Int (ite (= b 0) 0 (mod a b)))\n"
     "(define-fun in64 ((a Int)) Bool (and (<= (- 9223372036854775808) a) (<= a 9223372036854775807)))\n";
 
+// Each of these is true for all integers. See the hints in rewrite.h, and emit_lemma_proofs, which checks them.
+const char* const lemma_prelude =
+    "(define-fun cong ((u Int) (v Int) (d Int) (k Int)) Bool\n"
+    "  (=> (and (distinct d 0) (= u (+ v (* d k))))\n"
+    "      (and (= (emod u d) (emod v d)) (= (ediv u d) (+ (ediv v d) k)))))\n"
+    "(define-fun euclid ((a Int) (d Int)) Bool (=> (distinct d 0) (= a (+ (* d (ediv a d)) (emod a d)))))\n"
+    "(define-fun negdiv ((s Int) (t Int) (d Int)) Bool\n"
+    "  (=> (and (> d 0) (= s (- (- d 1) t))) (= (ediv s d) (- (ediv t d)))))\n";
+
 // Extended values and the helpers for them. See the header comment.
 const char* const x_prelude =
     "(declare-datatype X ((fin (val Int)) (pinf) (ninf) (ind)))\n"
@@ -573,23 +623,25 @@ class smt_rule_emitter {
   void add_repls(translator&, std::vector<repl_data>&, const P&) {}
   template <typename P, typename R>
   void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p, const R& r) {
-    add_repl(tr, repls, p, r, 1);
+    add_repl(tr, repls, p, rewrite::when(1, r));
   }
-  template <typename P, typename Pr, typename R, typename... Rest>
-  void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p, const rewrite::replacement_when<Pr, R>& w,
-      const Rest&... rest) {
-    add_repl(tr, repls, p, w.r, w.pr);
+  template <typename P, typename Pr, typename R, typename... Hints, typename... Rest>
+  void add_repls(translator& tr, std::vector<repl_data>& repls, const P& p,
+      const rewrite::replacement_when<Pr, R, Hints...>& w, const Rest&... rest) {
+    add_repl(tr, repls, p, w);
     add_repls(tr, repls, p, rest...);
   }
 
-  template <typename P, typename R, typename Pr>
-  void add_repl(translator& tr, std::vector<repl_data>& repls, const P& p, const R& r, const Pr& pr) {
+  template <typename P, typename Pr, typename R, typename... Hints>
+  void add_repl(
+      translator& tr, std::vector<repl_data>& repls, const P& p, const rewrite::replacement_when<Pr, R, Hints...>& w) {
     repl_data d;
-    d.pr = tr.pred(pr);
-    d.r = tr.to(r);
+    d.pr = tr.pred(w.pr);
+    if constexpr (sizeof...(Hints) > 0) tr.hints(w.hints);
+    d.r = tr.to(w.r);
     d.side = tr.take();
     std::stringstream ss;
-    ss << p << " -> " << r << " if " << pr;
+    ss << p << " -> " << w.r << " if " << w.pr;
     d.text = sanitize(ss.str());
     repls.push_back(std::move(d));
   }
@@ -608,7 +660,7 @@ class smt_rule_emitter {
     tr.in_pattern = true;
     result.pattern = tr.to(p);
     tr.in_pattern = false;
-    // A pattern has no conditions or hypotheses (its range assumptions are in tr.assumes), only definitions.
+    // A pattern has no conditions, hypotheses or lemmas (its range assumptions are in tr.assumes), only definitions.
     result.pattern_defs = tr.take().defs;
     add_repls(tr, result.repls, p, cases...);
     return result;
@@ -656,6 +708,7 @@ private:
     // A query's fall-through conditions refer to the terms of earlier replacements, so
     // it includes the side information of every replacement up to its own.
     std::string hyps;
+    bool has_lemmas = false;
     for (std::size_t i = 0; i < repls.size(); ++i) {
       const repl_data& d = repls[i];
       const std::string id = rule + "_r" + std::to_string(i);
@@ -663,6 +716,9 @@ private:
         hyps += h + "\n";
       for (const std::string& def : d.side.defs)
         hyps += def;
+      for (const std::string& l : d.side.lemmas)
+        hyps += "(assert " + l + ")\n";
+      has_lemmas = has_lemmas || !d.side.lemmas.empty();
 
       // Replacement i is used when no earlier one fired, its predicate is true, and its conditions hold.
       std::vector<std::string> all = fell_through;
@@ -672,6 +728,7 @@ private:
       std::string body = "; " + id + "\n; " + d.text + "\n";
       body += prelude;
       body += x_prelude;
+      if (has_lemmas) body += lemma_prelude;
       body += decls + hyps;
       body += "(assert " + conj(all) + ")\n";
       // Correct if the pattern is indeterminate, or the replacement is the same value.
@@ -688,6 +745,26 @@ private:
     }
   }
 };
+
+// Writes a query per lemma that is unsat iff the lemma holds for all integers.
+void emit_lemma_proofs(const std::string& dir, std::ofstream& manifest) {
+  using lemma = std::pair<const char*, const char*>;
+  const lemma lemmas[] = {{"cong", "uvdk"}, {"euclid", "ad"}, {"negdiv", "std"}};
+  for (const auto& [name, args] : lemmas) {
+    const std::string id = std::string("lemma_") + name;
+    std::string call = std::string("(") + name;
+    std::string body = std::string("; lemma ") + name + "\n" + prelude + lemma_prelude;
+    for (const char* a = args; *a; ++a) {
+      const std::string v(1, *a);
+      body += "(declare-const " + v + " Int)\n";
+      call += " " + v;
+    }
+    call += ')';
+    body += "(assert (not " + call + "))\n(check-sat)\n(get-model)\n";
+    write_file(dir, id, body);
+    write_row(manifest, id, "lemma", call);
+  }
+}
 
 // clang-format off
 // Deliberately wrong rules. Every query generated from these must be sat.
@@ -828,6 +905,7 @@ int main(int argc, char** argv) {
     manifest << "\n";
   }
   manifest << "id\truleset\trule_text\n";
+  emit_lemma_proofs(out_dir, manifest);
   for (const ruleset* i : to_run) {
     smt_rule_emitter emitter(out_dir, i->name, manifest);
     i->emit(emitter);

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <tuple>
 #include <utility>
 
 #include "slinky/base/util.h"
@@ -622,11 +623,21 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predi
   return os << p.name << '(' << p.a << ')';
 }
 
-// A case of a rule that substitutes r only if the predicate pr is true. This refers to pr and r rather than copying
+// A case of a rule that substitutes r only if the predicate pr is true. The hints help an SMT solver verify the case
+// (see hint_cong below), and applying the rule ignores them. This refers to pr, r and the hints rather than copying
 // them, so it is only valid until the end of the full expression that calls `when`. Copying them makes it harder for
 // the compiler to optimize the rules, which are often too big to inline everything.
-template <typename Predicate, typename Replacement>
+template <typename Predicate, typename Replacement, typename... Hints>
 class replacement_when {
+public:
+  const Predicate& pr;
+  const Replacement& r;
+  std::tuple<const Hints&...> hints;
+};
+
+// Most cases have no hints. Even an empty tuple of them affects how the compiler optimizes the rules.
+template <typename Predicate, typename Replacement>
+class replacement_when<Predicate, Replacement> {
 public:
   const Predicate& pr;
   const Replacement& r;
@@ -635,6 +646,12 @@ public:
 template <typename Predicate, typename Replacement>
 SLINKY_INLINE replacement_when<Predicate, Replacement> when(const Predicate& pr, const Replacement& r) {
   return {pr, r};
+}
+
+template <typename Predicate, typename Replacement, typename Hint, typename... Hints>
+SLINKY_INLINE replacement_when<Predicate, Replacement, Hint, Hints...> when(
+    const Predicate& pr, const Replacement& r, const Hint& hint, const Hints&... hints) {
+  return {pr, r, {hint, hints...}};
 }
 
 template <typename T>
@@ -719,6 +736,34 @@ SLINKY_UNIQUE std::ostream& operator<<(
   }
   return os << r.a1 << ", " << r.b1 << ", " << r.c1 << ", " << r.a2 << ", " << r.b2 << ", " << r.c2 << ")";
 }
+
+// Lemmas that help an SMT solver verify a rule (see simplifier_to_smt). They are passed to `when` after the
+// replacement. Applying a rule never looks at them, so they cost nothing at runtime. Each lemma is a fact about
+// integers that holds for any arguments, and simplifier_to_smt proves each one separately.
+//
+// If d != 0 and u == v + d*k, then u % d == v % d and u / d == v / d + k.
+template <typename U, typename V, typename D, typename K>
+struct hint_cong {
+  U u;
+  V v;
+  D d;
+  K k;
+};
+
+// If d != 0, then a == d*(a/d) + a%d.
+template <typename A, typename D>
+struct hint_euclid {
+  A a;
+  D d;
+};
+
+// If d > 0 and s == d - 1 - t, then s / d == -(t / d).
+template <typename S, typename T, typename D>
+struct hint_negdiv {
+  S s;
+  T t;
+  D d;
+};
 
 // We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
 template <typename... Ts>
@@ -832,6 +877,21 @@ constexpr auto may_be(const T& x) {
 template <typename T>
 SLINKY_UNIQUE auto eval(const T& x) {
   return replacement_eval<T>{x};
+}
+
+template <typename U, typename V, typename D, typename K>
+SLINKY_UNIQUE auto cong(const U& u, const V& v, const D& d, const K& k) {
+  return hint_cong<U, V, D, K>{u, v, d, k};
+}
+
+template <typename A, typename D>
+SLINKY_UNIQUE auto euclid(const A& a, const D& d) {
+  return hint_euclid<A, D>{a, d};
+}
+
+template <typename S, typename T, typename D>
+SLINKY_UNIQUE auto negdiv(const S& s, const T& t, const D& d) {
+  return hint_negdiv<S, T, D>{s, t, d};
 }
 
 template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
@@ -952,9 +1012,9 @@ class base_rewriter {
     return !overflowed;
   }
 
-  template <typename Pattern, typename Predicate, typename Replacement, typename... Cases>
+  template <typename Pattern, typename Predicate, typename Replacement, typename... Hints, typename... Cases>
   SLINKY_INLINE bool find_replacement(
-      const match_context& ctx, replacement_when<Predicate, Replacement> w, Cases... cases) {
+      const match_context& ctx, replacement_when<Predicate, Replacement, Hints...> w, Cases... cases) {
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
     bool overflowed = false;
