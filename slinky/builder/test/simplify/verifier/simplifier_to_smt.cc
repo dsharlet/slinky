@@ -6,8 +6,7 @@
 // assumed to fit in int64, and so are the pattern's subexpressions, because the pattern
 // is an expression that already exists. rewrite.h evaluates constant subexpressions of
 // predicates and replacements (e.g. c0 + c1) in C++, and doesn't apply the rule if that
-// overflows, so the query assumes that those fit in int64 too. Division and modulo are
-// the exception: rewrite.h doesn't check them, and INT64_MIN / -1 is undefined.
+// overflows, so the query assumes that those fit in int64 too.
 //
 // Wildcards can also be infinite (extended semantics). A value is an element of
 // the SMT datatype
@@ -150,7 +149,6 @@ public:
 private:
   int wildcard_uses = 0;
   int staircase_bounds = 0;
-  int undefined_values = 0;
   int node_count = 0;
   // Structurally identical nodes share a name. Solvers do much better when lemmas are
   // stated over the same nodes as the rest of the query.
@@ -158,13 +156,6 @@ private:
   side_info side;
 
   static term fin_term(std::string v) { return {std::move(v), true}; }
-
-  // The finite term r, or an unconstrained value when undefined holds.
-  term unless_undefined(const std::string& undefined, const term& r) {
-    const std::string u = "u" + std::to_string(undefined_values++);
-    side.hyps.push_back("(declare-const " + u + " Int)");
-    return fin_term(str("ite", undefined, u, r.s));
-  }
 
   // Names a node, which has type X.
   term def(const std::string& value) {
@@ -267,14 +258,10 @@ public:
     term b = to(p.b);
     term r = binop(t, a, b);
     if constexpr (is_folded<P>) {
-      if constexpr (t == expr_node_type::add || t == expr_node_type::sub || t == expr_node_type::mul) {
-        // Like rewrite.h, the rule doesn't fire if this overflows.
+      // Like rewrite.h, the rule doesn't fire if this overflows. Folded mod never overflows: INT64_MIN % -1 is 0.
+      if constexpr (t == expr_node_type::add || t == expr_node_type::sub || t == expr_node_type::mul ||
+                    t == expr_node_type::div) {
         side.conds.push_back(str("in64", r.s));
-      } else if constexpr (t == expr_node_type::div || t == expr_node_type::mod) {
-        // rewrite.h doesn't check these for overflow, and euclidean_div and euclidean_mod compute a / b and a % b,
-        // which are undefined (and trap on x86) when a is INT64_MIN and b is -1. Any other result fits in int64.
-        r = unless_undefined(
-            str("and", str("=", a.s, lit(std::numeric_limits<index_t>::min())), str("=", b.s, lit(-1))), r);
       }
     }
     return note(w, r);

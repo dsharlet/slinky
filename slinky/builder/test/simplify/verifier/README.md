@@ -127,8 +127,7 @@ The rules are applied to `int64` expressions, but SMT Ints are unbounded. The en
   expression that already exists, and the rules don't need to be correct for one that overflows.
 - Subterms that `rewrite.h` constant folds (those evaluated on `index_t`, e.g. `c0 + c1` in a replacement or a
   predicate) get the same overflow checks that `rewrite.h` does. A rule doesn't fire if folding overflows, so "nothing
-  overflows" is a premise of the query. `rewrite.h` doesn't check division and modulo, which are undefined for
-  `INT64_MIN` and `-1`, so their result is unconstrained then.
+  overflows" is a premise of the query.
 
 ### Predicates and fall-through
 

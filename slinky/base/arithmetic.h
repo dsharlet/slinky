@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <limits>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace slinky {
@@ -18,6 +19,13 @@ template <typename T>
 T euclidean_div(T a, T b, T define_b_zero = 0) {
   if (b == 0) {
     return define_b_zero;
+  }
+  if constexpr (std::is_signed_v<T>) {
+    // a / -1 overflows (and traps on some targets) when a is the minimum value. Negate in the unsigned type instead.
+    if (b == -1) {
+      using U = std::make_unsigned_t<T>;
+      return static_cast<T>(static_cast<U>(U(0) - static_cast<U>(a)));
+    }
   }
   T q = a / b;
   T r = a % b;
@@ -32,6 +40,10 @@ template <typename T>
 T euclidean_mod(T a, T b, T define_b_zero = 0) {
   if (b == 0) {
     return define_b_zero;
+  }
+  if constexpr (std::is_signed_v<T>) {
+    // a % -1 is always 0, but overflows (and traps on some targets) when a is the minimum value.
+    if (b == -1) return 0;
   }
   T r = a % b;
   return r >= 0 ? r : (b < 0 ? r - b : r + b);
@@ -156,6 +168,12 @@ template <class T>
 bool mul_overflows(T a, T b) {
   T dummy;
   return __builtin_mul_overflow(a, b, &dummy);
+}
+
+// True if euclidean_div(a, b) does not fit in T, which happens only for the minimum value divided by -1.
+template <class T>
+bool div_overflows(T a, T b) {
+  return std::is_signed_v<T> && b == T(-1) && a == std::numeric_limits<T>::min();
 }
 
 /** Routines to perform arithmetic on signed types without triggering signed

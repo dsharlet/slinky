@@ -517,6 +517,7 @@ template <typename T> SLINKY_INLINE bool binary_overflows(index_t a, index_t b) 
 template <> SLINKY_INLINE bool binary_overflows<add>(index_t a, index_t b) { return add_overflows(a, b); }
 template <> SLINKY_INLINE bool binary_overflows<sub>(index_t a, index_t b) { return sub_overflows(a, b); }
 template <> SLINKY_INLINE bool binary_overflows<mul>(index_t a, index_t b) { return mul_overflows(a, b); }
+template <> SLINKY_INLINE bool binary_overflows<div>(index_t a, index_t b) { return div_overflows(a, b); }
 // clang-format on
 
 template <typename T>
