@@ -32,6 +32,10 @@ build/
 *.out
 *.app
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Emacs droppings
 *~
 

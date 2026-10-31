@@ -109,11 +109,16 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_expr& e) 
 
 template <int N>
 class pattern_wildcard {
+  static_assert(0 <= N && N < symbol_count);
+  static constexpr char names[] = "xyzwuvt";
+  static_assert(sizeof(names) - 1 == symbol_count);
+
 public:
   static constexpr expr_node_type type = expr_node_type::none;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
   static constexpr int matched = 1 << N;
+  static constexpr char name[] = {names[N], '\0'};
 };
 
 template <int matched, int N>
@@ -133,18 +138,19 @@ SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>&, const match_contex
 
 template <int N>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_wildcard<N>&) {
-  static constexpr char names[] = "xyzwuvt";
-  static_assert(N + 1 < sizeof(names));
-  return os << names[N];
+  return os << pattern_wildcard<N>::name;
 }
 
 template <int N>
 class pattern_constant {
+  static_assert(0 <= N && N < constant_count && N < 10);
+
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
   static constexpr int matched = 1 << (symbol_count + N);
+  static constexpr char name[] = {'c', static_cast<char>('0' + N), '\0'};
 };
 
 template <int matched, int N>
@@ -172,7 +178,7 @@ SLINKY_UNIQUE index_t substitute(const pattern_constant<N>&, const match_context
 
 template <int N>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_constant<N>&) {
-  return os << 'c' << N;
+  return os << pattern_constant<N>::name;
 }
 
 template <typename A, index_t Default>
@@ -598,6 +604,7 @@ public:
   static constexpr int matched = 0;
   T a;
   Fn fn;
+  const char* name;
 };
 
 template <typename T, typename Fn>
@@ -606,13 +613,13 @@ SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match
 }
 
 template <typename T, typename Fn>
-SLINKY_UNIQUE replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
-  return {t, fn};
+SLINKY_UNIQUE replacement_predicate<T, Fn> make_predicate(T t, Fn fn, const char* name) {
+  return {t, fn, name};
 }
 
 template <typename T, typename Fn>
-SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>&) {
-  return os << "<unknown predicate>";
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>& p) {
+  return os << p.name << '(' << p.a << ')';
 }
 
 // A case of a rule that substitutes r only if the predicate pr is true. This refers to pr and r rather than copying
@@ -793,17 +800,17 @@ SLINKY_UNIQUE auto negative_infinity() { return pattern_call<>{intrinsic::negati
 SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
 
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
+SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite, "is_finite"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }); }
+SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }, "is_constant"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
+SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero, "is_zero"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(x, slinky::is_non_negative); }
+SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(x, slinky::is_non_negative, "is_non_negative"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive); }
+SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive, "is_non_positive"); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
+SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean, "is_boolean"); }
 
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::and_then, {a, b}}; }

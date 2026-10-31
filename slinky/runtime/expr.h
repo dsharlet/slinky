@@ -698,10 +698,14 @@ SLINKY_INLINE const call* as_intrinsic(expr_ref x, intrinsic fn) {
   return c && c->intrinsic == fn ? c : nullptr;
 }
 
-bool is_positive_infinity(expr_ref x);
-bool is_negative_infinity(expr_ref x);
-bool is_indeterminate(expr_ref x);
-int is_infinity(expr_ref x);
+SLINKY_INLINE bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }
+SLINKY_INLINE bool is_negative_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::negative_infinity); }
+SLINKY_INLINE bool is_indeterminate(expr_ref x) { return as_intrinsic(x, intrinsic::indeterminate); }
+SLINKY_INLINE int is_infinity(expr_ref x) {
+  if (is_positive_infinity(x)) return 1;
+  if (is_negative_infinity(x)) return -1;
+  return 0;
+}
 bool is_finite(expr_ref x);
 
 SLINKY_INLINE index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
