@@ -313,13 +313,13 @@ expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a
 expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
 expr logical_and::make(expr a, expr b) {
-  if (is_true(a) || is_false(b)) return boolean(b);
-  if (is_true(b) || is_false(a)) return boolean(a);
+  if (is_true(a) || is_false(b)) return boolean(std::move(b));
+  if (is_true(b) || is_false(a)) return boolean(std::move(a));
   return make_bin_op<logical_and>(std::move(a), std::move(b));
 }
 expr logical_or::make(expr a, expr b) {
-  if (is_true(a) || is_false(b)) return boolean(a);
-  if (is_true(b) || is_false(a)) return boolean(b);
+  if (is_true(a) || is_false(b)) return boolean(std::move(a));
+  if (is_true(b) || is_false(a)) return boolean(std::move(b));
   return make_bin_op<logical_or>(std::move(a), std::move(b));
 }
 expr logical_not::make(expr a) {
@@ -1037,13 +1037,13 @@ bool is_finite(expr_ref x) {
   return false;
 }
 
-expr boolean(const expr& x) {
+expr boolean(expr x) {
   if (!x.defined() || is_boolean(x)) {
     return x;
   } else if (auto c = as_constant(x)) {
     return *c != 0;
   } else {
-    return not_equal::make(x, 0);
+    return not_equal::make(std::move(x), 0);
   }
 }
 bool is_boolean(expr_ref x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
