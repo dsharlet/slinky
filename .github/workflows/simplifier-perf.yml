@@ -1,0 +1,76 @@
+name: simplifier-perf
+
+# Coarse check for simplifier performance regressions: compares how many
+# expressions the simplify.fuzz test gets through in its time budget, built
+# from the PR and from its base. The results are posted as a PR comment by
+# simplifier-perf-comment.yml, which runs with the write permissions that this
+# workflow doesn't get on PRs from forks.
+
+on:
+  pull_request:
+    paths:
+      - 'slinky/base/**'
+      - 'slinky/builder/**'
+      - 'slinky/runtime/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - '.github/scripts/compare_simplifier_fuzz.py'
+      - '.github/workflows/simplifier-perf.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simplifier-perf-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # The default ref for pull_request is the PR merged into its base, so its
+      # first parent is exactly the base it's compared against. The two
+      # checkouts have names of the same length so that the source paths
+      # embedded in the binaries (via __FILE__) don't shift their layouts.
+      - uses: actions/checkout@v7
+        with:
+          path: head
+          fetch-depth: 2
+
+      - name: Check out the base
+        run: git -C head worktree add --detach "$GITHUB_WORKSPACE/base" HEAD^1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtest-dev libgmock-dev libbenchmark-dev
+
+      - name: Build
+        run: |
+          for rev in base head; do
+            cmake -G Ninja -S "$rev" -B "build-$rev" -DCMAKE_BUILD_TYPE=Release
+            cmake --build "build-$rev" --target slinky_builder_simplify_simplify_test --parallel "$(nproc)"
+          done
+
+      - name: Compare
+        env:
+          BASE_LABEL: ${{ github.event.pull_request.base.ref }}
+        run: |
+          base_sha=$(git -C base rev-parse --short HEAD)
+          pr_sha=$(git -C head rev-parse --short HEAD^2)
+          bin=slinky/builder/test/simplify/slinky_builder_simplify_simplify_test
+          mkdir results
+          python3 head/.github/scripts/compare_simplifier_fuzz.py \
+            --base "build-base/$bin" --pr "build-head/$bin" \
+            --base-label "$BASE_LABEL @ $base_sha" --pr-label "$pr_sha merged into $BASE_LABEL" \
+            --cpu 1 --markdown results/comment.md --json results/results.json
+          cat results/comment.md >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ github.event.pull_request.number }}" > results/pr_number
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: simplifier-perf
+          path: results/
+          retention-days: 7
