@@ -480,6 +480,9 @@ public:
       may = finite_and(str("or", str("=", a, "0"), str("=", a, "1")));
     } else if (!std::strcmp(name, "is_constant") || !std::strcmp(name, "is_finite")) {
       may = t.fin ? "true" : t.is("fin");
+    } else if (!std::strcmp(name, "no_overflow")) {
+      // Translating the argument already added the condition that it doesn't overflow.
+      may = "true";
     } else {
       unsupported(std::string("predicate ") + name);
     }
