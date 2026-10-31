@@ -1,6 +1,8 @@
 #include "slinky/builder/simplify.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 
 #include "slinky/builder/rewrite.h"
 #include "slinky/runtime/expr.h"
@@ -74,9 +76,17 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   index_t rb = rhs.matched(c1);
   index_t rc = rhs.matched(c2) * sign_b;
 
-  interval<int> sb = staircase_sum_bounds(la, lb, lc, ra, rb, rc);
-  if (sb.min) bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, *sb.min);
-  if (sb.max) bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, *sb.max);
+  interval<std::int64_t> sb = staircase_sum_bounds(la, lb, lc, ra, rb, rc);
+  // The bounds may not fit in index_t (when it is 32 bits), in which case they don't tighten anything.
+  auto fits = [](std::int64_t x) {
+    return std::numeric_limits<index_t>::min() <= x && x <= std::numeric_limits<index_t>::max();
+  };
+  if (sb.min && fits(*sb.min)) {
+    bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, static_cast<index_t>(*sb.min));
+  }
+  if (sb.max && fits(*sb.max)) {
+    bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, static_cast<index_t>(*sb.max));
+  }
 }
 
 // We can tighten the upper bounds of expressions like min(x, y) - max(z, w) when x or y is correlated to z or w in a

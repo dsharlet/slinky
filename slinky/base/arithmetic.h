@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <type_traits>
@@ -241,9 +242,11 @@ struct interval {
   }
 };
 
-// Returns the [min, max] interval over all x of ((x + a1)/b1)*c1 + ((x + a2)/b2)*c2
-// Returns std::nullopt if unbounded.
-interval<int> staircase_sum_bounds(int a1, int b1, int c1, int a2, int b2, int c2);
+// Returns the [min, max] interval over all x of staircase(x, a1, b1, c1) + staircase(x, a2, b2, c2), or an unbounded
+// interval if it can't be computed: for example, if |b1| or |b2| is greater than 1024, the sum is not periodic
+// (c1*b2 != -c2*b1), or the computation overflows an int64.
+interval<std::int64_t> staircase_sum_bounds(
+    std::int64_t a1, std::int64_t b1, std::int64_t c1, std::int64_t a2, std::int64_t b2, std::int64_t c2);
 
 }  // namespace slinky
 

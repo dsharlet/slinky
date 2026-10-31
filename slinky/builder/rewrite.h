@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <tuple>
 #include <utility>
 
@@ -718,12 +720,14 @@ SLINKY_UNIQUE index_t substitute(
   index_t a2 = substitute(r.a2, ctx, overflowed);
   index_t b2 = substitute(r.b2, ctx, overflowed);
   index_t c2 = substitute(r.c2, ctx, overflowed);
-  interval<int> bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
-  if (r.bound_sign < 0) {
-    return bounds.min ? *bounds.min : std::numeric_limits<index_t>::min();
-  } else {
-    return bounds.max ? *bounds.max : std::numeric_limits<index_t>::max();
+  interval<std::int64_t> bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
+  const std::optional<std::int64_t>& bound = r.bound_sign < 0 ? bounds.min : bounds.max;
+  if (!bound || *bound < std::numeric_limits<index_t>::min() || *bound > std::numeric_limits<index_t>::max()) {
+    // An unbounded (or unrepresentable) result can't satisfy any predicate on the bound, so the rule must not fire.
+    overflowed = true;
+    return 0;
   }
+  return static_cast<index_t>(*bound);
 }
 
 template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>

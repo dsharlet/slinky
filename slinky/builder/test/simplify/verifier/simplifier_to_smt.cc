@@ -43,7 +43,6 @@
 #include <fstream>
 #include <initializer_list>
 #include <iostream>
-#include <limits>
 #include <map>
 #include <sstream>
 #include <string>
@@ -344,34 +343,30 @@ public:
     return def(str("xbool", a.s));
   }
 
-  // staircase_sum_bounds (in arithmetic.cc) computes the range of
-  // g(k) = ((k + a1)/b1)*c1 + ((k + a2)/b2)*c2, or reports that it is unbounded. Rather
-  // than encode that search, we declare a fresh constant m, and assume that it bounds g
-  // whenever the C++ returns a bound.
+  // staircase_sum_bounds (in arithmetic.cc) computes the exact range of
+  // g(k) = ((k + a1)/b1)*c1 + ((k + a2)/b2)*c2, or reports that it is unbounded, in
+  // which case the rule doesn't fire. Rather than encode that search, we declare a
+  // fresh constant m, and assume that it bounds g whenever the C++ would return a
+  // bound.
   //
-  // staircase_sum_bounds takes int, so the arguments are truncated to 32 bits, and the
-  // bound is for g with the truncated arguments. It only returns a bound when `pre` holds
-  // for them: |b1|, |b2| <= 1024 (which limits the period search), and either both terms
-  // are constant or g is periodic. Otherwise, rewrite.h uses INT64_MIN (for a lower bound)
-  // or INT64_MAX (for an upper bound), and the rule can still fire. We assume that the int
-  // arithmetic in staircase_sum_bounds doesn't overflow, which can only hide
-  // counterexamples.
+  // The C++ only returns a bound when `pre` holds: |b1|, |b2| <= 1024 (which limits the
+  // period search), and either both terms are constant or g is periodic. So `pre` is
+  // also a condition for the rule to fire. The C++ can also give up because of int64
+  // overflow, but that only removes cases in which the rule fires, so we can ignore it.
+  // Whenever the C++ does return a bound, the bound is correct for unbounded integers.
   //
   // We only need the bound at the pattern's own wildcard x, so we assume it at k = x
   // rather than for all k. That is a weaker assumption, so it is still sound, and it
   // keeps the queries quantifier-free.
   template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
   term to(const rewrite::replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>& r) {
-    // These are all constants, so they are finite. staircase_sum_bounds sees them truncated to int.
-    auto to_int = [&](const auto& c) {
-      return str("-", str("mod", str("+", to(c).s, "2147483648"), "4294967296"), "2147483648");
-    };
-    std::string a1 = to_int(r.a1);
-    std::string b1 = to_int(r.b1);
-    std::string c1 = to_int(r.c1);
-    std::string a2 = to_int(r.a2);
-    std::string b2 = to_int(r.b2);
-    std::string c2 = to_int(r.c2);
+    // These are all constants, so they are finite.
+    std::string a1 = to(r.a1).s;
+    std::string b1 = to(r.b1).s;
+    std::string c1 = to(r.c1).s;
+    std::string a2 = to(r.a2).s;
+    std::string b2 = to(r.b2).s;
+    std::string c2 = to(r.c2).s;
     term x;
     int wildcards = 0;
     for (const std::string& v : vars) {
@@ -397,13 +392,12 @@ public:
         {str("=", str("*", c1, b2), str("-", str("*", c2, b1))), str("distinct", b1, "0"), str("distinct", b2, "0")});
     pre.push_back(str("or", both_zero, periodic));
     const std::string pre_all = conj(pre);
+    side.conds.push_back(pre_all);
     const std::string g = str("+", term(x.val(), a1, b1, c1), term(x.val(), a2, b2, c2));
     const bool is_min = r.bound_sign < 0;
     side.hyps.push_back("(declare-const " + m + " Int)");
     // The bound only applies when x is finite.
     side.hyps.push_back(str("assert", str("=>", conj({x.is("fin"), pre_all}), str(is_min ? ">=" : "<=", g, m))));
-    const index_t unbounded = is_min ? std::numeric_limits<index_t>::min() : std::numeric_limits<index_t>::max();
-    side.hyps.push_back(str("assert", str("=>", str("not", pre_all), str("=", m, lit(unbounded)))));
     return fin_term(m);
   }
 
