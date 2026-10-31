@@ -268,7 +268,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 && *cb != 0;
   } else if (cb) {
-    return *cb ? boolean(a) : false;
+    return *cb ? boolean(std::move(a)) : false;
   }
 
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
@@ -291,7 +291,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 || *cb != 0;
   } else if (cb) {
-    return *cb ? true : boolean(a);
+    return *cb ? true : boolean(std::move(a));
   }
 
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});

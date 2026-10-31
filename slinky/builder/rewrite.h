@@ -322,13 +322,13 @@ SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, con
   return make_binary<mod>(std::move(a), std::move(b));
 }
 SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const logical_and*) {
-  if (is_true(a) || is_false(b)) return boolean(b);
-  if (is_true(b) || is_false(a)) return boolean(a);
+  if (is_true(a) || is_false(b)) return boolean(std::move(b));
+  if (is_true(b) || is_false(a)) return boolean(std::move(a));
   return make_binary<logical_and>(std::move(a), std::move(b));
 }
 SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const logical_or*) {
-  if (is_true(a) || is_false(b)) return boolean(a);
-  if (is_true(b) || is_false(a)) return boolean(b);
+  if (is_true(a) || is_false(b)) return boolean(std::move(a));
+  if (is_true(b) || is_false(a)) return boolean(std::move(b));
   return make_binary<logical_or>(std::move(a), std::move(b));
 }
 

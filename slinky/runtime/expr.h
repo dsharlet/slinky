@@ -705,7 +705,7 @@ int is_infinity(expr_ref x);
 bool is_finite(expr_ref x);
 
 SLINKY_INLINE index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
-expr boolean(const expr& x);
+expr boolean(expr x);
 bool is_boolean(expr_ref x);
 
 inline constexpr bool is_boolean_node(expr_node_type t) {
