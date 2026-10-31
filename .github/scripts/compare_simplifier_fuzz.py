@@ -53,11 +53,17 @@ def report(args, base, pr):
     b_q1, b_median, b_q3 = quartiles(base)
     p_q1, p_median, p_q3 = quartiles(pr)
 
-    # More iterations means a faster simplifier.
-    if median_ratio <= 1 - args.threshold / 100:
+    # More iterations means a faster simplifier. Only flag a change if at least three quarters of the rounds agree on
+    # its direction, so that a noisy runner doesn't produce false alarms.
+    if median_ratio <= 1 - args.threshold / 100 and r_q3 < 1:
         verdict = f":warning: **Possible regression**: the PR simplifies {percent(median_ratio)} expressions per second."
-    elif median_ratio >= 1 + args.threshold / 100:
+    elif median_ratio >= 1 + args.threshold / 100 and r_q1 > 1:
         verdict = f":rocket: **Possible improvement**: the PR simplifies {percent(median_ratio)} expressions per second."
+    elif abs(median_ratio - 1) >= args.threshold / 100:
+        verdict = (
+            f":grey_question: **Inconclusive** ({percent(median_ratio)}): the rounds disagree on the direction of "
+            "the change, so this runner may be too noisy to tell."
+        )
     else:
         verdict = f":white_check_mark: **No significant change** ({percent(median_ratio)}, threshold ±{args.threshold:g}%)."
 
