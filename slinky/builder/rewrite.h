@@ -279,12 +279,12 @@ SLINKY_UNIQUE bool match(
 }
 
 template <typename T>
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const T& = T()) {
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const T*) {
   return make_binary<T>(std::move(a), std::move(b));
 }
 
 template <typename T>
-SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed, const T& = T()) {
+SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed, const T*) {
   if (binary_overflows<T>(a, b)) {
     overflowed = true;
     return 0;
@@ -296,37 +296,37 @@ SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed, 
 // Eagerly simplify some constants with binary arithmetic. This is not just an optimization, it is necessary to avoid
 // rewriting patterns with optional constants to trivially simplifiable expressions, which may result in infinite
 // recursion in the simplifier.
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const add& = add()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const add*) {
   if (is_zero(a)) return b;
   if (is_zero(b)) return a;
   return make_binary<add>(std::move(a), std::move(b));
 }
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const sub& = sub()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const sub*) {
   if (is_zero(b)) return a;
   return make_binary<sub>(std::move(a), std::move(b));
 }
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const mul& = mul()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const mul*) {
   if (is_zero(a) || is_one(b)) return a;
   if (is_zero(b) || is_one(a)) return b;
   return make_binary<mul>(std::move(a), std::move(b));
 }
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const div& = div()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const div*) {
   if (is_zero(a) || is_one(b)) return a;
   if (is_zero(b)) return 0;
   if (is_one(b)) return a;
   return make_binary<div>(std::move(a), std::move(b));
 }
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const mod& = mod()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const mod*) {
   if (is_zero(a)) return a;
   if (is_one(b)) return 0;
   return make_binary<mod>(std::move(a), std::move(b));
 }
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const logical_and& = logical_and()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const logical_and*) {
   if (is_true(a) || is_false(b)) return boolean(b);
   if (is_true(b) || is_false(a)) return boolean(a);
   return make_binary<logical_and>(std::move(a), std::move(b));
 }
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const logical_or& = logical_or()) {
+SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const logical_or*) {
   if (is_true(a) || is_false(b)) return boolean(a);
   if (is_true(b) || is_false(a)) return boolean(b);
   return make_binary<logical_or>(std::move(a), std::move(b));
@@ -334,7 +334,8 @@ SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const logical_or& = 
 
 template <typename T, typename A, typename B>
 SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx, bool& overflowed) {
-  return substitute_binary(substitute(p.a, ctx, overflowed), substitute(p.b, ctx, overflowed), overflowed, T());
+  return substitute_binary(
+      substitute(p.a, ctx, overflowed), substitute(p.b, ctx, overflowed), overflowed, static_cast<const T*>(nullptr));
 }
 
 template <typename T, typename A, typename B>
@@ -839,7 +840,7 @@ SLINKY_UNIQUE auto staircase_sum_min(
 }
 
 template <typename Pattern, typename Target>
-SLINKY_UNIQUE bool match_any_variant(Pattern p, const Target& x, match_context& ctx) {
+SLINKY_UNIQUE bool match_any_variant(const Pattern& p, const Target& x, match_context& ctx) {
   static_assert(pattern_info<Pattern>::is_canonical);
 
   // We'll find out how many variants we have when we try to match.
