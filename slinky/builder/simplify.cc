@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <iostream>
@@ -10,6 +11,7 @@
 #include <optional>
 #include <set>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -376,6 +378,72 @@ private:
 
   expr_info result_info;
 
+  // Cache produced expressions and their information, not input-to-output rewrites. Results may be reused only while
+  // vars, buffers, and proving have the same knowledge.
+  class expression_cache {
+    struct entry {
+      // Keep the node alive while its address is used as the key.
+      expr e;
+      std::uint64_t context = 0;
+      expr_info info;
+    };
+    static constexpr std::size_t capacity = 128;
+    std::unordered_map<const base_expr_node*, entry> entries;
+    std::uint64_t context = 0;
+    std::uint64_t next_context = 0;
+    int depth = 0;
+
+  public:
+    void invalidate() {
+      if (++next_context == 0) std::abort();
+      context = next_context;
+    }
+
+    class scoped_context {
+      expression_cache& cache;
+      std::uint64_t old_context;
+
+    public:
+      explicit scoped_context(expression_cache& cache) : cache(cache), old_context(cache.context) {
+        cache.invalidate();
+      }
+      ~scoped_context() { cache.context = old_context; }
+      scoped_context(const scoped_context&) = delete;
+    };
+
+    class scoped_expression {
+      expression_cache& cache;
+
+    public:
+      explicit scoped_expression(expression_cache& cache) : cache(cache) {
+        // Statement-level knowledge can change between top-level expression mutations.
+        if (cache.depth++ == 0) cache.invalidate();
+      }
+      ~scoped_expression() { --cache.depth; }
+      scoped_expression(const scoped_expression&) = delete;
+    };
+
+    const expr_info* find(const expr& e) {
+      if (depth <= 1 || !e.defined()) return nullptr;
+      auto cached = entries.find(e.get());
+      return cached != entries.end() && cached->second.context == context ? &cached->second.info : nullptr;
+    }
+
+    void insert(const expr& e, const expr_info& info) {
+      // Constants are as cheap to visit as to look up, so don't let them evict useful entries.
+      if (!e.defined() || e.as<constant>()) return;
+      auto cached = entries.find(e.get());
+      if (cached != entries.end()) {
+        cached->second = {e, context, info};
+      } else {
+        if (entries.size() == capacity) entries.clear();
+        entries.emplace(e.get(), entry{e, context, info});
+      }
+    }
+  };
+
+  expression_cache cache;
+
   void set_result(expr e, expr_info info) {
     assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
     result_info = std::move(info);
@@ -410,7 +478,13 @@ public:
   }
 
   expr mutate(const expr& e, expr_info* info) {
+    expression_cache::scoped_expression expression(cache);
+    if (const expr_info* cached = cache.find(e)) {
+      if (info) *info = *cached;
+      return e;
+    }
     expr result = node_mutator::mutate(e);
+    cache.insert(result, result_info);
     if (result.defined() && info) {
       if (info != &result_info) {
         *info = std::move(result_info);
@@ -686,6 +760,7 @@ public:
   interval_expr where_true(const expr& x) {
     scoped_trace trace("where_true");
     expr_info info;
+    expression_cache::scoped_context context(cache);
     bool old_proving = proving;
     proving = true;
     mutate_boolean(x, &info);
@@ -769,7 +844,7 @@ public:
           mutate_and_set_result(info.known_value);
           return;
         } else if (auto c = as_constant(info.bounds.as_point())) {
-          set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
+          set_result(info.bounds.min, {point(info.bounds.min), {0, *c}});
           return;
         } else {
           if (!info.bounds.min.defined()) info.bounds.min = expr(op);
@@ -954,11 +1029,11 @@ public:
       // Similar to the way we handle min/max, we need to check the bounds against the expression itself.
       interval_expr result_bounds = bounds_of(op, a_info.bounds, b_info.bounds);
       if (auto proven = attempt_to_prove(result_bounds)) {
-        set_result(expr(*proven), {point(*proven), alignment_type()});
+        set_result(expr(*proven), {point(*proven), {0, *proven}});
       } else if (!a_info.bounds.is_point() && (proven = attempt_to_prove(bounds_of(op, point(a), b_info.bounds)))) {
-        set_result(expr(*proven), {point(*proven), alignment_type()});
+        set_result(expr(*proven), {point(*proven), {0, *proven}});
       } else if (!b_info.bounds.is_point() && (proven = attempt_to_prove(bounds_of(op, a_info.bounds, point(b))))) {
-        set_result(expr(*proven), {point(*proven), alignment_type()});
+        set_result(expr(*proven), {point(*proven), {0, *proven}});
       } else {
         set_result(std::move(result), {std::move(result_bounds), alignment_type()});
       }
@@ -978,7 +1053,7 @@ public:
     if (!a.defined()) {
       set_result(expr(), expr_info());
     } else if (auto proven = attempt_to_prove(info.bounds)) {
-      set_result(expr(!*proven), {point(!*proven), alignment_type()});
+      set_result(expr(!*proven), {point(!*proven), {0, !*proven}});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
@@ -1004,6 +1079,7 @@ public:
     expr t, f;
     expr_info t_info, f_info;
     {
+      expression_cache::scoped_context context(cache);
       auto k = learn_from_true(c);
       t = mutate(op->true_value, &t_info);
       expr learned = k.substitute(t);
@@ -1012,6 +1088,7 @@ public:
       }
     }
     {
+      expression_cache::scoped_context context(cache);
       auto k = learn_from_false(c);
       f = mutate(op->false_value, &f_info);
       expr learned = k.substitute(f);
@@ -1143,22 +1220,28 @@ public:
             scoped_buffers.push_back(set_value_in_scope(buffers, s.first, buffer_info(cb->value)));
           }
         }
+        // Later bindings and the body see the knowledge introduced by this binding.
+        cache.invalidate();
       }
     };
 
-    add_lets(op->lets);
-    auto body_node = op->body;
-    while (const T* let_body = body_node.template as<T>()) {
-      add_lets(let_body->lets);
-      body_node = let_body->body;
-      values_changed = true;
-    }
-
     expr_info body_info;
-    auto body = mutate(body_node, &body_info);
+    decltype(op->body) body;
+    {
+      expression_cache::scoped_context context(cache);
+      add_lets(op->lets);
+      auto body_node = op->body;
+      while (const T* let_body = body_node.template as<T>()) {
+        add_lets(let_body->lets);
+        body_node = let_body->body;
+        values_changed = true;
+      }
 
-    scoped_buffers.clear();
-    scoped_values.clear();
+      body = mutate(body_node, &body_info);
+
+      scoped_buffers.clear();
+      scoped_values.clear();
+    }
     std::vector<depends_on_result> deps(lets.size());
     std::vector<std::pair<var, depends_on_result&>> deps_map;
     deps_map.reserve(lets.size());

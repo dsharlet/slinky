@@ -322,6 +322,52 @@ TEST(simplify, let) {
       simplify(let::make(x, y * 2, let::make(z, w + 2, x + z))), matches(let::make({{x, y * 2}, {z, w + 2}}, x + z)));
 }
 
+TEST(simplify, shared_nodes_across_let_bindings) {
+  expr shared = x + 1;
+  ASSERT_THAT(simplify(let::make({{z, shared}, {x, 1}}, shared)), matches(2));
+  ASSERT_THAT(simplify(let::make({{z, shared}, {x, y}}, shared)), matches(y + 1));
+  ASSERT_THAT(simplify(let::make({{z, shared}, {x, 1}, {w, shared}}, w)), matches(2));
+  ASSERT_THAT(simplify(let::make(z, shared, let::make(x, 1, shared))), matches(2));
+  ASSERT_THAT(simplify(let::make({{z, shared}, {x, 1}}, shared == 2)), matches(true));
+  ASSERT_THAT(simplify(shared + let::make(x, 1, shared)), matches(x + 3));
+}
+
+TEST(simplify, shared_nodes_across_select_branches) {
+  expr shared = x + 1;
+  expr simplified = simplify(select(expr(x) == 1, shared, shared));
+  eval_context ctx;
+  for (index_t value : {-1, 1, 5}) {
+    ctx[x] = value;
+    ASSERT_EQ(evaluate(simplified, ctx), value + 1);
+  }
+}
+
+TEST(simplify, cache_capacity) {
+  node_context context;
+  var local_x(context, "x"), local_z(context, "z");
+  expr shared = local_x + 1;
+  eval_context values;
+  values[local_x] = 1000;
+  std::vector<expr> args;
+  for (int i = 0; i < 140; ++i) {
+    var input = context.insert_unique("input");
+    values[input] = 1;
+    args.emplace_back(input);
+  }
+  args.push_back(shared);
+  auto sum = [](const call* op, eval_context& values) {
+    index_t result = 0;
+    for (const expr& arg : op->args) {
+      result += evaluate(arg, values);
+    }
+    return result;
+  };
+  expr original = let::make({{local_z, shared}, {local_x, 1}}, call::make(sum, std::move(args)));
+  expr simplified = simplify(original);
+  ASSERT_EQ(evaluate(original, values), 142);
+  ASSERT_EQ(evaluate(simplified, values), 142);
+}
+
 TEST(simplify, loop) {
   auto make_call = [](var out) { return dummy_call({}, {out}); };
 
