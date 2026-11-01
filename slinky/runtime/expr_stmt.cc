@@ -949,6 +949,15 @@ expr ravel(const std::vector<expr>& x, const std::vector<expr>& extents) {
   args.push_back(x.back());
   return call::make(intrinsic::ravel, std::move(args));
 }
+expr unravel(expr flat, const std::vector<expr>& extents, int d) {
+  assert(0 <= d && d <= static_cast<int>(extents.size()));
+  std::vector<expr> args;
+  args.reserve(extents.size() + 2);
+  args.push_back(std::move(flat));
+  args.insert(args.end(), extents.begin(), extents.end());
+  args.push_back(d);
+  return call::make(intrinsic::unravel, std::move(args));
+}
 expr align_down(expr x, const expr& a) { return is_one(a) ? x : (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return is_one(a) ? x : ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {

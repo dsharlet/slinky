@@ -115,6 +115,17 @@ expr simplify(const sub* op, expr a, expr b) {
   }
 }
 
+namespace {
+
+expr simplify_infinity_sign(int inf, const expr& other) {
+  interval<index_t> bounds = evaluate_constant_bounds(other);
+  if (bounds.min && *bounds.min > 0) return infinity(inf);
+  if (bounds.max && *bounds.max < 0) return infinity(-inf);
+  return {};
+}
+
+}  // namespace
+
 expr simplify(const mul* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
@@ -131,6 +142,12 @@ expr simplify(const mul* op, expr a, expr b) {
   int inf_a = is_infinity(a);
   int inf_b = is_infinity(b);
   if (inf_a && inf_b) return infinity(inf_a * inf_b);
+  if (inf_a) {
+    if (expr e = simplify_infinity_sign(inf_a, b); e.defined()) return e;
+  }
+  if (inf_b) {
+    if (expr e = simplify_infinity_sign(inf_b, a); e.defined()) return e;
+  }
 
   auto r = make_rewriter(pattern_expr{a} * pattern_expr{b});
   if (apply_mul_rules(r)) {
@@ -151,7 +168,10 @@ expr simplify(const div* op, expr a, expr b) {
 
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
-  if (is_infinity(a) && is_infinity(b)) return slinky::indeterminate();
+  if (int inf_a = is_infinity(a)) {
+    if (is_infinity(b)) return slinky::indeterminate();
+    if (expr e = simplify_infinity_sign(inf_a, b); e.defined()) return e;
+  }
 
   auto r = make_rewriter(pattern_expr{a} / pattern_expr{b});
   if (apply_div_rules(r)) {
@@ -268,7 +288,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 && *cb != 0;
   } else if (cb) {
-    return *cb ? boolean(std::move(a)) : false;
+    return *cb ? boolean(a) : false;
   }
 
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
@@ -291,7 +311,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 || *cb != 0;
   } else if (cb) {
-    return *cb ? true : boolean(std::move(a));
+    return *cb ? true : boolean(a);
   }
 
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
@@ -386,6 +406,19 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
     if (args.size() == 1) {
       // ravel(x) = x
       return args[0];
+    }
+  } else if (fn == intrinsic::unravel) {
+    assert(args.size() >= 2);
+    const std::size_t num_extents = args.size() - 2;
+    if (num_extents == 0) {
+      // unravel(f, 0) = f
+      return args[0];
+    }
+    if (auto d = as_constant(args.back())) {
+      if (*d < static_cast<index_t>(num_extents) && is_one(args[*d + 1])) {
+        // This coordinate has extent 1.
+        return 0;
+      }
     }
   }
 

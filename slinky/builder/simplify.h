@@ -82,7 +82,10 @@ interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b)
 interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b);
 interval_expr bounds_of(const logical_not* op, interval_expr a);
 interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t, interval_expr f);
-interval_expr bounds_of(const call* op, std::vector<interval_expr> args);
+interval_expr bounds_of(const call* op, intrinsic fn, std::vector<interval_expr> args);
+inline interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
+  return bounds_of(op, op->intrinsic, std::move(args));
+}
 
 }  // namespace slinky
 

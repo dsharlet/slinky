@@ -394,6 +394,22 @@ SLINKY_NO_INLINE index_t eval_ravel(const call* op, eval_context& ctx) {
   return result;
 }
 
+SLINKY_NO_INLINE index_t eval_unravel(const call* op, eval_context& ctx) {
+  assert(op->args.size() >= 2);
+  // unravel(f, e_0, ..., e_{n-2}, d)
+  const index_t num_extents = op->args.size() - 2;
+  const index_t d = eval(op->args.back(), ctx);
+  assert(0 <= d && d <= num_extents);
+  index_t result = eval(op->args[0], ctx);
+  for (index_t i = 0; i < d; ++i) {
+    result = euclidean_div(result, std::max<index_t>(eval(op->args[i + 1], ctx), 1));
+  }
+  if (d < num_extents) {
+    result = euclidean_mod(result, std::max<index_t>(eval(op->args[d + 1], ctx), 1));
+  }
+  return result;
+}
+
 SLINKY_NO_INLINE index_t eval_wait_for(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
   for (expr_ref i : op->args) {
@@ -440,6 +456,7 @@ SLINKY_INLINE index_t eval(const call* op, eval_context& ctx) {
   case intrinsic::validate_buffer: return eval_validate_buffer(op, ctx);
 
   case intrinsic::ravel: return eval_ravel(op, ctx);
+  case intrinsic::unravel: return eval_unravel(op, ctx);
 
   default: SLINKY_UNREACHABLE << "unknown intrinsic: " << to_string(op->intrinsic);
   }

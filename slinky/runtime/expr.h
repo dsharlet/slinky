@@ -138,6 +138,10 @@ enum class intrinsic {
   // ravel(x_0, e_0, x_1, e_1, ..., x_{n-1}) = x_0 + e_0 * (x_1 + e_1 * (... + x_{n-1})).
   // The coordinates x_i for i < n - 1 are expected to be in [0, e_i).
   ravel,
+  // unravel(f, e_0, ..., e_{n-2}, d) returns coordinate d of the flat index f, i.e. the inverse of ravel:
+  // (f / (e_0 * ... * e_{d-1})) % e_d for d < n - 1, and f / (e_0 * ... * e_{n-2}) for d = n - 1. d must be a
+  // constant.
+  unravel,
 };
 
 // True if `fn` can be evaluated if its arguments are constants.
@@ -738,8 +742,9 @@ bool is_negative(expr_ref x);
 bool is_non_positive(expr_ref x);
 
 expr abs(expr x);
-// See `intrinsic::ravel`. `x` must have one more element than `extents`.
+// See `intrinsic::ravel` and `intrinsic::unravel`. `x` must have one more element than `extents`.
 expr ravel(const std::vector<expr>& x, const std::vector<expr>& extents);
+expr unravel(expr flat, const std::vector<expr>& extents, int d);
 expr align_down(expr x, const expr& a);
 expr align_up(expr x, const expr& a);
 // Expand the interval to have a min and extent aligned to a multiple of a.

@@ -50,6 +50,7 @@ const char* to_string(intrinsic fn) {
   case intrinsic::free: return "free";
   case intrinsic::validate_buffer: return "validate_buffer";
   case intrinsic::ravel: return "ravel";
+  case intrinsic::unravel: return "unravel";
 
   default: return "<invalid intrinsic>";
   }

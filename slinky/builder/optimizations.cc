@@ -209,6 +209,49 @@ bool depends_on_other_dst_x(const expr& src_x, span<var> dst_x, int dst_d) {
   return false;
 }
 
+// Checks if `f` is unraveled into several src dims of a copy with operands `src_x`, i.e.
+// `src_x[src_ds[i]] = unravel(f, extents, i)`, and no other src dims depend on `f`.
+bool is_unravel_dim(span<expr> src_x, var f, std::vector<int>& src_ds, std::vector<expr>& extents) {
+  src_ds.clear();
+  extents.clear();
+  for (int src_d = 0; src_d < static_cast<int>(src_x.size()); ++src_d) {
+    if (!depends_on(src_x[src_d], f).any()) continue;
+    const call* c = as_intrinsic(src_x[src_d], intrinsic::unravel);
+    if (!c || as_variable(c->args[0]) != std::optional<var>(f)) return false;
+    std::optional<index_t> i = as_constant(c->args.back());
+    if (!i) return false;
+    if (src_ds.empty()) {
+      extents.assign(c->args.begin() + 1, c->args.end() - 1);
+      src_ds.resize(extents.size() + 1, -1);
+    } else if (c->args.size() != extents.size() + 2 ||
+               !std::equal(extents.begin(), extents.end(), c->args.begin() + 1,
+                   [](const expr& a, const expr& b) { return prove_true(a == b); })) {
+      return false;
+    }
+    if (*i < 0 || *i >= static_cast<index_t>(src_ds.size()) || src_ds[*i] >= 0) return false;
+    src_ds[*i] = src_d;
+  }
+  return src_ds.size() >= 2 && std::all_of(src_ds.begin(), src_ds.end(), [](int i) { return i >= 0; });
+}
+
+// Views `dst_d` of `dst` (which is unraveled into `extents.size() + 1` dimensions with `extents`) as one `dim_expr` per
+// unraveled coordinate, and returns the product of `extents` (the alignment required on `dst_d`).
+expr unravel_dims(var dst, int dst_d, span<const expr> extents, std::vector<dim_expr>& dims) {
+  assert(!extents.empty());
+  dims.clear();
+  dims.reserve(extents.size() + 1);
+  expr stride = buffer_stride(dst, dst_d);
+  expr size;
+  for (const expr& e : extents) {
+    const expr extent = max(e, 1);
+    dims.push_back({{0, extent - 1}, stride, expr()});
+    stride *= extent;
+    size = size.defined() ? size * extent : extent;
+  }
+  dims.push_back({{buffer_min(dst, dst_d) / size, buffer_max(dst, dst_d) / size}, stride, expr()});
+  return size;
+}
+
 std::vector<expr> buffer_mins(var buf, std::size_t rank) {
   std::vector<expr> result(rank);
   for (int i = 0; i < static_cast<int>(rank); ++i) {
@@ -282,6 +325,9 @@ class copy_aliaser : public stmt_mutator {
 
     // Conditions on the target that must be proven for this alias to be valid.
     std::vector<expr> conditions;
+
+    // Conditions that are checked at runtime if we use this alias.
+    std::vector<expr> checks;
 
     bool disabled = false;
   };
@@ -658,6 +704,9 @@ public:
         if (elem_size.defined()) {
           result = block::make({check::make(elem_size == op->elem_size), result});
         }
+        for (const expr& c : alias.checks) {
+          result = block::make({check::make(c), result});
+        }
 
         // If we aliased the source and destination of a copy with no padding, the copy can be removed.
         result = remove_copy(result, alias.copy);
@@ -763,7 +812,27 @@ public:
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
       if (!is_copy_dst_dim(op->src_x, op->dst_x, dst_d, src_d)) {
-        return;
+        std::vector<int> src_ds;
+        std::vector<expr> extents;
+        if (!is_unravel_dim(op->src_x, op->dst_x[dst_d], src_ds, extents)) {
+          return;
+        }
+        // The dst dim is unraveled into the src dims `src_ds`. The dst dim is a view of the src dims if the src is dense
+        // and unfolded in these dims.
+        for (std::size_t i = 0; i < src_ds.size(); ++i) {
+          if (i < extents.size()) {
+            a.conditions.push_back(max(extents[i], 1) == max(buffer_extent(op->src, src_ds[i]), 1));
+            a.conditions.push_back(
+                buffer_stride(op->src, src_ds[i + 1]) == buffer_stride(op->src, src_ds[i]) * buffer_extent(op->src, src_ds[i]));
+          }
+          a.conditions.push_back(buffer_fold_factor(op->src, src_ds[i]) == dim::unfolded);
+          a.at[src_ds[i]] = unravel(buffer_min(op->dst, dst_d), extents, i);
+        }
+        if (dst_d < static_cast<int>(a.dims.size())) {
+          a.dims[dst_d] = {buffer_bounds(op->dst, dst_d), buffer_stride(op->src, src_ds[0]), expr()};
+          a.permutation[dst_d] = src_ds[0];
+        }
+        continue;
       }
 
       dim_expr src_dim;
@@ -816,7 +885,30 @@ public:
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
       if (!is_copy_dst_dim(op->src_x, op->dst_x, dst_d, src_d)) {
-        return;
+        std::vector<int> src_ds;
+        std::vector<expr> extents;
+        if (!is_unravel_dim(op->src_x, op->dst_x[dst_d], src_ds, extents)) {
+          return;
+        }
+        // The src dims `src_ds` are the coordinates of the dst dim, which is `ravel(src_x[src_ds], extents)`. Like
+        // `implement_copy`, this requires the dst dim to be unfolded, and whole multiples of the product of the extents.
+        std::vector<dim_expr> dims;
+        const expr size = unravel_dims(op->dst, dst_d, extents, dims);
+        std::vector<expr> mins;
+        for (std::size_t i = 0; i < src_ds.size(); ++i) {
+          const int unravel_src_d = src_ds[i];
+          if (unravel_src_d >= static_cast<int>(info->dims.size())) return;
+          const dim_expr& src_dim = info->dims[unravel_src_d];
+          dims[i].bounds &= src_dim.bounds;
+          a.dims[unravel_src_d] = std::move(dims[i]);
+          a.permutation[unravel_src_d] = dst_d;
+          mins.push_back(src_dim.bounds.min);
+        }
+        a.at[dst_d] = ravel(mins, extents);
+        a.conditions.push_back(buffer_fold_factor(op->dst, dst_d) == dim::unfolded);
+        a.checks.push_back(buffer_min(op->dst, dst_d) % size == 0);
+        a.checks.push_back((buffer_max(op->dst, dst_d) + 1) % size == 0);
+        continue;
       }
 
       if (src_d == transpose::new_dim) {
@@ -951,6 +1043,9 @@ public:
         for (expr& c : a.conditions) {
           c = substitute_buffer(c, sym, sub_dims, src);
         }
+        for (expr& c : a.checks) {
+          c = substitute_buffer(c, sym, sub_dims, src);
+        }
         // Substitute remaining non-buffer references to sym.
         for (dim_expr& d : a.dims) {
           d = substitute(d, sym, src);
@@ -960,6 +1055,9 @@ public:
           at = substitute(at, sym, src);
         }
         for (expr& c : a.conditions) {
+          c = substitute(c, sym, src);
+        }
+        for (expr& c : a.checks) {
           c = substitute(c, sym, src);
         }
       }
@@ -1426,6 +1524,42 @@ stmt fuse_siblings(const stmt& s) {
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   scoped_trace trace("implement_copy");
+
+  // Look for dimensions of the dst that are unraveled into coordinates of the src. If
+  // `src_x[src_ds[i]] = unravel(f, extents, i)`, we view the dst dimension f as one dimension per coordinate of the
+  // unravel, which requires f to be whole multiples of the product of the extents. (Ravels of coordinates of the dst
+  // are affine, and are handled by `is_copy` below.)
+  std::vector<expr> src_x = to_vector(op->src_x);
+  std::vector<var> dst_x;
+  std::vector<dim_expr> dst_dims;
+  std::vector<stmt> checks;
+  for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
+    const var f = op->dst_x[dst_d];
+    std::vector<int> src_ds;
+    std::vector<expr> extents;
+    if (!is_unravel_dim(op->src_x, f, src_ds, extents)) {
+      dst_x.push_back(f);
+      dst_dims.push_back({buffer_bounds(op->dst, dst_d), buffer_stride(op->dst, dst_d), buffer_fold_factor(op->dst, dst_d)});
+      continue;
+    }
+
+    std::vector<dim_expr> dims;
+    const expr size = unravel_dims(op->dst, dst_d, extents, dims);
+    for (std::size_t i = 0; i < src_ds.size(); ++i) {
+      var x = ctx.insert_unique(ctx.name(f) + "." + std::to_string(i));
+      src_x[src_ds[i]] = x;
+      dst_x.push_back(x);
+      dst_dims.push_back(std::move(dims[i]));
+    }
+    checks.push_back(check::make(buffer_min(op->dst, dst_d) % size == 0));
+    checks.push_back(check::make((buffer_max(op->dst, dst_d) + 1) % size == 0));
+    checks.push_back(check::make(buffer_fold_factor(op->dst, dst_d) == dim::unfolded));
+  }
+
+  // The operands of the copy after viewing the unraveled dimensions of the dst.
+  const std::vector<expr> copy_src_x = src_x;
+  const std::vector<var> copy_dst_x = dst_x;
+
   // Start by making a call to copy.
   // We're going to slice this buffer, to avoid messing with metadata in the user expressions, work on a clone instead.
   var dst = ctx.insert_unique(ctx.name(op->dst) + ".sliced");
@@ -1447,38 +1581,31 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       },
       span<var>{}, args, {}, std::move(copy_attrs));
 
-  std::vector<expr> src_x = to_vector(op->src_x);
-  std::vector<var> dst_x = to_vector(op->dst_x);
   std::vector<dim_expr> src_dims;
 
   // If we just leave these two arrays alone, the copy will be correct, but slow.
   // We can speed it up by finding dimensions we can let pass through to the copy.
   for (int dst_d = 0; dst_d < static_cast<int>(dst_x.size()); ++dst_d) {
     int src_d;
-    if (!is_copy_dst_dim(op->src_x, op->dst_x, dst_d, src_d)) {
+    if (!is_copy_dst_dim(copy_src_x, copy_dst_x, dst_d, src_d)) {
       continue;
     }
 
     dim_expr src_dim;
     expr at;
-    if (is_copy(op->src, op->src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim)) {
+    if (is_copy(op->src, copy_src_x, src_d, op->dst, copy_dst_x, dst_d, at, src_dim)) {
       src_dims.push_back(src_dim);
       if (!at.defined()) {
         // This is a broadcast.
-      } else if (depends_on_other_dst_x(op->src_x[src_d], op->dst_x, dst_d)) {
+      } else if (depends_on_other_dst_x(copy_src_x[src_d], copy_dst_x, dst_d)) {
         // `at` assumes the other dst dims are at their min, but they might not be copy dims.
-        src_x[src_d] = substitute(src_x[src_d], op->dst_x[dst_d], buffer_min(op->dst, dst_d));
+        src_x[src_d] = substitute(src_x[src_d], copy_dst_x[dst_d], buffer_min(op->dst, dst_d));
       } else {
         src_x[src_d] = at;
       }
       dst_x[dst_d] = var();
     }
   }
-
-  // TODO: Try to optimize reshapes, where the index of the input is an "unpacking" of a flat index of the output.
-  // This will require the simplifier to understand the constraints implied by the checks on the buffer metadata
-  // at the beginning of the pipeline, e.g. that
-  // buffer_stride(dst, d) == buffer_stride(dst, d - 1) * buffer_extent(dst, d - 1).
 
   // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
   result = make_buffer::make(op->src, buffer_at(op->src, src_x), buffer_elem_size(op->src), src_dims, result);
@@ -1489,7 +1616,14 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
     result = slice_dim::make(dst, dst, d, dst_x[d], result);
     result = loop::make(dst_x[d], loop::serial, buffer_bounds(dst, d), 1, result);
   }
-  return clone_buffer::make(dst, op->dst, std::move(result));
+  result = clone_buffer::make(dst, op->dst, std::move(result));
+
+  if (!checks.empty()) {
+    result = make_buffer::make(op->dst, buffer_at(op->dst), buffer_elem_size(op->dst), std::move(dst_dims), std::move(result));
+    checks.push_back(std::move(result));
+    result = block::make(std::move(checks));
+  }
+  return result;
 }
 
 stmt implement_copies(const stmt& s, node_context& ctx) {

@@ -1182,6 +1182,9 @@ TEST(simplify, bounds_of) {
       abs(x),
       ravel({x, y}, {3}),
       ravel({y, x}, {5}),
+      unravel(x, {3}, 0),
+      unravel(x, {3}, 1),
+      unravel(x, {y}, 0),
   };
 
   for (const expr& e : exprs) {

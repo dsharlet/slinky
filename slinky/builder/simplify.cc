@@ -2657,6 +2657,25 @@ interval<index_t> bounds_of_ravel(span<expr> args) {
   return result;
 }
 
+interval<index_t> bounds_of_unravel(span<expr> args) {
+  assert(args.size() >= 2);
+  const index_t num_extents = args.size() - 2;
+  auto d = as_constant(args.back());
+  if (!d || *d < 0 || *d > num_extents) return {};
+  interval<index_t> result = bounds_of_constant(args[0]);
+  for (index_t i = 0; i < *d; ++i) {
+    interval<index_t> extent =
+        bounds_of(static_cast<const class max*>(nullptr), bounds_of_constant(args[i + 1]), interval<index_t>(1));
+    result = bounds_of(static_cast<const div*>(nullptr), result, extent);
+  }
+  if (*d < num_extents) {
+    interval<index_t> extent =
+        bounds_of(static_cast<const class max*>(nullptr), bounds_of_constant(args[*d + 1]), interval<index_t>(1));
+    result = bounds_of(static_cast<const mod*>(nullptr), result, extent);
+  }
+  return result;
+}
+
 template <typename T>
 interval<index_t> bounds_of_binary(const T* op) {
   return bounds_of(op, bounds_of_constant(op->a), bounds_of_constant(op->b));
@@ -2707,6 +2726,7 @@ interval<index_t> bounds_of_constant(expr_ref x) {
     case intrinsic::and_then: assert(op->args.size() == 2); return bounds_of_logical_and(op->args[0], op->args[1]);
     case intrinsic::or_else: assert(op->args.size() == 2); return bounds_of_logical_or(op->args[0], op->args[1]);
     case intrinsic::ravel: return bounds_of_ravel(op->args);
+    case intrinsic::unravel: return bounds_of_unravel(op->args);
     default: return {};
     }
   }

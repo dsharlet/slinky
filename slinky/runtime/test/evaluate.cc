@@ -72,7 +72,7 @@ TEST(evaluate, arithmetic) {
   ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
 }
 
-TEST(evaluate, ravel) {
+TEST(evaluate, ravel_unravel) {
   eval_context context = make_context();
   const int W = 4;
   const int H = 3;
@@ -83,11 +83,19 @@ TEST(evaluate, ravel) {
       for (int x = 0; x < W; ++x) {
         const index_t flat = x + W * (y + H * z);
         ASSERT_EQ(evaluate(ravel({x, y, z}, extents), context), flat);
+        ASSERT_EQ(evaluate(unravel(flat, extents, 0), context), x);
+        ASSERT_EQ(evaluate(unravel(flat, extents, 1), context), y);
+        ASSERT_EQ(evaluate(unravel(flat, extents, 2), context), z);
       }
     }
   }
   // Extents less than 1 are treated as 1.
   ASSERT_EQ(evaluate(ravel({1, 2}, {0}), context), 3);
+  ASSERT_EQ(evaluate(unravel(7, {0}, 0), context), 0);
+  ASSERT_EQ(evaluate(unravel(7, {0}, 1), context), 7);
+  // Negative flat indices use Euclidean division.
+  ASSERT_EQ(evaluate(unravel(-1, extents, 0), context), W - 1);
+  ASSERT_EQ(evaluate(unravel(-1, extents, 2), context), -1);
 }
 
 TEST(evaluate, buffer_fields) {

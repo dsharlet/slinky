@@ -219,13 +219,7 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
 namespace {
 
 expr negate(expr a) { return simplify(static_cast<const sub*>(nullptr), 0, std::move(a)); }
-interval_expr negate(interval_expr x) {
-  if (x.is_point()) {
-    return point(negate(x.min));
-  } else {
-    return {negate(x.max), negate(x.min)};
-  }
-}
+interval_expr negate(interval_expr x) { return bounds_of(static_cast<const sub*>(nullptr), point(0), std::move(x)); }
 
 interval_expr union_x_negate_x(interval_expr x) {
   return {
@@ -280,28 +274,12 @@ interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   if (a.is_point() && b.is_point()) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   }
-  expr max_b;
-  constant_interval b_const(b);
-  if (b_const.is_non_negative()) {
-    max_b = b.max;
-  } else if (b.is_point()) {
-    assert(!b_const.is_non_negative());
-    max_b = simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max});
-  } else {
-    if (b_const.is_non_negative()) {
-      max_b = simplify(static_cast<const class max*>(nullptr),
-          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}), b.max);
-    } else {
-      max_b = simplify(static_cast<const class max*>(nullptr),
-          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
-          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}));
-    }
-  }
   // The bounds here are weird. The bounds of a % b are [0, max(abs(b))), note the open interval at the max.
   // So, we need to subtract 1 from the max value of b, but we need a special case for b = 0, where we define a % 0 to
   // be 0.
+  interval_expr abs_b = bounds_of(static_cast<const call*>(nullptr), intrinsic::abs, {std::move(b)});
   return {0, simplify(static_cast<const class max*>(nullptr),
-                 simplify(static_cast<const sub*>(nullptr), std::move(max_b), 1), 0)};
+                 simplify(static_cast<const sub*>(nullptr), std::move(abs_b.max), 1), 0)};
 }
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
@@ -379,13 +357,14 @@ interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t
   }
 }
 
-interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
-  switch (op->intrinsic) {
-  case intrinsic::abs:
+interval_expr bounds_of(const call* op, intrinsic fn, std::vector<interval_expr> args) {
+  switch (fn) {
+  case intrinsic::abs: {
     assert(args.size() == 1);
-    if (is_non_negative(args[0].min)) {
-      return {args[0].min, args[0].max};
-    } else if (is_non_positive(args[0].max)) {
+    constant_interval a_const(args[0]);
+    if (a_const.is_non_negative()) {
+      return args[0];
+    } else if (a_const.is_non_positive()) {
       return negate(args[0]);
     } else if (args[0].is_point()) {
       return {0, simplify(op, intrinsic::abs, {std::move(args[0].min)})};
@@ -394,6 +373,7 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
       expr abs_max = simplify(op, intrinsic::abs, {args[0].max});
       return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
     }
+  }
   case intrinsic::ravel: {
     assert(args.size() % 2 == 1);
     if (std::all_of(args.begin(), args.end(), [](const interval_expr& i) { return i.is_point(); })) {
@@ -423,6 +403,33 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
         min_infinite ? slinky::negative_infinity() : simplify(op, intrinsic::ravel, std::move(mins)),
         max_infinite ? slinky::positive_infinity() : simplify(op, intrinsic::ravel, std::move(maxs)),
     };
+  }
+  case intrinsic::unravel: {
+    assert(args.size() >= 2);
+    if (std::all_of(args.begin(), args.end(), [](const interval_expr& i) { return i.is_point(); })) {
+      std::vector<expr> points;
+      points.reserve(args.size());
+      for (interval_expr& i : args) points.push_back(std::move(i.min));
+      return point(simplify(op, intrinsic::unravel, std::move(points)));
+    }
+    const std::size_t num_extents = args.size() - 2;
+    auto d = as_constant(args.back().min);
+    if (!d || !args.back().is_point() || *d < 0 || *d > static_cast<index_t>(num_extents)) {
+      return interval_expr::all();
+    }
+    if (*d < static_cast<index_t>(num_extents)) {
+      // This coordinate is a remainder modulo the extent.
+      interval_expr extent = bounds_of(static_cast<const class max*>(nullptr), std::move(args[*d + 1]), point(1));
+      return bounds_of(static_cast<const mod*>(nullptr), interval_expr::all(), std::move(extent));
+    } else {
+      // This coordinate is the flat index divided by the product of the extents.
+      interval_expr stride = point(1);
+      for (std::size_t i = 1; i <= num_extents; ++i) {
+        interval_expr extent = bounds_of(static_cast<const class max*>(nullptr), std::move(args[i]), point(1));
+        stride = bounds_of(static_cast<const mul*>(nullptr), std::move(stride), std::move(extent));
+      }
+      return bounds_of(static_cast<const div*>(nullptr), std::move(args[0]), std::move(stride));
+    }
   }
   default: return point(expr(op));
   }

@@ -931,6 +931,7 @@ TEST_P(reshape, copy) {
   };
 
   func copy;
+  func fuse;
   if (opaque) {
     // Use a copy callback that does a flat memcpy
     copy = func::make(
@@ -941,8 +942,18 @@ TEST_P(reshape, copy) {
         },
         {{in, bounds}}, {{out, {x, y, z}}});
   } else {
-    // Use a slinky copy
-    copy = func::make_copy({in, bounds}, {out, {x, y, z}}, eval_ctx.copy);
+    // Use two slinky copies: one that fuses the input into a flat intermediate, and one that splits the flat
+    // intermediate into the output.
+    auto flat = buffer_expr::make(ctx, "flat", 1, sizeof(int));
+    var f(ctx, "f");
+    std::vector<expr> in_extents = {in->dim(0).extent(), in->dim(1).extent()};
+    box_expr fuse_bounds = {
+        point(unravel(f, in_extents, 0)),
+        point(unravel(f, in_extents, 1)),
+        point(unravel(f, in_extents, 2)),
+    };
+    fuse = func::make_copy({in, fuse_bounds}, {flat, {f}}, eval_ctx.copy);
+    copy = func::make_copy({flat, {point(flat_out)}}, {out, {x, y, z}}, eval_ctx.copy);
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -969,8 +980,9 @@ TEST_P(reshape, copy) {
   }
 
   if (!opaque) {
-    ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
-    ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
+    // The fuse and the split are each one call to copy.
+    ASSERT_EQ(eval_ctx.copy_calls, 2);
+    ASSERT_EQ(eval_ctx.copy_elements, 2 * W * H * D);
   }
 }
 
@@ -1012,6 +1024,7 @@ TEST_P(batch_reshape, copy) {
       point(w),
   };
   func copy;
+  func fuse;
   if (opaque) {
     // Use a callback that does a flat memcpy
     copy = func::make(
@@ -1022,8 +1035,19 @@ TEST_P(batch_reshape, copy) {
         },
         {{in, bounds}}, {{out, {x, y, z, w}}});
   } else {
-    // Use a slinky copy
-    copy = func::make_copy({in, bounds}, {out, {x, y, z, w}}, eval_ctx.copy);
+    // Use two slinky copies: one that fuses the input into a flat intermediate, and one that splits the flat
+    // intermediate into the output.
+    auto flat = buffer_expr::make(ctx, "flat", 2, sizeof(int));
+    var f(ctx, "f");
+    std::vector<expr> in_extents = {in->dim(0).extent(), in->dim(1).extent()};
+    box_expr fuse_bounds = {
+        point(unravel(f, in_extents, 0)),
+        point(unravel(f, in_extents, 1)),
+        point(unravel(f, in_extents, 2)),
+        point(w),
+    };
+    fuse = func::make_copy({in, fuse_bounds}, {flat, {f, w}}, eval_ctx.copy);
+    copy = func::make_copy({flat, {point(flat_out), point(w)}}, {out, {x, y, z, w}}, eval_ctx.copy);
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -1055,8 +1079,9 @@ TEST_P(batch_reshape, copy) {
   }
 
   if (!opaque) {
-    ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
-    ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
+    // The fuse and the split are each one call to copy.
+    ASSERT_EQ(eval_ctx.copy_calls, 2);
+    ASSERT_EQ(eval_ctx.copy_elements, 2 * W * H * D * N);
   }
 }
 
@@ -1169,6 +1194,45 @@ TEST_P(tile, param) {
     ASSERT_EQ(eval_ctx.copy_calls, split ? W / split : 1);
     ASSERT_EQ(eval_ctx.copy_elements, W * H * n * n);
   }
+}
+
+// A copy that fuses dimensions 0 and 1 of the input into dimension 0 of the output ("unravel": each input coordinate
+// is unraveled from the flat output coordinate).
+TEST(fuse_dims, copy) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var f(ctx, "f");
+  var z(ctx, "z");
+  test_context eval_ctx;
+
+  std::vector<expr> extents = {in->dim(0).extent()};
+  box_expr bounds = {point(unravel(f, extents, 0)), point(unravel(f, extents, 1)), point(z)};
+  func copy = func::make_copy({in, bounds}, {out, {f, z}}, eval_ctx.copy);
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W * H, D});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
+
+  for (int z = 0; z < D; ++z) {
+    for (int i = 0; i < W * H; ++i) {
+      ASSERT_EQ(out_buf(i, z), in_buf(i % W, i / W, z));
+    }
+  }
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 // A copy that splits dimension 0 of the input into dimensions 0 and 1 of the output ("ravel": the input coordinate is
