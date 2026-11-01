@@ -212,7 +212,9 @@ struct interval {
 
   interval() = default;
   explicit interval(T x) : min(x), max(x) {}
-  interval(T min, T max) : min(min), max(max) {}
+  interval(std::optional<T> min, std::optional<T> max) : min(min), max(max) {}
+
+  bool is_point() const { return min && max && *min == *max; }
 
   bool operator==(const interval<T>& r) const {
     if (!min != !r.min) return false;
