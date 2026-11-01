@@ -451,7 +451,8 @@ public:
     case intrinsic::or_else:
     case intrinsic::buffer_at:
     case intrinsic::buffer_size_bytes:
-    case intrinsic::validate_buffer: break;
+    case intrinsic::validate_buffer:
+    case intrinsic::ravel: break;
     };
 
     recursive_node_visitor::visit(op);

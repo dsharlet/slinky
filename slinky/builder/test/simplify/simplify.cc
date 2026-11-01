@@ -1180,6 +1180,8 @@ TEST(simplify, bounds_of) {
       x < y && x != y,
       x < y || x == y,
       abs(x),
+      ravel({x, y}, {3}),
+      ravel({y, x}, {5}),
   };
 
   for (const expr& e : exprs) {

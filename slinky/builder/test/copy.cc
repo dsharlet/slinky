@@ -921,7 +921,7 @@ TEST_P(reshape, copy) {
   test_context eval_ctx;
 
   // Compute the "flat" index of the coordinates in the output.
-  expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
+  expr flat_out = ravel({x, y, z}, {out->dim(0).extent(), out->dim(1).extent()});
 
   // Unpack the coordinates in the input from the flat index of the output.
   box_expr bounds = {
@@ -1002,7 +1002,7 @@ TEST_P(batch_reshape, copy) {
   test_context eval_ctx;
 
   // Compute the "flat" index of the coordinates in the output.
-  expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
+  expr flat_out = ravel({x, y, z}, {out->dim(0).extent(), out->dim(1).extent()});
 
   // Unpack the coordinates in the input from the flat index of the output.
   box_expr bounds = {
@@ -1169,6 +1169,46 @@ TEST_P(tile, param) {
     ASSERT_EQ(eval_ctx.copy_calls, split ? W / split : 1);
     ASSERT_EQ(eval_ctx.copy_elements, W * H * n * n);
   }
+}
+
+// A copy that splits dimension 0 of the input into dimensions 0 and 1 of the output ("ravel": the input coordinate is
+// the raveled output coordinates).
+TEST(split_dim, copy) {
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+  test_context eval_ctx;
+
+  box_expr bounds = {point(ravel({x, y}, {out->dim(0).extent()})), point(z)};
+  func copy = func::make_copy({in, bounds}, {out, {x, y, z}}, eval_ctx.copy);
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+  buffer<int, 2> in_buf({W * H, D});
+  init_random(in_buf);
+  buffer<int, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x + y * W, z));
+      }
+    }
+  }
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 }  // namespace slinky

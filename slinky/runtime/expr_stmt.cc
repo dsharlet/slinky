@@ -938,6 +938,17 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
 }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
+expr ravel(const std::vector<expr>& x, const std::vector<expr>& extents) {
+  assert(x.size() == extents.size() + 1);
+  std::vector<expr> args;
+  args.reserve(x.size() + extents.size());
+  for (std::size_t i = 0; i < extents.size(); ++i) {
+    args.push_back(x[i]);
+    args.push_back(extents[i]);
+  }
+  args.push_back(x.back());
+  return call::make(intrinsic::ravel, std::move(args));
+}
 expr align_down(expr x, const expr& a) { return is_one(a) ? x : (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return is_one(a) ? x : ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {

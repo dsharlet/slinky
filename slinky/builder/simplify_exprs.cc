@@ -381,6 +381,12 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
     } else if (is_non_positive(args[0])) {
       return simplify(static_cast<const sub*>(nullptr), 0, std::move(args[0]));
     }
+  } else if (fn == intrinsic::ravel) {
+    assert(args.size() % 2 == 1);
+    if (args.size() == 1) {
+      // ravel(x) = x
+      return args[0];
+    }
   }
 
   expr e;

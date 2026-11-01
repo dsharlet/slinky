@@ -2645,6 +2645,18 @@ interval<index_t> bounds_of_logical_or(expr_ref a, expr_ref b) {
   return boolean_bounds(is_true(bb), is_false(ba) && is_false(bb));
 }
 
+interval<index_t> bounds_of_ravel(span<expr> args) {
+  assert(args.size() % 2 == 1);
+  interval<index_t> result = bounds_of_constant(args.back());
+  for (int i = static_cast<int>(args.size()) - 3; i >= 0; i -= 2) {
+    interval<index_t> extent =
+        bounds_of(static_cast<const class max*>(nullptr), bounds_of_constant(args[i + 1]), interval<index_t>(1));
+    result = bounds_of(static_cast<const mul*>(nullptr), extent, result);
+    result = bounds_of(static_cast<const add*>(nullptr), bounds_of_constant(args[i]), result);
+  }
+  return result;
+}
+
 template <typename T>
 interval<index_t> bounds_of_binary(const T* op) {
   return bounds_of(op, bounds_of_constant(op->a), bounds_of_constant(op->b));
@@ -2694,6 +2706,7 @@ interval<index_t> bounds_of_constant(expr_ref x) {
     case intrinsic::abs: assert(op->args.size() == 1); return bounds_of_abs(bounds_of_constant(op->args[0]));
     case intrinsic::and_then: assert(op->args.size() == 2); return bounds_of_logical_and(op->args[0], op->args[1]);
     case intrinsic::or_else: assert(op->args.size() == 2); return bounds_of_logical_or(op->args[0], op->args[1]);
+    case intrinsic::ravel: return bounds_of_ravel(op->args);
     default: return {};
     }
   }

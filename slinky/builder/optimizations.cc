@@ -93,6 +93,19 @@ bool is_linear(const expr& y, var x, expr& a, expr& b) {
       b *= op->a;
       return true;
     }
+  } else if (const call* op = as_intrinsic(y, intrinsic::ravel)) {
+    // ravel(x_0, e_0, x_1, e_1, ..., x_{n-1}) = x_0 + e_0 * (x_1 + e_1 * (... + x_{n-1}))
+    assert(op->args.size() % 2 == 1);
+    if (!is_linear(op->args.back(), x, a, b)) return false;
+    for (int i = static_cast<int>(op->args.size()) - 3; i >= 0; i -= 2) {
+      if (depends_on(op->args[i + 1], x).var) return false;
+      expr ai, bi;
+      if (!is_linear(op->args[i], x, ai, bi)) return false;
+      const expr extent = max(op->args[i + 1], 1);
+      a = ai + a * extent;
+      b = bi + b * extent;
+    }
+    return true;
   }
 
   return false;
@@ -267,6 +280,9 @@ class copy_aliaser : public stmt_mutator {
 
     bool is_contiguous_copy = false;
 
+    // Conditions on the target that must be proven for this alias to be valid.
+    std::vector<expr> conditions;
+
     bool disabled = false;
   };
 
@@ -301,10 +317,21 @@ class copy_aliaser : public stmt_mutator {
   };
   symbol_map<buffer_info> buffers;
 
+  // The values of the lets in scope, which we may need to prove the conditions of an alias.
+  symbol_map<expr> lets;
+
   // The bounds of the loops we are in.
   bounds_map loop_bounds;
 
   bool prove(const expr& x) const { return prove_true(x, loop_bounds); }
+
+  expr substitute_lets(expr x) const {
+    // Lets may refer to other lets defined before them, so substitute them in reverse order.
+    for (std::size_t i = lets.size(); i > 0; --i) {
+      if (lets[i - 1]) x = substitute(x, var(i - 1), *lets[i - 1]);
+    }
+    return x;
+  }
 
   // Checks if `op` can safely be replaced by `alias` targeting a buffer `target` described by `target_info`.
   // This updates some fields of `alias` from what we learn from `target_info`.
@@ -321,6 +348,18 @@ class copy_aliaser : public stmt_mutator {
       }
       return true;
     }
+    // An undefined fold factor of the target means it is unfolded.
+    std::vector<dim_expr> target_dims = target_info.dims;
+    for (dim_expr& d : target_dims) {
+      if (!d.fold_factor.defined()) d.fold_factor = dim::unfolded;
+    }
+    for (const expr& c : alias.conditions) {
+      // The target dims may also refer to lets, so substitute the lets after substituting the target.
+      if (!prove(substitute_lets(substitute_buffer(c, target, target_dims)))) {
+        return false;
+      }
+    }
+
     const bool target_has_stride = any_stride_defined(target_info.dims);
     const bool alloc_has_stride = any_stride_defined(alloc_info.dims);
 
@@ -480,7 +519,9 @@ public:
 
   void visit(const let_stmt* op) override {
     std::vector<scoped_value_in_symbol_map<buffer_info>> scoped_buffers;
+    std::vector<scoped_value_in_symbol_map<expr>> scoped_lets;
     for (const auto& p : op->lets) {
+      scoped_lets.push_back(set_value_in_scope(lets, p.first, p.second));
       if (const constant_buffer* cb = p.second.as<constant_buffer>()) {
         scoped_buffers.push_back(set_value_in_scope(
             buffers, p.first, buffer_info(buffer_dims(*cb->value), cb->value->elem_size, /*is_input=*/true)));
@@ -783,6 +824,53 @@ public:
         return;
       }
 
+      if (const call* r = as_intrinsic(op->src_x[src_d], intrinsic::ravel)) {
+        // The src dim is `ravel(dst_x[dst_ds[0]], extents[0], dst_x[dst_ds[1]], ...)`. The src dim is a view of the dst
+        // dims if the dst is dense, unfolded, and has the extents of the ravel in these dims.
+        std::vector<int> dst_ds;
+        std::vector<expr> extents;
+        for (std::size_t i = 0; i < r->args.size(); ++i) {
+          if (i % 2 == 1) {
+            extents.push_back(r->args[i]);
+            continue;
+          }
+          std::optional<var> x = as_variable(r->args[i]);
+          auto it = x ? std::find(op->dst_x.begin(), op->dst_x.end(), *x) : op->dst_x.end();
+          if (it == op->dst_x.end()) return;
+          dst_ds.push_back(it - op->dst_x.begin());
+        }
+        if (dst_ds.front() != dst_d) {
+          // We handle this ravel with its first coordinate.
+          continue;
+        }
+        if (src_d >= static_cast<int>(info->dims.size())) return;
+        std::vector<expr> mins, maxs;
+        for (std::size_t i = 0; i < dst_ds.size(); ++i) {
+          mins.push_back(buffer_min(op->dst, dst_ds[i]));
+          maxs.push_back(buffer_max(op->dst, dst_ds[i]));
+          if (i < extents.size()) {
+            a.conditions.push_back(max(extents[i], 1) == max(buffer_extent(op->dst, dst_ds[i]), 1));
+            a.conditions.push_back(
+                buffer_stride(op->dst, dst_ds[i + 1]) == buffer_stride(op->dst, dst_ds[i]) * buffer_extent(op->dst, dst_ds[i]));
+          }
+          a.conditions.push_back(buffer_fold_factor(op->dst, dst_ds[i]) == dim::unfolded);
+        }
+        const interval_expr bounds = {ravel(mins, extents), ravel(maxs, extents)};
+        a.dims[src_d] = {info->dims[src_d].bounds & bounds, buffer_stride(op->dst, dst_d), expr()};
+        a.permutation[src_d] = dst_d;
+        // The coordinates of the dst of the min of the src.
+        expr offset = info->dims[src_d].bounds.min - bounds.min;
+        for (std::size_t i = 0; i < dst_ds.size(); ++i) {
+          if (i < extents.size()) {
+            a.at[dst_ds[i]] = mins[i] + offset % max(extents[i], 1);
+            offset = offset / max(extents[i], 1);
+          } else {
+            a.at[dst_ds[i]] = mins[i] + offset;
+          }
+        }
+        continue;
+      }
+
       expr offset = simplify(op->src_x[src_d] - op->dst_x[dst_d]);
       if (depends_on(offset, op->dst_x).any()) {
         // This is not a simple copy, we can't handle it here.
@@ -860,6 +948,9 @@ public:
         for (expr& at : a.at) {
           at = substitute_buffer(at, sym, sub_dims, src);
         }
+        for (expr& c : a.conditions) {
+          c = substitute_buffer(c, sym, sub_dims, src);
+        }
         // Substitute remaining non-buffer references to sym.
         for (dim_expr& d : a.dims) {
           d = substitute(d, sym, src);
@@ -867,6 +958,9 @@ public:
         a.elem_size = substitute(a.elem_size, sym, src);
         for (expr& at : a.at) {
           at = substitute(at, sym, src);
+        }
+        for (expr& c : a.conditions) {
+          c = substitute(c, sym, src);
         }
       }
     }

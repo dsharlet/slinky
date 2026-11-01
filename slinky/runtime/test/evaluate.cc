@@ -72,6 +72,24 @@ TEST(evaluate, arithmetic) {
   ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
 }
 
+TEST(evaluate, ravel) {
+  eval_context context = make_context();
+  const int W = 4;
+  const int H = 3;
+  const int D = 5;
+  std::vector<expr> extents = {W, H};
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        const index_t flat = x + W * (y + H * z);
+        ASSERT_EQ(evaluate(ravel({x, y, z}, extents), context), flat);
+      }
+    }
+  }
+  // Extents less than 1 are treated as 1.
+  ASSERT_EQ(evaluate(ravel({1, 2}, {0}), context), 3);
+}
+
 TEST(evaluate, buffer_fields) {
   eval_context context = make_context();
   buffer<int, 1> buf({10});

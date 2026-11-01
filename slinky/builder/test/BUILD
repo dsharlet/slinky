@@ -54,6 +54,18 @@ cc_test(
 )
 
 cc_test(
+    name = "ravel",
+    srcs = ["ravel.cc"],
+    deps = [
+        ":util",
+        "//slinky/builder",
+        "//slinky/runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "elementwise",
     srcs = ["elementwise.cc"],
     deps = [

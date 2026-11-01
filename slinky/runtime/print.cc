@@ -49,6 +49,7 @@ const char* to_string(intrinsic fn) {
   case intrinsic::trace_end: return "trace_end";
   case intrinsic::free: return "free";
   case intrinsic::validate_buffer: return "validate_buffer";
+  case intrinsic::ravel: return "ravel";
 
   default: return "<invalid intrinsic>";
   }

@@ -394,6 +394,36 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
       expr abs_max = simplify(op, intrinsic::abs, {args[0].max});
       return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
     }
+  case intrinsic::ravel: {
+    assert(args.size() % 2 == 1);
+    if (std::all_of(args.begin(), args.end(), [](const interval_expr& i) { return i.is_point(); })) {
+      std::vector<expr> points;
+      points.reserve(args.size());
+      for (interval_expr& i : args) points.push_back(std::move(i.min));
+      return point(simplify(op, intrinsic::ravel, std::move(points)));
+    }
+    // ravel is a sum of the coordinates multiplied by positive coefficients, so it is monotonically increasing in
+    // each coordinate. We need the extents to be points to compute the coefficients.
+    std::vector<expr> mins, maxs;
+    bool min_infinite = false;
+    bool max_infinite = false;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+      if (i % 2 == 1) {
+        if (!args[i].is_point()) return interval_expr::all();
+        mins.push_back(args[i].min);
+        maxs.push_back(args[i].min);
+      } else {
+        min_infinite = min_infinite || is_infinity(args[i].min);
+        max_infinite = max_infinite || is_infinity(args[i].max);
+        mins.push_back(args[i].min);
+        maxs.push_back(args[i].max);
+      }
+    }
+    return {
+        min_infinite ? slinky::negative_infinity() : simplify(op, intrinsic::ravel, std::move(mins)),
+        max_infinite ? slinky::positive_infinity() : simplify(op, intrinsic::ravel, std::move(maxs)),
+    };
+  }
   default: return point(expr(op));
   }
 }

@@ -133,6 +133,11 @@ enum class intrinsic {
 
   // Validate a buffer.
   validate_buffer,
+
+  // Index arithmetic for reshapes. Extents less than 1 are treated as 1.
+  // ravel(x_0, e_0, x_1, e_1, ..., x_{n-1}) = x_0 + e_0 * (x_1 + e_1 * (... + x_{n-1})).
+  // The coordinates x_i for i < n - 1 are expected to be in [0, e_i).
+  ravel,
 };
 
 // True if `fn` can be evaluated if its arguments are constants.
@@ -733,6 +738,8 @@ bool is_negative(expr_ref x);
 bool is_non_positive(expr_ref x);
 
 expr abs(expr x);
+// See `intrinsic::ravel`. `x` must have one more element than `extents`.
+expr ravel(const std::vector<expr>& x, const std::vector<expr>& extents);
 expr align_down(expr x, const expr& a);
 expr align_up(expr x, const expr& a);
 // Expand the interval to have a min and extent aligned to a multiple of a.

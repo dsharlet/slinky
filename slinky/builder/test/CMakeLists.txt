@@ -21,6 +21,7 @@ set(common slinky::builder_test_util slinky::builder slinky::runtime)
 
 slinky_add_test(checks LINK ${common})
 slinky_add_test(copy LINK ${common} slinky::base)
+slinky_add_test(ravel LINK ${common})
 slinky_add_test(elementwise LINK ${common} slinky::base_test_util)
 slinky_add_test(pipeline LINK ${common} slinky::base_test_util)
 slinky_add_test(copy_pipeline LINK ${common} slinky::base_test_util)

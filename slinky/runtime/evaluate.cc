@@ -383,6 +383,17 @@ SLINKY_NO_INLINE index_t eval_buffer_size_bytes(const call* op, eval_context& ct
   return buf ? buf->size_bytes() : 0;
 }
 
+SLINKY_NO_INLINE index_t eval_ravel(const call* op, eval_context& ctx) {
+  assert(op->args.size() % 2 == 1);
+  // ravel(x_0, e_0, x_1, e_1, ..., x_{n-1}) = x_0 + e_0 * (x_1 + e_1 * (... + x_{n-1}))
+  index_t result = eval(op->args.back(), ctx);
+  for (int i = static_cast<int>(op->args.size()) - 3; i >= 0; i -= 2) {
+    const index_t extent = std::max<index_t>(eval(op->args[i + 1], ctx), 1);
+    result = eval(op->args[i], ctx) + extent * result;
+  }
+  return result;
+}
+
 SLINKY_NO_INLINE index_t eval_wait_for(const call* op, eval_context& ctx) {
   assert(op->args.size() >= 1);
   for (expr_ref i : op->args) {
@@ -427,6 +438,8 @@ SLINKY_INLINE index_t eval(const call* op, eval_context& ctx) {
 
   case intrinsic::free: return eval_free(op, ctx);
   case intrinsic::validate_buffer: return eval_validate_buffer(op, ctx);
+
+  case intrinsic::ravel: return eval_ravel(op, ctx);
 
   default: SLINKY_UNREACHABLE << "unknown intrinsic: " << to_string(op->intrinsic);
   }
