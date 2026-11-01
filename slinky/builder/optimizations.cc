@@ -165,18 +165,18 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<var> dst_x, int dst_d
   }
 }
 
-bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_dim) {
+bool is_copy(var src, span<expr> src_x, int src_d, var dst, span<var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   // We might not have an src dim if we're trying to broadcast.
-  expr src_x = src_d != transpose::new_dim ? op->src_x[src_d] : expr();
-  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim);
+  expr src_x_d = src_d != transpose::new_dim ? src_x[src_d] : expr();
+  return is_copy(src, src_x_d, src_d, dst, dst_x, dst_d, at, src_dim);
 }
 
-// `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,
-// where it is a broadcast.
-bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
+// `dst_d` may be a copy dim of a copy with operands `src_x` and `dst_x` if it is used by exactly one src dim, where it
+// might be a copy, or zero src dims, where it is a broadcast.
+bool is_copy_dst_dim(span<expr> src_x, span<var> dst_x, int dst_d, int& src_d) {
   src_d = transpose::new_dim;
-  for (int i = 0; i < static_cast<int>(op->src_x.size()); ++i) {
-    if (depends_on(op->src_x[i], op->dst_x[dst_d]).any()) {
+  for (int i = 0; i < static_cast<int>(src_x.size()); ++i) {
+    if (depends_on(src_x[i], dst_x[dst_d]).any()) {
       if (src_d == transpose::new_dim) {
         src_d = i;
       } else {
@@ -186,6 +186,14 @@ bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
     }
   }
   return true;
+}
+
+// Returns true if `src_x` depends on dimensions of `dst_x` other than `dst_d`.
+bool depends_on_other_dst_x(const expr& src_x, span<var> dst_x, int dst_d) {
+  for (int d = 0; d < static_cast<int>(dst_x.size()); ++d) {
+    if (d != dst_d && depends_on(src_x, dst_x[d]).var) return true;
+  }
+  return false;
 }
 
 std::vector<expr> buffer_mins(var buf, std::size_t rank) {
@@ -293,10 +301,15 @@ class copy_aliaser : public stmt_mutator {
   };
   symbol_map<buffer_info> buffers;
 
+  // The bounds of the loops we are in.
+  bounds_map loop_bounds;
+
+  bool prove(const expr& x) const { return prove_true(x, loop_bounds); }
+
   // Checks if `op` can safely be replaced by `alias` targeting a buffer `target` described by `target_info`.
   // This updates some fields of `alias` from what we learn from `target_info`.
-  static bool alias_compatible(
-      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info) {
+  bool alias_compatible(
+      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info) const {
     scoped_trace trace("alias_compatible");
     assert(alloc_info.dims.size() == alias.dims.size());
 
@@ -340,14 +353,25 @@ class copy_aliaser : public stmt_mutator {
           continue;
         }
         const dim_expr& alias_dim = alias_dims[d];
-        if (!prove_true(alloc_dims[d].bounds.min >= alias_dim.bounds.min) ||
-            !prove_true(alloc_dims[d].bounds.max <= alias_dim.bounds.max)) {
+        if (!prove(alloc_dims[d].bounds.min >= alias_dim.bounds.min) ||
+            !prove(alloc_dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
           if (target_info.is_input || target_info.is_output) {
             // We can't reallocate this buffer.
             return false;
           }
           in_bounds = false;
+        }
+      }
+
+      if (!in_bounds) {
+        // We can only grow the target to accommodate this alias if each dimension of the alias corresponds to a
+        // different dimension of the target.
+        std::vector<int> target_ds;
+        for (int target_d : alias.permutation) {
+          if (target_d == transpose::new_dim) continue;
+          if (std::find(target_ds.begin(), target_ds.end(), target_d) != target_ds.end()) return false;
+          target_ds.push_back(target_d);
         }
       }
 
@@ -358,7 +382,7 @@ class copy_aliaser : public stmt_mutator {
     // the propagated strides must be valid for the target's (possibly different) extents.
     if (alias.assume_in_bounds && alloc_has_stride && !target_has_stride) {
       if (std::all_of(alloc_dims.begin(), alloc_dims.end(), [&](const dim_expr& d) {
-            return !d.stride.defined() || d.bounds.is_point() || prove_true(d.stride == alloc_info.elem_size);
+            return !d.stride.defined() || d.bounds.is_point() || prove(d.stride == alloc_info.elem_size);
           })) {
         // The only defined stride is elem_size, it can be propagated safely.
       } else {
@@ -366,7 +390,7 @@ class copy_aliaser : public stmt_mutator {
           const int target_d = alias.permutation[d];
           if (target_d < 0 || target_d >= static_cast<int>(target_info.dims.size())) continue;
           if (alloc_dims[d].bounds.is_point() || target_info.dims[target_d].bounds.is_point()) continue;
-          if (!prove_true(alloc_dims[d].bounds.extent() == target_info.dims[target_d].bounds.extent())) {
+          if (!prove(alloc_dims[d].bounds.extent() == target_info.dims[target_d].bounds.extent())) {
             return false;
           }
         }
@@ -381,7 +405,7 @@ class copy_aliaser : public stmt_mutator {
       if (!alias.assume_in_bounds) {
         // The alias might grow the target allocation, so we can't use the target's strides.
         if (alloc_dims[d].stride.defined() || simplify(alias_dim.stride).defined()) {
-          if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
+          if (!prove(alloc_dims[d].stride == alias_dim.stride)) {
             // This alias would violate a constraint on the stride of the buffer.
             return false;
           }
@@ -393,18 +417,18 @@ class copy_aliaser : public stmt_mutator {
         int target_d = alias.permutation[d];
         if (target_d < static_cast<int>(target_stride.size())) {
           expr& target_stride_d = target_stride[target_d];
-          if (target_stride_d.defined() && !prove_true(target_stride_d == alloc_info.dims[d].stride)) {
+          if (target_stride_d.defined() && !prove(target_stride_d == alloc_info.dims[d].stride)) {
             // We tried to set the same dimension to two different strides.
             return false;
           }
           target_stride_d = alloc_info.dims[d].stride;
-        } else if (!prove_true(alloc_info.dims[d].stride == 0)) {
+        } else if (!prove(alloc_info.dims[d].stride == 0)) {
           // This dimension must have stride 0, or we can't alias an implicit broadcast.
           return false;
         }
       } else if (alloc_dims[d].stride.defined()) {
         // There are strides on both the allocation and the target, they must be equal.
-        if (!prove_true(alloc_dims[d].stride == alias_dim.stride)) {
+        if (!prove(alloc_dims[d].stride == alias_dim.stride)) {
           // This alias would violate a constraint on the stride of the buffer.
           return false;
         }
@@ -414,17 +438,17 @@ class copy_aliaser : public stmt_mutator {
         if (!alias_dim.fold_factor.defined() || is_constant(alias_dim.fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
-        } else if (!prove_true(alias_dim.fold_factor >= alloc_dims[d].fold_factor)) {
+        } else if (!prove(alias_dim.fold_factor >= alloc_dims[d].fold_factor)) {
           // The fold factor of this allocation does not evenly divide the target fold factor.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
-        } else if (!prove_true((alias_dim.bounds.min % alias_dim.fold_factor) ==
+        } else if (!prove((alias_dim.bounds.min % alias_dim.fold_factor) ==
                                (alloc_dims[d].bounds.min % alloc_dims[d].fold_factor))) {
           // The mins of folded buffers are not aligned.
           return false;
         }
       } else if ((alias_dim.fold_factor.defined() && !is_constant(alias_dim.fold_factor, dim::unfolded)) &&
-                 !prove_true(alloc_dims[d].extent() <= alias_dim.fold_factor)) {
+                 !prove(alloc_dims[d].extent() <= alias_dim.fold_factor)) {
         // If the target is folded, but the op is not, we can only alias it if the extent of this dimension
         // is less than the fold factor.
         return false;
@@ -621,21 +645,25 @@ public:
   }
 
   void visit(const loop* op) override {
-    stmt body = mutate(op->body);
+    stmt body;
+    {
+      auto set_bounds = set_value_in_scope(loop_bounds, op->sym, op->bounds);
+      body = mutate(op->body);
+    }
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(clone_with(op, std::move(body)));
     }
 
-    symbol_map<interval_expr> loop_bounds;
-    loop_bounds[op->sym] = op->bounds;
+    symbol_map<interval_expr> bounds;
+    bounds[op->sym] = op->bounds;
 
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       for (dim_expr& d : i->dims) {
         if (depends_on(d.bounds, op->sym).any()) {
-          d.bounds = bounds_of(d.bounds, loop_bounds);
+          d.bounds = bounds_of(d.bounds, bounds);
         }
       }
     }
@@ -693,13 +721,13 @@ public:
     a.dims.resize(info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
-      if (!is_copy_dst_dim(op, dst_d, src_d)) {
+      if (!is_copy_dst_dim(op->src_x, op->dst_x, dst_d, src_d)) {
         return;
       }
 
       dim_expr src_dim;
       expr at;
-      if (!is_copy(op, src_d, dst_d, at, src_dim)) {
+      if (!is_copy(op->src, op->src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim)) {
         return;
       }
 
@@ -746,7 +774,7 @@ public:
     a.permutation.assign(info->dims.size(), transpose::new_dim);
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
-      if (!is_copy_dst_dim(op, dst_d, src_d)) {
+      if (!is_copy_dst_dim(op->src_x, op->dst_x, dst_d, src_d)) {
         return;
       }
 
@@ -1333,15 +1361,20 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // We can speed it up by finding dimensions we can let pass through to the copy.
   for (int dst_d = 0; dst_d < static_cast<int>(dst_x.size()); ++dst_d) {
     int src_d;
-    if (!is_copy_dst_dim(op, dst_d, src_d)) {
+    if (!is_copy_dst_dim(op->src_x, op->dst_x, dst_d, src_d)) {
       continue;
     }
 
     dim_expr src_dim;
     expr at;
-    if (is_copy(op, src_d, dst_d, at, src_dim)) {
+    if (is_copy(op->src, op->src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim)) {
       src_dims.push_back(src_dim);
-      if (at.defined()) {
+      if (!at.defined()) {
+        // This is a broadcast.
+      } else if (depends_on_other_dst_x(op->src_x[src_d], op->dst_x, dst_d)) {
+        // `at` assumes the other dst dims are at their min, but they might not be copy dims.
+        src_x[src_d] = substitute(src_x[src_d], op->dst_x[dst_d], buffer_min(op->dst, dst_d));
+      } else {
         src_x[src_d] = at;
       }
       dst_x[dst_d] = var();
