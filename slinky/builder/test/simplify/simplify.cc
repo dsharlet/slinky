@@ -1439,8 +1439,12 @@ TEST(evaluate_constant, basic) {
       eval_context ctx;
       ctx[x] = x_val;
       const index_t value = evaluate(e, ctx);
-      if (bounds.min) ASSERT_LE(*bounds.min, value) << e;
-      if (bounds.max) ASSERT_GE(*bounds.max, value) << e;
+      if (bounds.min) {
+        ASSERT_LE(*bounds.min, value) << e;
+      }
+      if (bounds.max) {
+        ASSERT_GE(*bounds.max, value) << e;
+      }
     }
   }
 }

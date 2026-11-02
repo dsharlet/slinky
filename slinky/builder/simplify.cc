@@ -2544,7 +2544,7 @@ interval<index_t> bounds_of(const mul*, const interval<index_t>& a, const interv
 interval<index_t> bounds_of(const div*, const interval<index_t>& a, const interval<index_t>& b) {
   if (a.is_point() && b.is_point()) {
     // Compute the exact result, which might be one of the values we treat as infinity below.
-    if (*a.min == std::numeric_limits<index_t>::min() && *b.min == -1) return {};  // Overflow
+    if (div_overflows(*a.min, *b.min)) return {};  // Overflow
     return interval<index_t>(euclidean_div(*a.min, *b.min));
   }
   const index_t a_corners[] = {a.min.value_or(neg_inf), a.max.value_or(pos_inf)};
@@ -2574,7 +2574,7 @@ interval<index_t> bounds_of(const div*, const interval<index_t>& a, const interv
 }
 
 interval<index_t> bounds_of(const mod*, const interval<index_t>& a, const interval<index_t>& b) {
-  if (a.is_point() && b.is_point() && *b.min != -1) {
+  if (a.is_point() && b.is_point() && !mod_overflows(*a.min, *b.min)) {
     return interval<index_t>(euclidean_mod(*a.min, *b.min));
   }
   // We know that 0 <= a % b < max(abs(b), 1).
