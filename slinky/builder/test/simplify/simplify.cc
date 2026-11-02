@@ -1569,6 +1569,32 @@ TEST(simplify, fuzz) {
   }
 }
 
+TEST(simplify, fuzz_idempotent) {
+  gtest_seeded_mt19937 rng;
+  expr_generator<gtest_seeded_mt19937> gen(rng, 4);
+
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
+    expr test = gen.random_expr(2);
+
+    const bool use_bounds = rng() & 1;
+    const bounds_map no_bounds;
+    const bounds_map& bounds = use_bounds ? gen.var_bounds() : no_bounds;
+
+    expr simplified = simplify(test, bounds);
+    expr resimplified = simplify(simplified, bounds);
+    if (!match(simplified, resimplified)) {
+      std::cerr << "simplify is not idempotent" << (use_bounds ? " (with bounds)" : "") << ": " << std::endl;
+      print(std::cerr, test, &symbols);
+      std::cerr << std::endl << " -> ";
+      print(std::cerr, simplified, &symbols);
+      std::cerr << std::endl << " -> ";
+      print(std::cerr, resimplified, &symbols);
+      std::cerr << std::endl;
+      ASSERT_THAT(resimplified, matches(simplified));
+    }
+  }
+}
+
 TEST(simplify, fuzz_correlated_bounds) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);
