@@ -659,20 +659,16 @@ public:
     if (!e.defined()) return false;
 
     // e is constant true if we know it has bounds that don't include zero.
-    std::optional<index_t> a = evaluate_constant_lower_bound(e);
-    if (a && *a > 0) return true;
-    std::optional<index_t> b = evaluate_constant_upper_bound(e);
-    return b && *b < 0;
+    interval<index_t> b = evaluate_constant_bounds(e);
+    return (b.min && *b.min > 0) || (b.max && *b.max < 0);
   }
 
   static bool prove_constant_false(const expr& e) {
     if (!e.defined()) return false;
 
     // e is constant false if we know its bounds are [0, 0].
-    std::optional<index_t> a = evaluate_constant_lower_bound(e);
-    if (!a || *a != 0) return false;
-    std::optional<index_t> b = evaluate_constant_upper_bound(e);
-    return b && *b == 0;
+    interval<index_t> b = evaluate_constant_bounds(e);
+    return b.min && *b.min == 0 && b.max && *b.max == 0;
   }
 
   // Attempt to prove that the interval only contains true or false.
@@ -2450,21 +2446,276 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, c
 
 namespace {
 
-class constant_evaluator : public node_mutator {
+// To compute the bounds of products and quotients from the corners of the bounds of their operands, we represent
+// unknown bounds with +/-max index_t, and treat them (and anything beyond them) as infinities. This makes saturating
+// arithmetic behave like arithmetic with infinities. A bound that is actually one of these values is lost, but that is
+// conservative.
+constexpr index_t pos_inf = std::numeric_limits<index_t>::max();
+constexpr index_t neg_inf = -pos_inf;
+bool is_inf(index_t x) { return x <= neg_inf || x >= pos_inf; }
+index_t signed_inf(int sign) { return sign > 0 ? pos_inf : neg_inf; }
+
+// Requires b != 0.
+index_t div_corner(index_t a, index_t b) {
+  assert(b != 0);
+  // This must come first, so a bound that is actually the max index_t divided by itself is not 0.
+  if (is_inf(a)) return signed_inf(sign(a) * sign(b));
+  // This is the limit of the Euclidean quotient as b goes to infinity.
+  if (is_inf(b)) return a < 0 ? -sign(b) : 0;
+  return euclidean_div(a, b);
+}
+
+// Make an interval from the range of a set of corners, where infinite bounds (including overflow) are unknown.
+interval<index_t> interval_of_corners(index_t min, index_t max) {
+  return {
+      is_inf(min) ? std::nullopt : std::optional<index_t>(min),
+      is_inf(max) ? std::nullopt : std::optional<index_t>(max),
+  };
+}
+
+interval<index_t> boolean_bounds(bool is_true, bool is_false) {
+  assert(!(is_true && is_false));
+  return {is_true ? 1 : 0, is_false ? 0 : 1};
+}
+
+bool is_true(const interval<index_t>& x) { return (x.min && *x.min > 0) || (x.max && *x.max < 0); }
+bool is_false(const interval<index_t>& x) { return x.min && x.max && *x.min == 0 && *x.max == 0; }
+bool is_non_negative(const interval<index_t>& x) { return x.min && *x.min >= 0; }
+bool is_non_positive(const interval<index_t>& x) { return x.max && *x.max <= 0; }
+
+// The min or max of two lower bounds or two upper bounds, where a missing lower bound is -infinity and a missing upper
+// bound is +infinity.
+std::optional<index_t> min_lower(std::optional<index_t> a, std::optional<index_t> b) {
+  return a && b ? std::optional<index_t>(std::min(*a, *b)) : std::nullopt;
+}
+std::optional<index_t> max_upper(std::optional<index_t> a, std::optional<index_t> b) {
+  return a && b ? std::optional<index_t>(std::max(*a, *b)) : std::nullopt;
+}
+std::optional<index_t> min_upper(std::optional<index_t> a, std::optional<index_t> b) {
+  return a && b ? std::optional<index_t>(std::min(*a, *b)) : (a ? a : b);
+}
+std::optional<index_t> max_lower(std::optional<index_t> a, std::optional<index_t> b) {
+  return a && b ? std::optional<index_t>(std::max(*a, *b)) : (a ? a : b);
+}
+
+std::optional<index_t> negate(std::optional<index_t> x) {
+  index_t result;
+  if (!x || sub_with_overflow<index_t>(0, *x, result)) return std::nullopt;
+  return result;
+}
+
+interval<index_t> bounds_of(const add*, const interval<index_t>& a, const interval<index_t>& b) {
+  interval<index_t> result;
+  index_t r;
+  if (a.min && b.min && !add_with_overflow(*a.min, *b.min, r)) result.min = r;
+  if (a.max && b.max && !add_with_overflow(*a.max, *b.max, r)) result.max = r;
+  return result;
+}
+
+interval<index_t> bounds_of(const sub*, const interval<index_t>& a, const interval<index_t>& b) {
+  interval<index_t> result;
+  index_t r;
+  if (a.min && b.max && !sub_with_overflow(*a.min, *b.max, r)) result.min = r;
+  if (a.max && b.min && !sub_with_overflow(*a.max, *b.min, r)) result.max = r;
+  return result;
+}
+
+interval<index_t> bounds_of(const mul*, const interval<index_t>& a, const interval<index_t>& b) {
+  if (a.is_point() && b.is_point()) {
+    // Compute the exact result, which might be one of the values we treat as infinity below.
+    index_t result;
+    if (mul_with_overflow(*a.min, *b.min, result)) return {};
+    return interval<index_t>(result);
+  }
+  const index_t a_corners[] = {a.min.value_or(neg_inf), a.max.value_or(pos_inf)};
+  const index_t b_corners[] = {b.min.value_or(neg_inf), b.max.value_or(pos_inf)};
+  index_t min = pos_inf;
+  index_t max = neg_inf;
+  for (index_t i : a_corners) {
+    for (index_t j : b_corners) {
+      const index_t c = mul_sat(i, j);
+      min = std::min(min, c);
+      max = std::max(max, c);
+    }
+  }
+  return interval_of_corners(min, max);
+}
+
+interval<index_t> bounds_of(const div*, const interval<index_t>& a, const interval<index_t>& b) {
+  if (a.is_point() && b.is_point()) {
+    // Compute the exact result, which might be one of the values we treat as infinity below.
+    if (*a.min == std::numeric_limits<index_t>::min() && *b.min == -1) return {};  // Overflow
+    return interval<index_t>(euclidean_div(*a.min, *b.min));
+  }
+  const index_t a_corners[] = {a.min.value_or(neg_inf), a.max.value_or(pos_inf)};
+  index_t min = pos_inf;
+  index_t max = neg_inf;
+  // Euclidean division is monotonic in each operand when the sign of b is fixed, so the extremes are at the corners.
+  auto include_corners = [&](index_t b_min, index_t b_max) {
+    for (index_t i : a_corners) {
+      const index_t c_min = div_corner(i, b_min);
+      const index_t c_max = div_corner(i, b_max);
+      min = std::min({min, c_min, c_max});
+      max = std::max({max, c_min, c_max});
+    }
+  };
+  const index_t b_min = b.min.value_or(neg_inf);
+  const index_t b_max = b.max.value_or(pos_inf);
+  if (b_min > 0 || b_max < 0) {
+    include_corners(b_min, b_max);
+  } else {
+    // b might be zero, and x / 0 is 0. Split the rest of the interval into negative and positive parts.
+    min = std::min<index_t>(min, 0);
+    max = std::max<index_t>(max, 0);
+    if (b_min < 0) include_corners(b_min, -1);
+    if (b_max > 0) include_corners(1, b_max);
+  }
+  return interval_of_corners(min, max);
+}
+
+interval<index_t> bounds_of(const mod*, const interval<index_t>& a, const interval<index_t>& b) {
+  if (a.is_point() && b.is_point() && *b.min != -1) {
+    return interval<index_t>(euclidean_mod(*a.min, *b.min));
+  }
+  // We know that 0 <= a % b < max(abs(b), 1).
+  interval<index_t> result = {0, std::nullopt};
+  if (b.min && b.max) {
+    // Compute abs(b) - 1 without overflow.
+    auto abs_minus_one = [](index_t x) { return x < 0 ? -(x + 1) : x - 1; };
+    result.max = std::max<index_t>({0, abs_minus_one(*b.min), abs_minus_one(*b.max)});
+  }
+  if (is_non_negative(a)) {
+    // If a is non-negative, a % b <= a.
+    result.max = min_upper(result.max, a.max);
+  }
+  return result;
+}
+
+interval<index_t> bounds_of(const class min*, const interval<index_t>& a, const interval<index_t>& b) {
+  return {min_lower(a.min, b.min), min_upper(a.max, b.max)};
+}
+
+interval<index_t> bounds_of(const class max*, const interval<index_t>& a, const interval<index_t>& b) {
+  return {max_lower(a.min, b.min), max_upper(a.max, b.max)};
+}
+
+interval<index_t> bounds_of_abs(const interval<index_t>& a) {
+  if (is_non_negative(a)) {
+    return a;
+  } else if (is_non_positive(a)) {
+    return {negate(a.max), negate(a.min)};
+  } else {
+    return {0, max_upper(negate(a.min), a.max)};
+  }
+}
+
+interval<index_t> bounds_of_union(const interval<index_t>& a, const interval<index_t>& b) {
+  return {min_lower(a.min, b.min), max_upper(a.max, b.max)};
+}
+
+interval<index_t> bounds_of(const less*, const interval<index_t>& a, const interval<index_t>& b) {
+  return boolean_bounds(a.max && b.min && *a.max < *b.min, a.min && b.max && *a.min >= *b.max);
+}
+interval<index_t> bounds_of(const less_equal*, const interval<index_t>& a, const interval<index_t>& b) {
+  return boolean_bounds(a.max && b.min && *a.max <= *b.min, a.min && b.max && *a.min > *b.max);
+}
+interval<index_t> bounds_of(const equal*, const interval<index_t>& a, const interval<index_t>& b) {
+  const bool disjoint = (a.max && b.min && *a.max < *b.min) || (b.max && a.min && *b.max < *a.min);
+  return boolean_bounds(a.is_point() && b.is_point() && *a.min == *b.min, disjoint);
+}
+interval<index_t> bounds_of(const not_equal*, const interval<index_t>& a, const interval<index_t>& b) {
+  interval<index_t> eq = bounds_of(static_cast<const equal*>(nullptr), a, b);
+  return {1 - *eq.max, 1 - *eq.min};
+}
+
+// Computes constant bounds of an expression in a single pass, by visiting each node once.
+interval<index_t> bounds_of_constant(expr_ref x);
+
+interval<index_t> bounds_of_logical_and(expr_ref a, expr_ref b) {
+  interval<index_t> ba = bounds_of_constant(a);
+  if (is_false(ba)) return interval<index_t>(0);
+  interval<index_t> bb = bounds_of_constant(b);
+  return boolean_bounds(is_true(ba) && is_true(bb), is_false(bb));
+}
+
+interval<index_t> bounds_of_logical_or(expr_ref a, expr_ref b) {
+  interval<index_t> ba = bounds_of_constant(a);
+  if (is_true(ba)) return interval<index_t>(1);
+  interval<index_t> bb = bounds_of_constant(b);
+  return boolean_bounds(is_true(bb), is_false(ba) && is_false(bb));
+}
+
+template <typename T>
+interval<index_t> bounds_of_binary(const T* op) {
+  return bounds_of(op, bounds_of_constant(op->a), bounds_of_constant(op->b));
+}
+
+interval<index_t> bounds_of_constant(expr_ref x) {
+  switch (x.type()) {
+  case expr_node_type::constant: return interval<index_t>(static_cast<const constant*>(x.get())->value);
+  case expr_node_type::add: return bounds_of_binary(static_cast<const add*>(x.get()));
+  case expr_node_type::sub: return bounds_of_binary(static_cast<const sub*>(x.get()));
+  case expr_node_type::mul: return bounds_of_binary(static_cast<const mul*>(x.get()));
+  case expr_node_type::div: return bounds_of_binary(static_cast<const div*>(x.get()));
+  case expr_node_type::mod: return bounds_of_binary(static_cast<const mod*>(x.get()));
+  case expr_node_type::min: return bounds_of_binary(static_cast<const class min*>(x.get()));
+  case expr_node_type::max: return bounds_of_binary(static_cast<const class max*>(x.get()));
+  case expr_node_type::equal: return bounds_of_binary(static_cast<const equal*>(x.get()));
+  case expr_node_type::not_equal: return bounds_of_binary(static_cast<const not_equal*>(x.get()));
+  case expr_node_type::less: return bounds_of_binary(static_cast<const less*>(x.get()));
+  case expr_node_type::less_equal: return bounds_of_binary(static_cast<const less_equal*>(x.get()));
+  case expr_node_type::logical_and: {
+    const logical_and* op = static_cast<const logical_and*>(x.get());
+    return bounds_of_logical_and(op->a, op->b);
+  }
+  case expr_node_type::logical_or: {
+    const logical_or* op = static_cast<const logical_or*>(x.get());
+    return bounds_of_logical_or(op->a, op->b);
+  }
+  case expr_node_type::logical_not: {
+    interval<index_t> a = bounds_of_constant(static_cast<const logical_not*>(x.get())->a);
+    return boolean_bounds(is_false(a), is_true(a));
+  }
+  case expr_node_type::select: {
+    const class select* op = static_cast<const class select*>(x.get());
+    interval<index_t> c = bounds_of_constant(op->condition);
+    if (is_true(c)) return bounds_of_constant(op->true_value);
+    if (is_false(c)) return bounds_of_constant(op->false_value);
+    interval<index_t> t = bounds_of_constant(op->true_value);
+    if (!t.min && !t.max) return t;
+    return bounds_of_union(t, bounds_of_constant(op->false_value));
+  }
+  case expr_node_type::let:
+    // We don't know anything about the let variables, so the bounds of the body are bounds of the let.
+    return bounds_of_constant(static_cast<const let*>(x.get())->body);
+  case expr_node_type::call: {
+    const call* op = static_cast<const call*>(x.get());
+    switch (op->intrinsic) {
+    case intrinsic::abs: assert(op->args.size() == 1); return bounds_of_abs(bounds_of_constant(op->args[0]));
+    case intrinsic::and_then: assert(op->args.size() == 2); return bounds_of_logical_and(op->args[0], op->args[1]);
+    case intrinsic::or_else: assert(op->args.size() == 2); return bounds_of_logical_or(op->args[0], op->args[1]);
+    default: return {};
+    }
+  }
+  default: return {};
+  }
+}
+
+// Finds a lower or upper bound of an expression, replacing subexpressions with constant bounds where possible. The
+// result is constant if and only if `bounds_of_constant` finds the corresponding constant bound.
+class symbolic_bound_evaluator : public node_mutator {
   // > 0 -> we are looking for an upper bound
-  // == 0 -> we are constant folding
   // < 0 -> we are looking for a lower bound
-  int sign = 0;
-  bool constant_required = true;
+  int sign;
 
 public:
-  constant_evaluator(int sign = 0, bool constant_required = true) : sign(sign), constant_required(constant_required) {}
+  symbolic_bound_evaluator(int sign) : sign(sign) { assert(sign != 0); }
 
   using node_mutator::mutate;
   expr mutate(const expr& x) {
     switch (x.type()) {
-    case expr_node_type::constant: return x;
-    case expr_node_type::variable: return constant_required ? expr() : x;
+    case expr_node_type::constant:
+    case expr_node_type::variable: return x;
     default: return node_mutator::mutate(x);
     }
   }
@@ -2476,32 +2727,17 @@ public:
     return result;
   }
 
-  void visit(const variable* op) override { set_result(constant_required ? expr() : expr(op)); }
+  std::optional<index_t> bound(const interval<index_t>& x) const { return sign < 0 ? x.min : x.max; }
 
+  // Use the constant bound of `op` if there is one, otherwise `op` is a bound of itself.
   template <typename T>
-  void visit_min_max(const T* op, bool take_constant) {
-    expr a = mutate(op->a);
-    // If we can take a constant operand, an undefined operand doesn't make the result undefined.
-    if (!a.defined() && !take_constant) return set_result(expr{});
-    expr b = mutate(op->b);
-    auto ca = as_constant(a);
-    auto cb = as_constant(b);
-    if (ca && cb) {
-      set_result(make_binary<T>(*ca, *cb));
-    } else if (take_constant && ca) {
-      set_result(std::move(a));
-    } else if (take_constant && cb) {
-      set_result(std::move(b));
-    } else if (!(a.defined() && b.defined())) {
-      set_result(expr());
-    } else if (a.same_as(op->a) && b.same_as(op->b)) {
-      set_result(op);
+  void set_constant_bound_or_op(const T* op) {
+    if (std::optional<index_t> c = bound(bounds_of_constant(op))) {
+      set_result(*c);
     } else {
-      set_result(T::make(std::move(a), std::move(b)));
+      set_result(op);
     }
   }
-  void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0); }
-  void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
 
   template <typename T>
   void set_binary_result(const T* op, expr a, expr b) {
@@ -2509,8 +2745,6 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_or_eval_binary<T>(*ca, *cb));
-    } else if (!(a.defined() && b.defined())) {
-      set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
@@ -2519,295 +2753,112 @@ public:
   }
 
   template <typename T>
-  void visit_add_sub(const T* op, int b_sign) {
+  void visit_min_max(const T* op, bool take_constant) {
     expr a = mutate(op->a);
-    if (!a.defined()) return set_result(expr{});
-    expr b = mutate(op->b, b_sign);
-    if (!b.defined()) return set_result(expr{});
-    set_binary_result(op, std::move(a), std::move(b));
+    expr b = mutate(op->b);
+    auto ca = as_constant(a);
+    auto cb = as_constant(b);
+    if (take_constant && ca && !cb) {
+      set_result(std::move(a));
+    } else if (take_constant && cb && !ca) {
+      set_result(std::move(b));
+    } else {
+      set_binary_result(op, std::move(a), std::move(b));
+    }
   }
+  void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0); }
+  void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
 
-  void visit(const add* op) override { visit_add_sub(op, sign); }
-  void visit(const sub* op) override { visit_add_sub(op, -sign); }
-
-  static int sign_of(const expr& x) {
-    if (is_positive(x)) return 1;
-    if (is_negative(x)) return -1;
-    return 0;
-  }
+  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b)); }
+  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -sign)); }
 
   template <typename T>
   void visit_mul_div(const T* op) {
-    expr a = mutate(op->a, 0);
-    // When constant folding, an undefined operand makes the result undefined. When looking for a bound, it does not:
-    // we might still find one by mutating the operand again with a non-zero sign below.
-    if (sign == 0 && !a.defined()) return set_result(expr{});
-    expr b = mutate(op->b, 0);
-    if (is_constant(a, 0) || is_constant(b, 0)) {
-      // `0*x`, `x*0`, `0/x` and `x/0` are all 0, we don't need to know anything about the other operand.
-      return set_result(expr(0));
-    } else if (sign == 0 || (as_constant(a) && as_constant(b))) {
-      set_binary_result(op, std::move(a), std::move(b));
-      return;
+    interval<index_t> a = bounds_of_constant(op->a);
+    interval<index_t> b = bounds_of_constant(op->b);
+    if (std::optional<index_t> c = bound(bounds_of(op, a, b))) {
+      return set_result(*c);
     }
-    // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
-    int sign_a = sign_of(a);
-    int sign_b = sign_of(b);
+    // If one operand has a known sign, we can find a bound of the result from a bound of the other operand.
+    expr op_a = a.is_point() ? expr(*a.min) : op->a;
+    expr op_b = b.is_point() ? expr(*b.min) : op->b;
     // TODO: We should be able to handle the numerator of div too, it's just tricky.
-    if (std::is_same<T, mul>::value && sign_a != 0) {
-      set_binary_result(op, std::move(a), mutate(op->b, sign * sign_a));
-    } else if (sign_b != 0) {
-      set_binary_result(op, mutate(op->a, sign * sign_b), std::move(b));
-    } else if (!(a.defined() && b.defined())) {
-      set_result(expr());
+    if (std::is_same<T, mul>::value && is_non_negative(a)) {
+      set_binary_result(op, std::move(op_a), mutate(op->b, sign));
+    } else if (std::is_same<T, mul>::value && is_non_positive(a)) {
+      set_binary_result(op, std::move(op_a), mutate(op->b, -sign));
+    } else if (is_non_negative(b)) {
+      // This is also correct for div if b might be 0, because x / 0 = 0.
+      set_binary_result(op, mutate(op->a, sign), std::move(op_b));
+    } else if (is_non_positive(b)) {
+      set_binary_result(op, mutate(op->a, -sign), std::move(op_b));
     } else {
       set_result(op);
     }
   }
-
   void visit(const mul* op) override { visit_mul_div(op); }
   void visit(const div* op) override { visit_mul_div(op); }
 
   void visit(const mod* op) override {
-    if (sign == 0) {
-      expr a = mutate(op->a);
-      expr b = mutate(op->b);
-      if (is_constant(a, 0) || is_constant(b, 0) || is_constant(b, 1)) {
-        // `0%x`, `x%0` and `x%1` are all 0, we don't need to know anything about the other operand.
-        return set_result(expr(0));
-      } else if (!a.defined() || !b.defined()) {
-        return set_result(expr{});
-      }
-      return set_binary_result(op, std::move(a), std::move(b));
-    }
-    if (auto ca = as_constant(mutate(op->a, 0))) {
-      if (auto cb = as_constant(mutate(op->b, 0))) {
-        // If both operands are constants, the bound is the exact result, unless it overflows.
-        expr result = make_or_eval_binary<mod>(*ca, *cb);
-        if (as_constant(result)) return set_result(std::move(result));
-      }
-    }
-    if (sign < 0) {
-      // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
-      // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
-      set_result(expr(0));
-    } else {
-      expr equiv = max(0, max(-op->b, op->b) - 1);
-      expr result = mutate(equiv);
-      if (!equiv.same_as(result) || as_constant(result)) {
-        set_result(std::move(result));
-      } else if (constant_required) {
-        set_result(expr());
-      } else {
-        set_result(op);
-      }
-    }
+    if (std::optional<index_t> c = bound(bounds_of_constant(op))) return set_result(*c);
+    // The lower bound is always known (0), so we are looking for an upper bound.
+    assert(sign > 0);
+    expr equiv = max(0, max(-op->b, op->b) - 1);
+    expr result = mutate(equiv);
+    set_result(!equiv.same_as(result) ? std::move(result) : expr(op));
   }
 
-  template <typename T>
-  void visit_logical(const T* op) {
-    if (sign == 0) {
-      expr a = mutate(op->a);
-      if (!a.defined()) return set_result(expr{});
-      expr b = mutate(op->b);
-      if (!b.defined()) return set_result(expr{});
-      set_binary_result(op, std::move(a), std::move(b));
-    } else if (auto ca = as_constant(mutate(op->a, 0))) {
-      if (auto cb = as_constant(mutate(op->b, 0))) {
-        set_result(make_binary<T>(*ca, *cb));
-      } else {
-        set_result(expr(sign < 0 ? 0 : 1));
-      }
-    } else {
-      // If we don't know anything about a logical op, the result is either 0 or 1.
-      set_result(expr(sign < 0 ? 0 : 1));
-    }
-  }
-  void visit(const equal* op) override { visit_logical(op); }
-  void visit(const not_equal* op) override { visit_logical(op); }
-
-  template <typename T>
-  void visit_less(const T* op) {
-    // This is a constant version of that found in bounds_of_less:
-    // - For a lower bound, we want to know if this can ever be false, so we want the upper bound of the lhs and the
-    // lower bound of the rhs.
-    // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
-    // upper bound of the rhs.
-    expr a = mutate(op->a, -sign);
-    auto ca = as_constant(a);
-    if (sign != 0 && !ca) {
-      // We can only compare constants, and we don't need `b` to know the result is either 0 or 1.
-      return set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!a.defined()) {
-      return set_result(expr{});
-    }
-    expr b = mutate(op->b);
-
-    auto cb = as_constant(b);
-    if (ca && cb) {
-      set_result(make_binary<T>(*ca, *cb));
-    } else if (sign != 0) {
-      // If we don't know anything about a logical op, the result is either 0 or 1.
-      set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!b.defined()) {
-      set_result(expr());
-    } else if (a.same_as(op->a) && b.same_as(op->b)) {
-      set_result(expr(op));
-    } else {
-      set_result(T::make(std::move(a), std::move(b)));
-    }
-  }
-  void visit(const less* op) override { visit_less(op); }
-  void visit(const less_equal* op) override { visit_less(op); }
-
-  void set_boolean_result(expr x) {
-    if (x.defined()) {
-      set_result(boolean(std::move(x)));
-    } else if (sign != 0) {
-      set_result(sign < 0 ? 0 : 1);
-    } else {
-      set_result(expr());
-    }
-  }
-
-  template <typename T>
-  void visit_logical_and_or(const T* op, int new_sign) {
-    constexpr bool is_and = std::is_same<T, logical_and>::value;
-    expr a = strip_boolean(mutate(op->a, new_sign));
-    if (auto ca = as_constant(a)) {
-      if ((*ca != 0) != is_and) return set_result(boolean(std::move(a)));
-    }
-    expr b = strip_boolean(mutate(op->b, new_sign));
-
-    if (as_constant(b)) std::swap(a, b);
-
-    if (auto ca = as_constant(a)) {
-      // `a` is the identity for this op, so the result is `b`, which might be undefined.
-      set_boolean_result((*ca != 0) == is_and ? std::move(b) : std::move(a));
-    } else if (sign != 0) {
-      // If we don't know anything about a logical op, the result is either 0 or 1.
-      set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!a.defined() || !b.defined()) {
-      set_result(expr());
-    } else if (a.same_as(op->a) && b.same_as(op->b)) {
-      set_result(expr(op));
-    } else {
-      set_result(T::make(std::move(a), std::move(b)));
-    }
-  }
-
-  // We can recursively look for bounds if:
-  // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
-  // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-  // - We're constant folding.
-  void visit(const logical_and* op) override { visit_logical_and_or(op, std::min(sign, 0)); }
-  void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
-
-  void visit(const logical_not* op) override {
-    expr a = mutate(op->a, 0);
-    if (auto ca = as_constant(a)) {
-      set_result(*ca != 0 ? 0 : 1);
-    } else if (sign != 0) {
-      set_result(expr(sign < 0 ? 0 : 1));
-    } else if (!a.defined()) {
-      set_result(expr());
-    } else if (a.same_as(op->a)) {
-      set_result(expr(op));
-    } else {
-      set_result(logical_not::make(std::move(a)));
-    }
-  }
   void visit(const class select* op) override {
-    expr c = strip_boolean(mutate(op->condition, 0));
-    if (auto cc = as_constant(c)) {
-      set_result(mutate(*cc ? op->true_value : op->false_value));
-      return;
-    } else if (!c.defined() && sign == 0) {
-      // When constant folding, we need a constant condition. When looking for a bound, we might still find one if both
-      // values are constants.
-      return set_result(expr{});
-    }
+    interval<index_t> c = bounds_of_constant(op->condition);
+    if (is_true(c)) return set_result(mutate(op->true_value));
+    if (is_false(c)) return set_result(mutate(op->false_value));
 
     expr t = mutate(op->true_value);
-    if (!t.defined()) return set_result(expr{});
     expr f = mutate(op->false_value);
-    if (!f.defined()) return set_result(expr{});
     auto ct = as_constant(t);
     auto cf = as_constant(f);
-    if (sign < 0 && ct && cf) {
-      set_result(expr(std::min(*ct, *cf)));
-    } else if (sign > 0 && ct && cf) {
-      set_result(expr(std::max(*ct, *cf)));
-    } else if (!c.defined()) {
-      set_result(expr());
-    } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    if (ct && cf) {
+      set_result(sign < 0 ? std::min(*ct, *cf) : std::max(*ct, *cf));
+    } else if (t.same_as(op->true_value) && f.same_as(op->false_value)) {
       set_result(op);
     } else {
-      set_result(select::make(std::move(c), std::move(t), std::move(f)));
+      set_result(select::make(op->condition, std::move(t), std::move(f)));
     }
   }
-  void visit(const call* op) override {
-    if (op->intrinsic == intrinsic::abs) {
-      assert(op->args.size() == 1);
-      expr equiv = max(0, max(op->args[0], -op->args[0]));
-      expr result = mutate(equiv);
-      if (!equiv.same_as(result)) {
-        set_result(std::move(result));
-        return;
-      }
-    } else if (op->intrinsic == intrinsic::and_then || op->intrinsic == intrinsic::or_else) {
-      assert(op->args.size() == 2);
-      // We can recursively look for bounds if:
-      // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
-      // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-      // - We're constant folding.
-      const bool is_and = op->intrinsic == intrinsic::and_then;
-      const int new_sign = is_and ? std::min(sign, 0) : std::max(sign, 0);
-      expr a = strip_boolean(mutate(op->args[0], new_sign));
-      if (auto ca = as_constant(a)) {
-        if ((*ca != 0) != is_and) return set_result(boolean(std::move(a)));
-      }
-      expr b = strip_boolean(mutate(op->args[1], new_sign));
 
-      if (auto ca = as_constant(a)) {
-        // `a` is the identity for this op, so the result is `b`, which might be undefined.
-        set_boolean_result((*ca != 0) == is_and ? std::move(b) : std::move(a));
-      } else if (auto cb = as_constant(b)) {
-        // `b` is the identity for this op, so the result is `a`, which might be undefined.
-        set_boolean_result((*cb != 0) == is_and ? std::move(a) : std::move(b));
-      } else if (sign != 0) {
-        // If we don't know anything about a logical op, the result is either 0 or 1.
-        set_result(expr(sign < 0 ? 0 : 1));
-      } else if (!a.defined() || !b.defined()) {
-        set_result(expr());
-      } else if (a.same_as(op->args[0]) && b.same_as(op->args[1])) {
-        set_result(expr(op));
-      } else {
-        set_result(call::make(op->intrinsic, op->target, {std::move(a), std::move(b)}));
-      }
-      return;
+  void visit(const call* op) override {
+    if (std::optional<index_t> c = bound(bounds_of_constant(op))) return set_result(*c);
+    if (op->intrinsic == intrinsic::abs && sign > 0) {
+      assert(op->args.size() == 1);
+      expr equiv = max(op->args[0], -op->args[0]);
+      expr result = mutate(equiv);
+      if (!equiv.same_as(result)) return set_result(std::move(result));
     }
-    if (constant_required) {
-      set_result(expr());
-    } else if (sign == 0) {
-      node_mutator::visit(op);
-    } else {
-      set_result(op);
-    }
+    set_result(op);
   }
+
+  // The constant bounds of these are always known, because the result is either 0 or 1.
+  void visit(const equal* op) override { set_constant_bound_or_op(op); }
+  void visit(const not_equal* op) override { set_constant_bound_or_op(op); }
+  void visit(const less* op) override { set_constant_bound_or_op(op); }
+  void visit(const less_equal* op) override { set_constant_bound_or_op(op); }
+  void visit(const logical_and* op) override { set_constant_bound_or_op(op); }
+  void visit(const logical_or* op) override { set_constant_bound_or_op(op); }
+  void visit(const logical_not* op) override { set_constant_bound_or_op(op); }
+  void visit(const let* op) override { set_constant_bound_or_op(op); }
 };
 
 }  // namespace
 
-expr constant_lower_bound(const expr& x) { return constant_evaluator(-1, false).mutate(x); }
-expr constant_upper_bound(const expr& x) { return constant_evaluator(1, false).mutate(x); }
-std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x)); }
-std::optional<index_t> evaluate_constant_lower_bound(const expr& x) {
-  return as_constant(constant_evaluator(-1).mutate(x));
+expr constant_lower_bound(const expr& x) { return symbolic_bound_evaluator(-1).mutate(x); }
+expr constant_upper_bound(const expr& x) { return symbolic_bound_evaluator(1).mutate(x); }
+interval<index_t> evaluate_constant_bounds(const expr& x) { return bounds_of_constant(x); }
+std::optional<index_t> evaluate_constant(const expr& x) {
+  interval<index_t> bounds = bounds_of_constant(x);
+  return bounds.is_point() ? bounds.min : std::nullopt;
 }
-std::optional<index_t> evaluate_constant_upper_bound(const expr& x) {
-  return as_constant(constant_evaluator(1).mutate(x));
-}
+std::optional<index_t> evaluate_constant_lower_bound(const expr& x) { return bounds_of_constant(x).min; }
+std::optional<index_t> evaluate_constant_upper_bound(const expr& x) { return bounds_of_constant(x).max; }
 
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {

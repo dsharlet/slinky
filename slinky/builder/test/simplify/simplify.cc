@@ -251,6 +251,9 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(min(x, (min(z, (min(u, (w + -4)) + 8)) + -7)) + 4),
       matches(min(x, (min(z, (min(u, (w + -4)) + 8)) + -7)) + 4));
+
+  ASSERT_TRUE(prove_true((max(x, 0) + 1) * (max(y, 0) + 1) >= 0));
+  ASSERT_TRUE(prove_true(max(x, 0) * max(y, 0) >= 0));
 }
 
 TEST(simplify, staircase) {
@@ -1235,7 +1238,7 @@ TEST(constant_lower_bound, basic) {
   ASSERT_THAT(constant_lower_bound(min(x, 0)), matches(min(x, 0)));
   ASSERT_THAT(constant_lower_bound(max(x, 0)), matches(0));
   ASSERT_THAT(constant_lower_bound(!min(x, 0)), matches(0));
-  ASSERT_THAT(constant_lower_bound(!min(x, -1)), matches(0));  // TODO: We might be able to prove this is 1
+  ASSERT_THAT(constant_lower_bound(!min(x, -1)), matches(0));
   ASSERT_THAT(constant_lower_bound(!max(x, 0)), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
@@ -1246,6 +1249,9 @@ TEST(constant_lower_bound, basic) {
   ASSERT_THAT(constant_lower_bound(abs(min(x, -5))), matches(5));
   ASSERT_THAT(constant_lower_bound(min(1, max(x, 1))), matches(1));
   ASSERT_THAT(constant_lower_bound(clamp(x, -2, 3)), matches(-2));
+  ASSERT_THAT(constant_lower_bound((max(x, 0) + 1) * (max(y, 0) + 1)), matches(1));
+  ASSERT_THAT(constant_lower_bound(clamp(x, 1, 3) * clamp(y, 2, 5)), matches(2));
+  ASSERT_THAT(constant_lower_bound(max(x, 0) * min(y, 0)), matches(max(x, 0) * min(y, 0)));
 
   ASSERT_THAT(constant_lower_bound(x || false), matches(false));
   ASSERT_THAT(constant_lower_bound(false || x), matches(false));
@@ -1261,9 +1267,9 @@ TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
   ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
   ASSERT_THAT(constant_upper_bound(!min(x, 0)), matches(1));
-  ASSERT_THAT(constant_upper_bound(!min(x, -1)), matches(1));  // TODO: We might be able to prove this is 0
+  ASSERT_THAT(constant_upper_bound(!min(x, -1)), matches(0));
   ASSERT_THAT(constant_upper_bound(!max(x, 0)), matches(1));
-  ASSERT_THAT(constant_upper_bound(!max(x, 1)), matches(1));  // TODO: We might be able to prove this is 0
+  ASSERT_THAT(constant_upper_bound(!max(x, 1)), matches(0));
   ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
   ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x - 4));
   ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
@@ -1277,6 +1283,12 @@ TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
   ASSERT_THAT(constant_upper_bound(x % 4), matches(3));
   ASSERT_THAT(constant_upper_bound(clamp(x, -2, 3)), matches(3));
+  ASSERT_THAT(constant_upper_bound(max(x, 0) * max(y, 0)), matches(max(x, 0) * max(y, 0)));
+  ASSERT_THAT(constant_upper_bound(max(x, 0) * min(y, 0)), matches(0));
+  ASSERT_THAT(constant_upper_bound(max(x, 0) * min(y, 4)), matches(max(x, 0) * 4));
+  ASSERT_THAT(constant_upper_bound(clamp(x, -3, 2) * clamp(y, -5, 1)), matches(15));
+  ASSERT_THAT(constant_upper_bound(min(x, 10) / max(y, 1)), matches(10));
+  ASSERT_THAT(constant_upper_bound(clamp(x, 0, 3) % y), matches(3));
 
   ASSERT_THAT(constant_upper_bound(min(x, 0) < 0), matches(1));
   ASSERT_THAT(constant_upper_bound(min(x, 0) * 256 < 0), matches(1));
@@ -1303,6 +1315,12 @@ TEST(evaluate_constant_lower_bound, basic) {
   ASSERT_EQ(evaluate_constant_lower_bound(abs(min(x, -5))), 5);
   ASSERT_EQ(evaluate_constant_lower_bound(min(1, max(x, 1))), 1);
   ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3)), -2);
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -3, 2) * clamp(y, -5, 1)), -10);
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -10, 10) / y), -10);
+  ASSERT_EQ(evaluate_constant_lower_bound(min(x, 10) / max(y, 1)), std::nullopt);
+  ASSERT_EQ(evaluate_constant_lower_bound(max(x, 0) / max(y, 1)), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, 5, 10) / clamp(y, 1, 2)), 2);
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, 5, 10) / clamp(y, -2, -1)), -10);
 
   ASSERT_EQ(evaluate_constant_lower_bound(x || false), false);
   ASSERT_EQ(evaluate_constant_lower_bound(false || x), false);
@@ -1330,6 +1348,12 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(select(x, 3, 1)), 3);
   ASSERT_EQ(evaluate_constant_upper_bound(x % 4), 3);
   ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -2, 3)), 3);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) * min(y, 0)), 0);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -3, 2) * clamp(y, -5, 1)), 15);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -10, 10) / y), 10);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -10, 10) / max(y, 0)), 10);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, 0, 3) % y), 3);
+  ASSERT_EQ(evaluate_constant_upper_bound(abs(clamp(x, -5, 3))), 5);
 
   ASSERT_EQ(evaluate_constant_upper_bound(min(x, 0) < 0), 1);
   ASSERT_EQ(evaluate_constant_upper_bound(min(x, 0) * 256 < 0), 1);
@@ -1346,6 +1370,31 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(true && x), true);
 }
 
+TEST(simplify, deep_product_bounds) {
+  // Bounds of deep products should not take exponential time.
+  expr e = clamp(x, 1, 2);
+  for (int i = 0; i < 100; ++i) {
+    e = e * clamp(y, 1, 2);
+  }
+  ASSERT_THAT(constant_lower_bound(e), matches(1));
+  // The upper bound overflows.
+  ASSERT_EQ(evaluate_constant_upper_bound(e), std::nullopt);
+
+  expr short_product = clamp(x, 1, 2);
+  for (int i = 0; i < 10; ++i) {
+    short_product = short_product * clamp(y, 1, 2);
+  }
+  ASSERT_THAT(constant_upper_bound(short_product), matches(2048));
+
+  // Bounds of abs require both bounds of the operand.
+  expr nested_abs = clamp(x, -3, 2);
+  for (int i = 0; i < 100; ++i) {
+    nested_abs = abs(nested_abs - 1);
+  }
+  ASSERT_EQ(evaluate_constant_lower_bound(nested_abs), 0);
+  ASSERT_THAT(constant_upper_bound(nested_abs), matches(1));
+}
+
 TEST(evaluate_constant, basic) {
   ASSERT_EQ(evaluate_constant(x || false), std::nullopt);
   ASSERT_EQ(evaluate_constant(false || x), std::nullopt);
@@ -1355,6 +1404,45 @@ TEST(evaluate_constant, basic) {
   ASSERT_EQ(evaluate_constant(false && x), false);
   ASSERT_EQ(evaluate_constant(x && true), std::nullopt);
   ASSERT_EQ(evaluate_constant(true && x), std::nullopt);
+  ASSERT_EQ(evaluate_constant(select(x, 1, 1)), 1);
+  ASSERT_EQ(evaluate_constant(x * 0), 0);
+  ASSERT_EQ(evaluate_constant(x / 0), 0);
+  ASSERT_EQ(evaluate_constant(x % 1), 0);
+  ASSERT_EQ(evaluate_constant(min(x, 0) == 1), false);
+
+  // Multiplying an unknown bound by -1 should not produce a finite bound.
+  ASSERT_EQ(evaluate_constant_lower_bound(x * -1), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x * -1), std::nullopt);
+  ASSERT_THAT(constant_lower_bound(x * -1), matches(x * -1));
+
+  const index_t int_max = std::numeric_limits<index_t>::max();
+  const index_t int_min = std::numeric_limits<index_t>::min();
+
+  // Products and quotients of points are exact, even if they are the min or max index_t. Use clamp to make a point that
+  // is not a constant, so the expression is not constant folded when it is constructed.
+  auto point = [](index_t c) { return clamp(x, c, c); };
+  ASSERT_EQ(evaluate_constant(point(int_max) * point(1)), int_max);
+  ASSERT_EQ(evaluate_constant(point(int_max) * point(-1)), -int_max);
+  ASSERT_EQ(evaluate_constant(point(int_min) * point(1)), int_min);
+  ASSERT_EQ(evaluate_constant(point(int_max) * point(2)), std::nullopt);
+  ASSERT_EQ(evaluate_constant(point(int_max) / point(2)), int_max / 2);
+  ASSERT_EQ(evaluate_constant(point(int_max) / point(int_max)), 1);
+  ASSERT_EQ(evaluate_constant(point(int_min) / point(1)), int_min);
+  ASSERT_EQ(evaluate_constant(point(int_min) / point(-1)), std::nullopt);
+  ASSERT_EQ(evaluate_constant(point(int_min) / point(0)), 0);
+
+  // The min and max index_t are treated as unknown bounds, but must not produce incorrect bounds.
+  for (const expr& e : {expr(int_max) / int_max, expr(int_min) / int_min, expr(int_max) * -1,
+           expr(int_max) / clamp(x, 1, 2), clamp(x, 1, 2) / int_max}) {
+    interval<index_t> bounds = evaluate_constant_bounds(e);
+    for (index_t x_val : {1, 2}) {
+      eval_context ctx;
+      ctx[x] = x_val;
+      const index_t value = evaluate(e, ctx);
+      if (bounds.min) ASSERT_LE(*bounds.min, value) << e;
+      if (bounds.max) ASSERT_GE(*bounds.max, value) << e;
+    }
+  }
 }
 
 TEST(simplify, modulus_remainder) {

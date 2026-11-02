@@ -31,6 +31,9 @@ std::optional<index_t> evaluate_constant(const expr& x);
 std::optional<index_t> evaluate_constant_lower_bound(const expr& x);
 std::optional<index_t> evaluate_constant_upper_bound(const expr& x);
 
+// Determine constant lower and upper bounds of x simultaneously, if they exist.
+interval<index_t> evaluate_constant_bounds(const expr& x);
+
 // Attempts to determine if e can be proven to be always true or false.
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
