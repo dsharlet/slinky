@@ -130,16 +130,6 @@ T mul_sat(T a, T b) {
   }
 }
 
-template <typename T>
-T div_sat(T a, T b) {
-  // This is safe from overflow unless a is max and b is -1.
-  if (b == -1 && a == std::numeric_limits<T>::min()) {
-    return std::numeric_limits<T>::max();
-  } else {
-    return euclidean_div(a, b);
-  }
-}
-
 template <class T>
 bool add_overflows(T a, T b) {
   T dummy;
@@ -161,6 +151,20 @@ bool mul_overflows(T a, T b) {
 template <class T>
 bool div_overflows(T a, T b) {
   return a == std::numeric_limits<T>::min() && b == -1;
+}
+
+template <class T>
+bool mod_overflows(T a, T b) {
+  return a == std::numeric_limits<T>::min() && b == -1;
+}
+
+template <typename T>
+T div_sat(T a, T b) {
+  if (div_overflows(a, b)) {
+    return std::numeric_limits<T>::max();
+  } else {
+    return euclidean_div(a, b);
+  }
 }
 
 /** Routines to perform arithmetic on signed types without triggering signed
