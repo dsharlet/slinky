@@ -158,6 +158,11 @@ bool mul_overflows(T a, T b) {
   return __builtin_mul_overflow(a, b, &dummy);
 }
 
+template <class T>
+bool div_overflows(T a, T b) {
+  return a == std::numeric_limits<T>::min() && b == -1;
+}
+
 /** Routines to perform arithmetic on signed types without triggering signed
  * overflow. If overflow would occur, sets result to zero, and returns
  * true. Otherwise set result to the correct value, and returns false. */
