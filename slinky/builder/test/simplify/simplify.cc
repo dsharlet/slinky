@@ -983,6 +983,17 @@ TEST(simplify, make_buffer) {
           transpose::make(b1, b0, std::vector<int>{1}, dummy_call({}, {b1})))));
 }
 
+TEST(simplify, nested_make_buffers_without_base) {
+  // Nested make_buffers without a base are substituted, including when they shadow each other. The uses of b1 after the
+  // make_buffers refer to the outer b1, not the declarations.
+  stmt nested = make_buffer::make(b1, expr(), expr(), {{{0, 10}, {}, {}}},
+      make_buffer::make(b2, expr(), expr(), {{{0, buffer_max(b1, 0) + 1}, {}, {}}},
+          make_buffer::make(b1, expr(), expr(), {{{0, buffer_max(b2, 0) + 1}, {}, {}}},
+              make_buffer::make(b3, expr(), expr(), {{{0, 20}, {}, {}}}, check::make(x == buffer_max(b1, 0))))));
+  ASSERT_THAT(simplify(block::make({nested, check::make(y == buffer_max(b1, 0))})),
+      matches(block::make({check::make(x == 12), check::make(y == buffer_max(b1, 0))})));
+}
+
 TEST(simplify, transpose) {
   ASSERT_THAT(simplify(transpose::make(b1, b0, std::vector<int>{2, 1, 0},
                   transpose::make(b2, b1, std::vector<int>{2, 1, 0}, dummy_call({}, {b2})))),
