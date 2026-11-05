@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 
 #include "slinky/base/util.h"
 
@@ -12,6 +13,10 @@ namespace slinky {
 template <typename T>
 class ref_counted {
   mutable std::atomic<int> ref_count_{0};
+
+  // The reference count of a static object. Any negative reference count indicates a static object; this value is far
+  // from 0 so that stray modifications can't make it non-negative.
+  static constexpr int static_ref_count = std::numeric_limits<int>::min() / 2;
 
 public:
   ref_counted() = default;
@@ -28,9 +33,22 @@ public:
   ref_counted& operator=(ref_counted&&) { return *this; }
 
   int ref_count() const { return ref_count_.load(std::memory_order_relaxed); }
-  void add_ref() const { ref_count_.fetch_add(1, std::memory_order_relaxed); }
+
+  // This value should not be released, and we can avoid modifying the ref count, which avoids substantial overhead
+  // when there is contention.
+  void make_static() const { ref_count_.store(static_ref_count, std::memory_order_relaxed); }
+  bool is_static() const { return ref_count() < 0; }
+
+  void add_ref() const {
+    if (is_static()) return;
+    ref_count_.fetch_add(1, std::memory_order_relaxed);
+  }
   void release() const {
-    if (ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    int count = ref_count_.load(std::memory_order_acquire);
+    if (count < 0) return;
+    // If we hold the only reference, no other thread can be modifying the reference count, so we can skip the atomic
+    // decrement.
+    if (count == 1 || ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
       // This const_cast is ugly, but:
       // https://stackoverflow.com/questions/755196/deleting-a-pointer-to-const-t-const
       T::destroy(const_cast<T*>(static_cast<const T*>(this)));
