@@ -260,8 +260,7 @@ expr variable::make(var sym, buffer_field field, int dim) {
 const constant* constant::make_static(index_t value) {
   auto n = new constant();
   n->value = value;
-  // Don't let the ref counting free this object.
-  n->add_ref();
+  n->base_expr_node::make_static();
   return n;
 }
 
@@ -883,12 +882,22 @@ stmt check::make(expr condition) {
   return stmt(n);
 }
 
+namespace {
+
+// Make `e` a static expression, which avoids contention on its reference count when it is shared by many threads.
+expr make_static(expr e) {
+  e.get()->make_static();
+  return e;
+}
+
+}  // namespace
+
 const expr& positive_infinity() {
-  static expr e = call::make(intrinsic::positive_infinity, {});
+  static expr e = make_static(call::make(intrinsic::positive_infinity, {}));
   return e;
 }
 const expr& negative_infinity() {
-  static expr e = call::make(intrinsic::negative_infinity, {});
+  static expr e = make_static(call::make(intrinsic::negative_infinity, {}));
   return e;
 }
 const expr& infinity(int sign) {
@@ -896,7 +905,7 @@ const expr& infinity(int sign) {
   return sign < 0 ? negative_infinity() : positive_infinity();
 }
 const expr& indeterminate() {
-  static expr e = call::make(intrinsic::indeterminate, {});
+  static expr e = make_static(call::make(intrinsic::indeterminate, {}));
   return e;
 }
 
