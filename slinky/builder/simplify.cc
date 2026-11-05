@@ -1200,13 +1200,17 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  stmt mutate_with_buffer(const base_stmt_node* decl, stmt body, var buf, var src, std::optional<buffer_info> buffer) {
+  scoped_value_in_symbol_map<buffer_info> set_buffer_in_scope(
+      const base_stmt_node* decl, var buf, var src, std::optional<buffer_info> buffer) {
     if (buffer) {
       buffer->decl = stmt(decl);
       buffer->src = src;
     }
-    auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     assert(!vars.contains(buf));
+    return set_value_in_scope(buffers, buf, std::move(buffer));
+  }
+  stmt mutate_with_buffer(const base_stmt_node* decl, stmt body, var buf, var src, std::optional<buffer_info> buffer) {
+    auto set_buffer = set_buffer_in_scope(decl, buf, src, std::move(buffer));
     return mutate(body);
   }
   // if `decl` is nullptr, the buffer will be substituted.
@@ -1719,7 +1723,72 @@ public:
     }
   }
 
+  // make_buffers without a base describe the bounds of allocations, and can be deeply nested. They are (almost?) always
+  // unused, or only their metadata is used. To avoid deep recursion, we handle nested make_buffers without a base in a
+  // loop. This is equivalent to running the beginning of `visit_make_buffer` for each of them.
+  void visit_make_buffer_no_base(const make_buffer* op) {
+    std::vector<const make_buffer*> ops;
+    for (const make_buffer* i = op; i && !i->base.defined(); i = i->body.as<make_buffer>()) {
+      ops.push_back(i);
+    }
+    // Find the dependencies of the body of each make_buffer on its buffer at once, to avoid traversing the inner
+    // make_buffers once per make_buffer. The body of ops[i] is the declarations of ops[i + 1...], and the body of the
+    // innermost make_buffer. If a buffer is shadowed, depends_on attributes uses to the innermost declaration.
+    std::vector<depends_on_result> deps(ops.size());
+    std::vector<std::pair<var, depends_on_result&>> deps_map;
+    deps_map.reserve(ops.size());
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+      deps_map.push_back({ops[i]->sym, deps[i]});
+    }
+    span<std::pair<var, depends_on_result&>> deps_span(deps_map);
+    depends_on(ops.back()->body, deps_span);
+    for (std::size_t i = 1; i < ops.size(); ++i) {
+      span<std::pair<var, depends_on_result&>> outer = deps_span.subspan(0, i);
+      depends_on(ops[i]->elem_size, outer);
+      for (const dim_expr& d : ops[i]->dims) {
+        depends_on(d.bounds.min, outer);
+        depends_on(d.bounds.max, outer);
+        depends_on(d.stride, outer);
+        depends_on(d.fold_factor, outer);
+      }
+    }
+
+    std::vector<scoped_value_in_symbol_map<buffer_info>> substituted;
+    substituted.reserve(ops.size());
+    std::size_t i = 0;
+    for (; i < ops.size(); ++i) {
+      if (!deps[i].any()) {
+        // This make_buffer is unused.
+        continue;
+      } else if (!can_substitute_buffer(deps[i])) {
+        break;
+      }
+      // We only needed the buffer meta, not the buffer itself.
+      buffer_info info;
+      mutate_buffer(ops[i], info);
+      substituted.push_back(set_buffer_in_scope(nullptr, ops[i]->sym, var(), std::move(info)));
+    }
+    if (i < ops.size()) {
+      // We need to declare this buffer. This should be rare, so we just use the recursive implementation.
+      visit_make_buffer(ops[i]);
+    } else {
+      mutate_and_set_result(ops.back()->body);
+    }
+    // Exit the scopes innermost first, because these buffers might shadow each other.
+    while (!substituted.empty()) {
+      substituted.pop_back();
+    }
+  }
+
   void visit(const make_buffer* op) override {
+    if (!op->base.defined()) {
+      visit_make_buffer_no_base(op);
+    } else {
+      visit_make_buffer(op);
+    }
+  }
+
+  void visit_make_buffer(const make_buffer* op) {
     // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
     // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
     // check below could be unnecessary.
