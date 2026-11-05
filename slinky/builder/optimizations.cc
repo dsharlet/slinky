@@ -2436,6 +2436,8 @@ public:
       set_result(let_stmt::make(std::move(remaining_lets), std::move(body), op->is_closure));
     }
   }
+
+  void visit(const make_buffer* op) override { set_result(mutate_make_buffers(this, op)); }
 };
 
 }  // namespace

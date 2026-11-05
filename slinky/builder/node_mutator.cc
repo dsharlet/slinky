@@ -84,6 +84,18 @@ stmt clone_with(const slice_dim* op, stmt new_body) { return clone_with(op, op->
 stmt clone_with(const transpose* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const async* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 
+stmt mutate_make_buffers(stmt_mutator* m, const make_buffer* op) {
+  std::vector<const make_buffer*> ops;
+  for (const make_buffer* i = op; i; i = i->body.as<make_buffer>()) {
+    ops.push_back(i);
+  }
+  stmt body = m->mutate(ops.back()->body);
+  for (auto i = ops.rbegin(); i != ops.rend(); ++i) {
+    body = body.same_as((*i)->body) ? stmt(*i) : clone_with(*i, std::move(body));
+  }
+  return body;
+}
+
 void stmt_mutator::visit(const block* op) {
   std::vector<stmt> stmts;
   stmts.reserve(op->stmts.size());

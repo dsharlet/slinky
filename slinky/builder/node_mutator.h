@@ -142,6 +142,11 @@ stmt clone_with(const slice_dim* op, var sym, stmt new_body);
 stmt clone_with(const transpose* op, var sym, stmt new_body);
 stmt clone_with(const async* op, var sym, stmt new_body);
 
+// Mutates the body of `op` and any make_buffers directly nested in it with `m`, without recursion, and rebuilds the
+// make_buffers if the body changed. This is useful for mutators that don't need to do anything for make_buffers, which
+// can be deeply nested. The nested make_buffers are not visited by `m`.
+stmt mutate_make_buffers(stmt_mutator* m, const make_buffer* op);
+
 // Helper for single statement mutators.
 template <typename T>
 stmt recursive_mutate(const stmt& s, function_ref<stmt(const T*)> mutator) {

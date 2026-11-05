@@ -628,6 +628,7 @@ public:
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     stmt_mutator::visit(op);
   }
+  void visit(const make_buffer* op) override { set_result(mutate_make_buffers(this, op)); }
 
   // Replace the placeholder `worker_count` in `result` and in the fold factors with the loop's
   // actual `max_workers`. A data parallel loop can't fold a dimension that needs an extra fold per
