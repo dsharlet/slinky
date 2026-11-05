@@ -20,9 +20,10 @@ public:
   bool is_pure = true;
 
   // This works by keeping track of dependencies for a set of vars. The order is important, later entries in this vector
-  // will shadow earlier entries.
+  // will shadow earlier entries, and entries in `var_deps` shadow entries in `base_deps`.
   // The size of this vector is important for performance, so if we encounter a var that shadows a var we care about, we
   // want to add a dummy to this.
+  span<std::pair<var, depends_on_result&>> base_deps;
   std::vector<std::pair<var, depends_on_result*>> var_deps;
   depends_on_result dummy_deps;
 
@@ -31,13 +32,7 @@ public:
 
   dependencies() {}
   dependencies(std::map<var, depends_on_result>& unknown_deps) : unknown_deps(&unknown_deps) {}
-  dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
-  dependencies(span<std::pair<var, depends_on_result&>> deps) {
-    var_deps.reserve(deps.size());
-    for (const auto& i : deps) {
-      var_deps.push_back({i.first, &i.second});
-    }
-  }
+  dependencies(span<std::pair<var, depends_on_result&>> deps) : base_deps(deps) {}
 
   depends_on_result* find_deps(var s) {
     if (!s.defined()) return nullptr;
@@ -45,6 +40,9 @@ public:
     // Go in reverse order to handle shadowed declarations properly.
     for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
       if (i->first == s) return i->second;
+    }
+    for (auto i = base_deps.rbegin(); i != base_deps.rend(); ++i) {
+      if (i->first == s) return &i->second;
     }
 
     if (unknown_deps) {
@@ -58,6 +56,9 @@ public:
     // Go in reverse order to handle shadowed declarations properly.
     for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
       if (i->first == s) return i->second != &dummy_deps;
+    }
+    for (auto i = base_deps.rbegin(); i != base_deps.rend(); ++i) {
+      if (i->first == s) return true;
     }
 
     return unknown_deps != nullptr;
@@ -128,7 +129,7 @@ public:
       // We have src_deps we want to transitively add to via this declaration.
       var_deps.push_back({sym, src_deps});
     } else if (decl_needs_shadow(sym)) {
-      if (!unknown_deps && var_deps.size() == 1) {
+      if (!unknown_deps && var_deps.size() + base_deps.size() == 1) {
         // The only dep we are looking for is shadowed by this declaration, so the body cannot depend on it.
         return;
       }
