@@ -50,13 +50,7 @@ public:
     return s;
   }
 
-  std::string name(var v) const {
-    if (context) {
-      return context->name(v);
-    } else {
-      return "_" + std::to_string(v.id);
-    }
-  }
+  std::string name(var v) const { return context ? context->name(v) : to_string(v); }
 
   js_printer& operator<<(var v) {
     os << sanitize(name(v));

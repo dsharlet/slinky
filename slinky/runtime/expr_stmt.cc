@@ -24,6 +24,28 @@
 
 namespace slinky {
 
+namespace {
+
+std::string to_base_26(std::size_t x) {
+  std::string s;
+  do {
+    s += static_cast<char>('a' + (x % 26));
+    x /= 26;
+  } while (x > 0);
+  std::reverse(s.begin(), s.end());
+  return s;
+}
+
+}  // namespace
+
+std::string to_string(var v) {
+  if (v.defined()) {
+    return "." + to_base_26(v.id);
+  } else {
+    return ".";
+  }
+}
+
 var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(name)) {}
 
 expr var::operator-() const { return -expr(*this); }
@@ -31,10 +53,8 @@ expr var::operator-() const { return -expr(*this); }
 std::string node_context::name(var v) const {
   if (v.id < sym_to_name.size() && !sym_to_name[v.id].empty()) {
     return sym_to_name[v.id];
-  } else if (v.defined()) {
-    return "." + std::to_string(v.id);
   } else {
-    return ".";
+    return to_string(v);
   }
 }
 

@@ -48,6 +48,8 @@ public:
   bool operator<(var r) const { return id < r.id; }
 };
 
+std::string to_string(var v);
+
 // We don't want to be doing string lookups in the inner loops. A node_context
 // uniquely maps strings to var.
 class node_context {
