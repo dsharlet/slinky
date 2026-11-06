@@ -20,6 +20,7 @@ cc_test(
     name = "depends_on",
     srcs = ["depends_on.cc"],
     deps = [
+        "//slinky/base",
         "//slinky/runtime",
         "@googletest//:gtest_main",
     ],
@@ -42,6 +43,7 @@ cc_test(
     name = "buffer_benchmark",
     srcs = ["buffer_benchmark.cc"],
     deps = [
+        "//slinky/base",
         "//slinky/runtime",
         "@google_benchmark//:benchmark_main",
     ],
@@ -53,8 +55,9 @@ cc_test(
     name = "evaluate_benchmark",
     srcs = ["evaluate_benchmark.cc"],
     deps = [
-        "//slinky/runtime",
+        "//slinky/base",
         "//slinky/base:thread_pool_impl",
+        "//slinky/runtime",
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=1x"],

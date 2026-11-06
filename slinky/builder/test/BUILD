@@ -19,6 +19,7 @@ cc_library(
         "util.h",
     ],
     deps = [
+        "//slinky/base",
         "//slinky/runtime",
         "//slinky/runtime:visualize",
         "//slinky/base:chrome_trace",
@@ -58,7 +59,7 @@ cc_test(
     srcs = ["elementwise.cc"],
     deps = [
         ":util",
-        "//slinky/base/test:util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -72,7 +73,7 @@ cc_test(
     data = glob(["visualize/*.html"]),
     deps = [
         ":util",
-        "//slinky/base/test:util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -85,7 +86,7 @@ cc_test(
     srcs = ["copy_pipeline.cc"],
     deps = [
         ":util",
-        "//slinky/base/test:util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -98,7 +99,6 @@ cc_test(
     srcs = ["pyramid.cc"],
     deps = [
         ":util",
-        "//slinky/base/test:util",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -112,10 +112,9 @@ cc_test(
     data = glob(["visualize/*.html"]),
     deps = [
         ":util",
-        "//slinky/base/test:util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
-        "//slinky/runtime:visualize",
         "@googletest//:gtest_main",
     ],
     size = "small",
@@ -126,7 +125,7 @@ cc_test(
     srcs = ["l2_norm.cc"],
     deps = [
         ":util",
-        "//slinky/base/test:util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -151,7 +150,6 @@ cc_test(
     srcs = ["tile_area.cc"],
     deps = [
         ":util",
-        "//slinky/base:thread_pool_impl",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -176,6 +174,7 @@ cc_test(
     srcs = ["cannot_alias.cc"],
     deps = [
         ":util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -187,6 +186,7 @@ cc_test(
     name = "substitute",
     srcs = ["substitute.cc"],
     deps = [
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -198,6 +198,7 @@ cc_test(
     name = "optimizations",
     srcs = ["optimizations.cc"],
     deps = [
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -222,7 +223,7 @@ cc_test(
     srcs = ["stencil_pipeline.cc"],
     deps = [
         ":util",
-        "//slinky/base/test:util",
+        "//slinky/base",
         "//slinky/builder",
         "//slinky/runtime",
         "@googletest//:gtest_main",
@@ -235,6 +236,7 @@ cc_test(
     srcs = ["rewrite.cc"],
     deps = [
         "//slinky/builder",
+        "//slinky/runtime",
         "@googletest//:gtest_main",
     ],
     size = "small",
