@@ -5,13 +5,16 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <utility>
 
-#include "slinky/base/chrome_trace.h"
+#include "slinky/base/arithmetic.h"
+#include "slinky/base/function_ref.h"
+#include "slinky/base/ref_count.h"
+#include "slinky/base/span.h"
 #include "slinky/base/thread_pool.h"
 #include "slinky/base/util.h"
 #include "slinky/runtime/buffer.h"

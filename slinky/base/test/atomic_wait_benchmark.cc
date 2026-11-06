@@ -3,8 +3,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <string>
 #include <thread>
-#include <vector>
 
 #include "slinky/base/atomic_wait.h"
 

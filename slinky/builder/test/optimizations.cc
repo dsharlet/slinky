@@ -1,13 +1,18 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <cassert>
+#include <iterator>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "slinky/base/span.h"
+#include "slinky/builder/node_mutator.h"
 #include "slinky/builder/optimizations.h"
 #include "slinky/builder/substitute.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
-#include "slinky/runtime/print.h"
 #include "slinky/runtime/stmt.h"
 
 namespace slinky {

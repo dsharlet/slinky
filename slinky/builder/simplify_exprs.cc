@@ -1,12 +1,17 @@
-#include "slinky/builder/simplify.h"
-
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "slinky/base/arithmetic.h"
+#include "slinky/base/span.h"
 #include "slinky/builder/rewrite.h"
+#include "slinky/builder/simplify.h"
 #include "slinky/builder/simplify_rules.h"
+#include "slinky/builder/substitute.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 

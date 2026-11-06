@@ -2,11 +2,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <new>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
 #include "slinky/base/ref_count.h"
+#include "slinky/base/span.h"
 #include "slinky/base/util.h"
 #include "slinky/builder/node_mutator.h"
 #include "slinky/builder/optimizations.h"

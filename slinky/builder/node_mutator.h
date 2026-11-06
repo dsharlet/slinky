@@ -1,6 +1,9 @@
 #ifndef SLINKY_BUILDER_NODE_MUTATOR_H
 #define SLINKY_BUILDER_NODE_MUTATOR_H
 
+#include <cassert>
+#include <utility>
+
 #include "slinky/base/function_ref.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"

@@ -1,9 +1,11 @@
 #ifndef SLINKY_BASE_THREAD_POOL_IMPL_H
 #define SLINKY_BASE_THREAD_POOL_IMPL_H
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
+#include <cstddef>
 #include <deque>
 #include <functional>
 #include <limits>

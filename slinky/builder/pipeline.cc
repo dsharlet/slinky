@@ -1,13 +1,13 @@
 #include "slinky/builder/pipeline.h"
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
-#include <list>
+#include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "slinky/base/chrome_trace.h"
+#include "slinky/base/function_ref.h"
 #include "slinky/builder/node_mutator.h"
 #include "slinky/builder/optimizations.h"
 #include "slinky/builder/simplify.h"
@@ -22,7 +23,6 @@
 #include "slinky/builder/substitute.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/depends_on.h"
-#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
 #include "slinky/runtime/print.h"

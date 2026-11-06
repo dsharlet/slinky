@@ -1,10 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cassert>
-#include <iostream>
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <string>
 #include <thread>
+#include <vector>
 
+#include "slinky/base/function_ref.h"
+#include "slinky/base/ref_count.h"
 #include "slinky/base/thread_pool_impl.h"
 
 namespace slinky {

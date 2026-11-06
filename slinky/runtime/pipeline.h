@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include "slinky/base/span.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 

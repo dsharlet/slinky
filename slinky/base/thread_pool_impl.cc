@@ -6,7 +6,9 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <new>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)

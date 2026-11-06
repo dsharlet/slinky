@@ -1,16 +1,23 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "slinky/base/ref_count.h"
+#include "slinky/base/util.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/builder/test/context.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 

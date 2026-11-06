@@ -1,13 +1,19 @@
-#include "slinky/apps/benchmark.h"
-#include "slinky/builder/pipeline.h"
-#include "slinky/runtime/pipeline.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "slinky/apps/benchmark.h"
+#include "slinky/builder/pipeline.h"
+#include "slinky/runtime/buffer.h"
+#include "slinky/runtime/evaluate.h"
+#include "slinky/runtime/expr.h"
+#include "slinky/runtime/pipeline.h"
 
 namespace slinky {
 

@@ -1,10 +1,10 @@
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <cassert>
+#include <ostream>
+#include <string>
+#include <tuple>
 
 #include "slinky/builder/simplify_rules.h"
-#include "slinky/builder/test/simplify/expr_generator.h"
 #include "slinky/builder/test/simplify/rule_tester.h"
 
 namespace slinky {

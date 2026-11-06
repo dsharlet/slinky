@@ -1,7 +1,8 @@
 #include <benchmark/benchmark.h>
 
 #include <atomic>
-#include <random>
+#include <cstddef>
+#include <string>
 #include <vector>
 
 #include "slinky/base/thread_pool_impl.h"

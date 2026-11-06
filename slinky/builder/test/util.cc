@@ -1,6 +1,9 @@
 #include "slinky/builder/test/util.h"
 
+#include <gtest/gtest.h>
+
 #include <fstream>
+#include <sstream>
 
 #include "slinky/base/test/bazel_util.h"
 #include "slinky/runtime/visualize.h"

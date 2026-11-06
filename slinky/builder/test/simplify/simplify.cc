@@ -1,19 +1,23 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <cassert>
+#include <algorithm>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
-#include <numeric>
+#include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "slinky/base/arithmetic.h"
+#include "slinky/base/modulus_remainder.h"
+#include "slinky/base/span.h"
 #include "slinky/base/test/seeded_test.h"
 #include "slinky/builder/simplify.h"
 #include "slinky/builder/substitute.h"

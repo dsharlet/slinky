@@ -1,8 +1,13 @@
 #include <benchmark/benchmark.h>
 
+#include <cassert>
 #include <cstddef>
-#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
 
+#include "slinky/base/span.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/buffer.h"
 
 namespace slinky {

@@ -2,13 +2,17 @@
 #define SLINKY_RUNTIME_PRINT_H
 
 #include <iostream>
+#include <string>
 #include <tuple>
 
 #include "slinky/base/modulus_remainder.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 
 namespace slinky {
+class dim;
+class raw_buffer;
 
 void print(std::ostream& os, var x, const node_context* ctx = nullptr);
 void print(std::ostream& os, const expr& e, const node_context* ctx = nullptr);

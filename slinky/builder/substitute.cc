@@ -1,9 +1,13 @@
 #include "slinky/builder/substitute.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iterator>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>

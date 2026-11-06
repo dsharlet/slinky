@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 

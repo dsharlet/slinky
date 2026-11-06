@@ -2,12 +2,17 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
+#include <iterator>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "slinky/base/span.h"
 #include "slinky/base/thread_pool_impl.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 

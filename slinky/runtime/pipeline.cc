@@ -1,7 +1,11 @@
 #include "slinky/runtime/pipeline.h"
 
+#include <cassert>
+#include <cstddef>
+#include <utility>
 #include <vector>
 
+#include "slinky/base/util.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 

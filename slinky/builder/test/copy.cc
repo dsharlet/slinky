@@ -1,12 +1,25 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <initializer_list>
+#include <numeric>
+#include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
+#include "slinky/base/arithmetic.h"
+#include "slinky/base/ref_count.h"
 #include "slinky/base/span.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/builder/test/context.h"
 #include "slinky/builder/test/util.h"
+#include "slinky/runtime/buffer.h"
+#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
 

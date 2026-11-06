@@ -1,8 +1,11 @@
 #include "slinky/builder/node_mutator.h"
 
+#include <iterator>
+#include <memory>
 #include <utility>
 #include <vector>
 
+#include "slinky/base/span.h"
 #include "slinky/runtime/expr.h"
 
 namespace slinky {

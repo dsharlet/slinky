@@ -1,16 +1,23 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <functional>
+#include <initializer_list>
 #include <mutex>
 #include <set>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "slinky/base/span.h"
 #include "slinky/base/thread_pool_impl.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
-#include "slinky/runtime/print.h"
 #include "slinky/runtime/stmt.h"
 
 namespace slinky {

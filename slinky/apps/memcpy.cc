@@ -1,8 +1,8 @@
-#include "slinky/apps/benchmark.h"
-
 #include <cassert>
 #include <cstring>
 #include <iostream>
+
+#include "slinky/apps/benchmark.h"
 
 void copy_chunks(char* dst, const char* src, int total_size, int chunk_size) {
   for (int i = 0; i + chunk_size <= total_size; i += chunk_size) {
