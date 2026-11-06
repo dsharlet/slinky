@@ -364,28 +364,28 @@ function pipeline(__in, out) {
     check((buffer_max(out, 0) < buffer_max(__in, 0)));
     check((buffer_min(__in, 1) < buffer_min(out, 1)));
     check((buffer_max(out, 1) < buffer_max(__in, 1)));
-    { let _2 = allocate('.2', 2, [
+    { let _c = allocate('.c', 2, [
         {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
         {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:4}
       ]);
       let __loop_min = (buffer_min(out, 1) + -2);
       let __loop_max = buffer_max(out, 1);
       let __loop_step = 2;
-      for(let _3 = __loop_min; _3 <= __loop_max; _3 += __loop_step) {
-        { let ___2 = crop_dim(_2, 1, [(_3 + 1), (_3 + 2)]); {
-          let _2 = ___2;
+      for(let _d = __loop_min; _d <= __loop_max; _d += __loop_step) {
+        { let ___c = crop_dim(_c, 1, [(_d + 1), (_d + 2)]); {
+          let _c = ___c;
           consume(__in);
-          produce(_2);
+          produce(_c);
           __event_t++;
         }}
-        { let ___4 = crop_dim(out, 1, [_3, (_3 + 1)]); {
-          let _4 = ___4;
-          consume(_2);
-          produce(_4);
+        { let ___e = crop_dim(out, 1, [_d, (_d + 1)]); {
+          let _e = ___e;
+          consume(_c);
+          produce(_e);
           __event_t++;
         }}
       }
-      free(_2);
+      free(_c);
     }
   }
 }
