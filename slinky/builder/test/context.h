@@ -1,11 +1,14 @@
 #ifndef SLINKY_BUILDER_TEST_CONTEXT_H
 #define SLINKY_BUILDER_TEST_CONTEXT_H
 
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
 
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/evaluate.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 

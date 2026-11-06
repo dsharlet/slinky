@@ -3,6 +3,8 @@
 // paths against the source tree, so tests can run from the build tree.
 #include "slinky/base/test/bazel_util.h"
 
+#include <string>
+
 namespace slinky {
 
 bool is_bazel_test() { return false; }

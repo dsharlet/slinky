@@ -1,5 +1,3 @@
-#include "slinky/runtime/buffer.h"
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -7,11 +5,15 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <numeric>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "slinky/base/test/seeded_test.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/print.h"
 
 namespace slinky {

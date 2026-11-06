@@ -1,10 +1,17 @@
 #include "slinky/runtime/print.h"
 
-#include <cassert>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "slinky/base/span.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 

@@ -1,12 +1,16 @@
 #ifndef SLINKY_BUILDER_TEST_UTIL_H
 #define SLINKY_BUILDER_TEST_UTIL_H
 
-#include <algorithm>
-#include <numeric>
-#include <string>
-
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <numeric>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "slinky/base/span.h"
 #include "slinky/runtime/pipeline.h"
 
 namespace slinky {

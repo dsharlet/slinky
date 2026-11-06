@@ -1,6 +1,10 @@
-#include <algorithm>
 #include <benchmark/benchmark.h>
+
+#include <algorithm>
+#include <cstddef>
 #include <cstdlib>
+#include <string>
+#include <vector>
 
 #include "slinky/base/arithmetic.h"
 

@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <cassert>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "slinky/builder/pipeline.h"
 #include "slinky/builder/test/funcs.h"

@@ -1,6 +1,10 @@
 #ifndef SLINKY_RUNTIME_DEPENDS_ON_H
 #define SLINKY_RUNTIME_DEPENDS_ON_H
 
+#include <iterator>
+#include <utility>
+#include <vector>
+
 #include "slinky/base/span.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"

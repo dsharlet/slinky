@@ -1,12 +1,25 @@
 #ifndef SLINKY_BUILDER_PIPELINE_H
 #define SLINKY_BUILDER_PIPELINE_H
 
+#include <cassert>
+#include <cstddef>
+#include <functional>
+#include <iterator>
+#include <optional>
+#include <string>
+#include <tuple>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "slinky/base/ref_count.h"
+#include "slinky/base/span.h"
+#include "slinky/base/util.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 

@@ -1,19 +1,19 @@
 #include "slinky/runtime/visualize.h"
 
 #include <algorithm>
-#include <atomic>
-#include <cassert>
 #include <cstddef>
-#include <cstdlib>
-#include <cstring>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "slinky/base/span.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 // This visualizer works by printing a pipeline's body as javascript, where the calls and copies are implemented by
 // calling a function `produce`. This function is implemented to record the buffers that are produced, and uses those

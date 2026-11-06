@@ -1,7 +1,8 @@
-#include <algorithm>
-#include <limits>
-
 #include "slinky/base/arithmetic.h"
+
+#include <algorithm>
+#include <cstdlib>
+#include <limits>
 
 namespace slinky {
 

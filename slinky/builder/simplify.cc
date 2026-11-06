@@ -3,25 +3,27 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
-#include <deque>
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "slinky/base/arithmetic.h"
 #include "slinky/base/chrome_trace.h"
 #include "slinky/base/set.h"
+#include "slinky/base/span.h"
 #include "slinky/builder/node_mutator.h"
 #include "slinky/builder/rewrite.h"
 #include "slinky/builder/substitute.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/depends_on.h"
-#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/print.h"
 #include "slinky/runtime/stmt.h"
@@ -795,7 +797,9 @@ public:
     return x;
   }
 
-  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
+  void visit(const constant* op) override {
+    set_result(op, {point(expr(op)), {0, op->value}});
+  }
 
   template <typename T>
   void visit_min_max(const T* op) {

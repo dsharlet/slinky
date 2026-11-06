@@ -1,8 +1,14 @@
-#include "slinky/builder/simplify.h"
+#include <cassert>
+#include <optional>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
-#include <algorithm>
-
+#include "slinky/base/arithmetic.h"
 #include "slinky/builder/rewrite.h"
+#include "slinky/builder/simplify.h"
+#include "slinky/builder/substitute.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 
 namespace slinky {

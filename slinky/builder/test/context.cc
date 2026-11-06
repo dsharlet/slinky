@@ -2,13 +2,15 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <sstream>
 
 #include "slinky/base/chrome_trace.h"
 #include "slinky/base/thread_pool_impl.h"
+#include "slinky/base/util.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/evaluate.h"
-#include "slinky/runtime/expr.h"
 
 namespace slinky {
 

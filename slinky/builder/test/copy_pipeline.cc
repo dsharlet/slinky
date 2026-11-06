@@ -1,12 +1,24 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "slinky/base/test/bazel_util.h"
+#include <cassert>
+#include <cstring>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "slinky/base/arithmetic.h"
+#include "slinky/base/span.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/builder/test/context.h"
 #include "slinky/builder/test/funcs.h"
 #include "slinky/builder/test/util.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
+#include "slinky/runtime/pipeline.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 

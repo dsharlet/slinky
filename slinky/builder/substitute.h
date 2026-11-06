@@ -1,7 +1,13 @@
 #ifndef SLINKY_BUILDER_SUBSTITUTE_H
 #define SLINKY_BUILDER_SUBSTITUTE_H
 
+#include <cstddef>
+#include <vector>
+
+#include "slinky/base/span.h"
+#include "slinky/base/util.h"
 #include "slinky/builder/node_mutator.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 

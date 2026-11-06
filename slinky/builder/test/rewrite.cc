@@ -1,10 +1,15 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <map>
-#include <tuple>
+#include <cstring>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "slinky/builder/rewrite.h"
+#include "slinky/builder/substitute.h"
+#include "slinky/runtime/expr.h"
+#include "slinky/runtime/print.h"
 
 namespace slinky {
 

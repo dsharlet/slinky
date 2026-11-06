@@ -18,6 +18,7 @@
 namespace slinky {
 
 class thread_pool;
+class eval_context;
 
 struct eval_config {
   // A pointer to a thread pool, required for parallel

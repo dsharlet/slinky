@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 
 #include "slinky/base/util.h"
 #include "slinky/runtime/memory_pool.h"

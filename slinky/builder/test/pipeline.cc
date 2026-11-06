@@ -1,16 +1,28 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <numeric>
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <variant>
+#include <vector>
 
+#include "slinky/base/span.h"
+#include "slinky/builder/node_mutator.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/builder/substitute.h"
 #include "slinky/builder/test/context.h"
 #include "slinky/builder/test/funcs.h"
 #include "slinky/builder/test/util.h"
+#include "slinky/runtime/buffer.h"
+#include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/pipeline.h"
-#include "slinky/runtime/print.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
@@ -749,7 +761,7 @@ TEST_P(multiple_outputs, pipeline) {
   func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
                                                      const buffer<int>& sum_xy) -> index_t {
     for (index_t z = std::min(sum_xy.dim(0).min(), sum_x.dim(1).min());
-         z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
+        z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
       if (sum_xy.contains(z)) sum_xy(z) = 0;
       for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
         if (sum_x.contains(y, z)) sum_x(y, z) = 0;

@@ -1,16 +1,24 @@
 #include "slinky/builder/slide_and_fold_storage.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <cstdlib>
+#include <cstring>
+#include <iterator>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "slinky/base/arithmetic.h"
 #include "slinky/base/chrome_trace.h"
+#include "slinky/base/modulus_remainder.h"
+#include "slinky/base/span.h"
+#include "slinky/base/util.h"
 #include "slinky/builder/node_mutator.h"
 #include "slinky/builder/simplify.h"
 #include "slinky/builder/substitute.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/depends_on.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"

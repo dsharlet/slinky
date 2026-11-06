@@ -2,14 +2,20 @@
 #define SLINKY_RUNTIME_BUFFER_H
 
 #include <algorithm>
+#include <array>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "slinky/base/arithmetic.h"
 #include "slinky/base/function_ref.h"
@@ -148,7 +154,6 @@ inline constexpr dim dim::broadcast_{0, 0, 0, 0};
 
 template <typename T, std::size_t DimsSize = 0>
 class buffer;
-
 class raw_buffer;
 
 using raw_buffer_ptr = std::shared_ptr<raw_buffer>;

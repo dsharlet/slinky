@@ -1,7 +1,13 @@
 #ifndef SLINKY_BUILDER_SIMPLIFY_H
 #define SLINKY_BUILDER_SIMPLIFY_H
 
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include "slinky/base/arithmetic.h"
 #include "slinky/base/modulus_remainder.h"
+#include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
 #include "slinky/runtime/stmt.h"
 

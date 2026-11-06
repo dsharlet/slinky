@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <cstdlib>
+#include <cstdint>
+#include <ostream>
+#include <string>
 
 #include "slinky/base/modulus_remainder.h"
 

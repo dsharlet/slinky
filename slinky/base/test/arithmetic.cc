@@ -1,7 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
+#include <limits>
+#include <optional>
 #include <random>
+#include <string>
 
 #include "slinky/base/arithmetic.h"
 #include "slinky/base/test/seeded_test.h"

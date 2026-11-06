@@ -1,8 +1,15 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "slinky/base/span.h"
 #include "slinky/runtime/depends_on.h"
 #include "slinky/runtime/expr.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
