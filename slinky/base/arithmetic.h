@@ -9,6 +9,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "slinky/base/util.h"
+
 namespace slinky {
 
 // Signed integer division in C/C++ is terrible because it's not Euclidean. This is bad in general, but especially
@@ -22,7 +24,7 @@ T euclidean_div(T a, T b, T define_b_zero = 0) {
     // one branch. a / -1 overflows (and traps on some targets) when a is the minimum value, so we negate in the
     // unsigned type instead.
     using U = std::make_unsigned_t<T>;
-    if (static_cast<U>(static_cast<U>(b) + 1) <= 1) {
+    if (SLINKY_UNLIKELY(static_cast<U>(static_cast<U>(b) + 1) <= 1)) {
       return b == 0 ? define_b_zero : static_cast<T>(static_cast<U>(U(0) - static_cast<U>(a)));
     }
   } else if (b == 0) {
@@ -43,7 +45,7 @@ T euclidean_mod(T a, T b, T define_b_zero = 0) {
     // As in euclidean_div, check for b == 0 and b == -1 at once. a % -1 is always 0, but overflows (and traps on some
     // targets) when a is the minimum value.
     using U = std::make_unsigned_t<T>;
-    if (static_cast<U>(static_cast<U>(b) + 1) <= 1) {
+    if (SLINKY_UNLIKELY(static_cast<U>(static_cast<U>(b) + 1) <= 1)) {
       return b == 0 ? define_b_zero : 0;
     }
   } else if (b == 0) {
