@@ -6,7 +6,10 @@
 #include <cstddef>
 #include <limits>
 #include <optional>
+#include <type_traits>
 #include <utility>
+
+#include "slinky/base/util.h"
 
 namespace slinky {
 
@@ -16,7 +19,15 @@ namespace slinky {
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408
 template <typename T>
 T euclidean_div(T a, T b, T define_b_zero = 0) {
-  if (b == 0) {
+  if constexpr (std::is_signed_v<T>) {
+    // b == 0 and b == -1 both need special handling, but we check for both at once, so the common case only pays for
+    // one branch. a / -1 overflows (and traps on some targets) when a is the minimum value, so we negate in the
+    // unsigned type instead.
+    using U = std::make_unsigned_t<T>;
+    if (SLINKY_UNLIKELY(static_cast<U>(static_cast<U>(b) + 1) <= 1)) {
+      return b == 0 ? define_b_zero : static_cast<T>(static_cast<U>(U(0) - static_cast<U>(a)));
+    }
+  } else if (b == 0) {
     return define_b_zero;
   }
   T q = a / b;
@@ -30,7 +41,14 @@ T euclidean_div(T a, T b, T define_b_zero = 0) {
 
 template <typename T>
 T euclidean_mod(T a, T b, T define_b_zero = 0) {
-  if (b == 0) {
+  if constexpr (std::is_signed_v<T>) {
+    // As in euclidean_div, check for b == 0 and b == -1 at once. a % -1 is always 0, but overflows (and traps on some
+    // targets) when a is the minimum value.
+    using U = std::make_unsigned_t<T>;
+    if (SLINKY_UNLIKELY(static_cast<U>(static_cast<U>(b) + 1) <= 1)) {
+      return b == 0 ? define_b_zero : 0;
+    }
+  } else if (b == 0) {
     return define_b_zero;
   }
   T r = a % b;
