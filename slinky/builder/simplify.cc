@@ -886,8 +886,13 @@ public:
     rewrite::pattern_constant<0> c0;
     rewrite::pattern_constant<1> c1;
 
+    // Like the rules in simplify_rules, these rules assume that every wildcard is finite. simplify() below handles
+    // infinite and indeterminate operands.
+    auto is_literal_non_finite = [](const expr& x) { return is_infinity(x) || is_indeterminate(x); };
+    const bool finite = !is_literal_non_finite(a) && !is_literal_non_finite(b);
+
     // It's really ugly to have rules here instead of simplify_rules, but plumbing bounds and alignment seems difficult.
-    if (T::static_type == expr_node_type::div) {
+    if (finite && T::static_type == expr_node_type::div) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
       // clang-format off
@@ -898,7 +903,7 @@ public:
         return;
       }
       // clang-format on
-    } else if (T::static_type == expr_node_type::mod) {
+    } else if (finite && T::static_type == expr_node_type::mod) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} % rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
       // clang-format off
@@ -2106,6 +2111,9 @@ public:
     expr buf_min = buffer.min.defined() ? buffer.min : buffer_min(buf, dim);
     expr buf_max = buffer.max.defined() ? buffer.max : buffer_max(buf, dim);
 
+    // An indeterminate bound doesn't tell us anything, so we don't crop that side (like an infinite bound).
+    if (is_indeterminate(result.min)) result.min = expr();
+    if (is_indeterminate(result.max)) result.max = expr();
     if (result.min.defined() && prove_true(result.min <= buf_min)) result.min = expr();
     if (result.max.defined() && prove_true(result.max >= buf_max)) result.max = expr();
 
@@ -2902,6 +2910,10 @@ public:
       expr equiv = max(op->args[0], -op->args[0]);
       expr result = mutate(equiv);
       if (!equiv.same_as(result)) return set_result(std::move(result));
+    }
+    if (is_indeterminate(op)) {
+      // We don't know anything about indeterminate, so its bound is an infinity.
+      return set_result(infinity(sign));
     }
     set_result(op);
   }

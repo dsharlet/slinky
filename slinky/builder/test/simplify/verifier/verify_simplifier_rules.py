@@ -130,20 +130,14 @@ def load_gaps(path):
     return gaps.get("counterexample", {}), gaps.get("inconclusive", {})
 
 
-# A wildcard (an X) or constant (an Int) in a model. Negative integers are printed as (- 3). The solvers differ in
+# The value of a wildcard or constant in a model. Negative integers are printed as (- 3). The solvers differ in
 # whitespace, so this must not depend on it.
-MODEL_VALUE = re.compile(
-    r"\(define-fun ([a-z]|c\d+) \(\) (?:X\s+(pinf|ninf|\(fin (\(- \d+\)|\d+)\))|Int\s+(\(- \d+\)|\d+))\)"
-)
-INFINITIES = {"pinf": "+inf", "ninf": "-inf"}
+MODEL_VALUE = re.compile(r"\(define-fun ([a-z]|c\d+) \(\) Int\s+(\(- \d+\)|\d+)\)")
 
 
 def format_model(model):
-    """Renders a solver's model on one line, e.g. 'x=+inf, y=3, c0=2'."""
-    values = {}
-    for name, x, fin, integer in MODEL_VALUE.findall(model):
-        text = fin or integer
-        values[name] = int(re.sub(r"[()\s]", "", text)) if text else INFINITIES[x]
+    """Renders a solver's model on one line, e.g. 'x=-1, y=3, c0=2'."""
+    values = {name: int(re.sub(r"[()\s]", "", text)) for name, text in MODEL_VALUE.findall(model)}
     return ", ".join(f"{name}={values[name]}" for name in sorted(values, key=lambda n: (n[0] == "c", n)))
 
 
