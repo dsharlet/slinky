@@ -1033,6 +1033,32 @@ TEST(buffer, copy_empty_src) {
   }
 }
 
+TEST(buffer, copy_src_rank_greater) {
+  gtest_seeded_mt19937 rng;
+
+  // The dst is a broadcast in dimension 1, so dst has only index 0 in that dimension. That index may or may not be in
+  // bounds of the src. When D = 1, dimension 0 gets sliced, leaving a rank 0 dst.
+  for (index_t D : {5, 1}) {
+    for (auto [y_min, y_max] : {std::pair<index_t, index_t>{-15, -1}, {1, 3}, {-2, 2}, {0, 0}, {-3, 0}}) {
+      buffer<int, 2> src({D, y_max - y_min + 1});
+      src.translate(0, y_min);
+      init_random(rng, src);
+
+      buffer<int, 1> dst({D});
+      dst.allocate();
+      copy(scalar<int>(7), dst);
+      slinky::copy(src, dst, scalar<int>(3));
+      for (index_t x = 0; x < D; ++x) {
+        if (y_min <= 0 && 0 <= y_max) {
+          ASSERT_EQ(dst(x), src(x, 0));
+        } else {
+          ASSERT_EQ(dst(x), 3);
+        }
+      }
+    }
+  }
+}
+
 TEST(can_fuse, empty) {
   // We only care that if we do fuse an empty dimension, that the result is empty.
   std::pair<dim, dim> empty_cases[] = {
