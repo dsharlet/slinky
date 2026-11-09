@@ -1532,7 +1532,18 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
   return result;
 }
 
-stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
+  std::vector<var> result;
+  result.reserve(bufs.size());
+  for (const buffer_expr_ptr& i : bufs) {
+    result.push_back(i->sym());
+  }
+  return result;
+}
+
+}  // namespace
+
+pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
@@ -1607,7 +1618,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
 
   // This pass adds closures around parallel loop bodies, any following passes need to maintain this closure.
-  result = optimize_symbols(result, ctx);
+  // The args, inputs, and outputs are bound by `pipeline::setup` even if they are unused, so we must not reuse them.
+  std::vector<var> external_symbols(args.begin(), args.end());
+  external_symbols.insert(external_symbols.end(), builder.external_symbols().begin(), builder.external_symbols().end());
+  result = optimize_symbols(result, ctx, external_symbols);
 
   result = canonicalize_nodes(result);
 
@@ -1620,28 +1634,11 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   set_default_print_context(old_context);
 
-  return result;
-}
-
-std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
-  std::vector<var> result;
-  result.reserve(bufs.size());
-  for (const buffer_expr_ptr& i : bufs) {
-    result.push_back(i->sym());
-  }
-  return result;
-}
-
-}  // namespace
-
-pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
-  stmt body = build_pipeline(ctx, inputs, outputs, lets, options);
   pipeline p;
   p.args = args;
   p.inputs = vars(inputs);
   p.outputs = vars(outputs);
-  p.body = std::move(body);
+  p.body = std::move(result);
   return p;
 }
 
