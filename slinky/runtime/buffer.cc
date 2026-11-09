@@ -423,9 +423,20 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
 // is where this is slow (because we can only copy one or a few elements at a time).
 
 // This function copies `pad` to `dst` where `dst` is out of bounds of `src` in dimension `d`, and then crops `dst` such
-// that only the unpadded area remains in dimension `d`.
-void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
-  for (int d = static_cast<int>(std::min(src.rank, dst.rank)) - 1; d >= 0; --d) {
+// that only the unpadded area remains in dimension `d`. Returns true if all of `dst` was padding, in which case there is
+// nothing left to copy from `src`.
+bool pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
+  int d = static_cast<int>(src.rank) - 1;
+  // Handle implied broadcast dimensions in dst.
+  for (; d >= static_cast<int>(dst.rank); --d) {
+    const slinky::dim& src_d = src.dims[d];
+    if (!src_d.contains(0)) {
+      copy_impl(pad, dst);
+      return true;
+    }
+    src.slice(d, 0);
+  }
+  for (; d >= 0; --d) {
     const slinky::dim& src_d = src.dims[d];
     if (src_d.is_broadcast()) {
       continue;
@@ -452,6 +463,7 @@ void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
     // If the src was bigger, crop it, so the bounds should match.
     src.crop(d, dst_d.min(), dst_d.max());
   }
+  return false;
 }
 
 }  // namespace
@@ -480,7 +492,10 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
       optimize_dims(dst_opt, src_opt, pad_opt);
 
       // Implement the padding in all but the first dimension.
-      pad_impl(src_opt, dst_opt, pad_opt);
+      if (pad_impl(src_opt, dst_opt, pad_opt)) {
+        // All of dst was padding.
+        return;
+      }
       if (src_opt.base == dst_opt.base) {
         // This is an in-place padded copy, we're done.
         return;
