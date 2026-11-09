@@ -42,7 +42,9 @@ stmt deshadow(const stmt& s, span<var> external_symbols, node_context& ctx);
 // - Buffer mutators are self-shadowing, so they can be performed in-place on existing buffers.
 // - Make closures for parallel loop bodies, so evaluate doesn't need to copy the entire context.
 // - Symbols are indexed such that there are no unused symbol indices.
-stmt optimize_symbols(const stmt& s, node_context& ctx);
+// `external_symbols` must contain all of the symbols used but not declared by `s`. These symbols are not reused for
+// declarations, even if they are not used by `s`.
+stmt optimize_symbols(const stmt& s, node_context& ctx, span<var> external_symbols);
 
 // Guarantees that if match(a, b) is true, then a.same_as(b) is true, i.e. it rewrites matching nodes to be the same
 // object.

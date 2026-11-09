@@ -251,14 +251,15 @@ TEST(optimizations, optimize_symbols) {
   {
     // We don't know about x, we can't mutate it.
     node_context ctx = symbols;
-    ASSERT_THAT(optimize_symbols(crop_dim::make(y, x, 0, {0, 0}, check::make(y)), ctx),
+    var external[] = {x};
+    ASSERT_THAT(optimize_symbols(crop_dim::make(y, x, 0, {0, 0}, check::make(y)), ctx, external),
         matches(empty_let(crop_dim::make(y, x, 0, {0, 0}, check::make(y)))));
   }
 
   {
     // We know about x, we can mutate it.
     node_context ctx = symbols;
-    ASSERT_THAT(optimize_symbols(make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, check::make(y))), ctx),
+    ASSERT_THAT(optimize_symbols(make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, check::make(y))), ctx, {}),
         matches(empty_let(make_dummy_decl(x, crop_dim::make(x, x, 0, {0, 0}, check::make(x))))));
   }
 
@@ -266,14 +267,15 @@ TEST(optimizations, optimize_symbols) {
     node_context ctx = symbols;
     ASSERT_THAT(
         optimize_symbols(
-            make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, crop_dim::make(z, y, 0, {0, 0}, check::make(z)))), ctx),
+            make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, crop_dim::make(z, y, 0, {0, 0}, check::make(z)))), ctx,
+            {}),
         matches(empty_let(
             make_dummy_decl(x, crop_dim::make(x, x, 0, {0, 0}, crop_dim::make(x, x, 0, {0, 0}, check::make(x)))))));
   }
 
   {
     node_context ctx = symbols;
-    ASSERT_THAT(optimize_symbols(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))), ctx),
+    ASSERT_THAT(optimize_symbols(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))), ctx, {}),
         matches(empty_let(make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, check::make(x))))));
   }
 }

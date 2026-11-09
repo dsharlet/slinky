@@ -1942,9 +1942,9 @@ stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
   scoped_trace trace("deshadow");
   return deshadower(ctx, symbols).mutate(s);
 }
-stmt optimize_symbols(const stmt& s, node_context& ctx) {
+stmt optimize_symbols(const stmt& s, node_context& ctx, span<var> external_symbols) {
   scoped_trace trace("optimize_symbols");
-  compact_symbols compactor(find_dependencies(s));
+  compact_symbols compactor(external_symbols);
   stmt result = compactor.mutate(s);
   compactor.clear_names(ctx);
 
