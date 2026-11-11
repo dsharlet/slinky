@@ -42,6 +42,18 @@ cc_test(
 )
 
 cc_test(
+    name = "loop_nest",
+    size = "small",
+    srcs = ["loop_nest.cc"],
+    deps = [
+        ":util",
+        "//slinky/builder",
+        "//slinky/runtime",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "copy",
     srcs = ["copy.cc"],
     deps = [

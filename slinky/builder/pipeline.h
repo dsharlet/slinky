@@ -369,6 +369,139 @@ public:
   }
 };
 
+class loop_nest;
+
+// Handle referencing a scope in `loop_nest` (default-constructed == root()).
+class loop_ref {
+  int index_ = 0;
+  friend class loop_nest;
+  explicit constexpr loop_ref(int index) : index_(index) {}
+
+ public:
+  constexpr loop_ref() = default;
+  constexpr bool is_root() const { return index_ == 0; }
+  constexpr int index() const { return index_; }
+
+  friend constexpr bool operator==(loop_ref a, loop_ref b) {
+    return a.index_ == b.index_;
+  }
+  friend constexpr bool operator!=(loop_ref a, loop_ref b) {
+    return a.index_ != b.index_;
+  }
+  friend constexpr bool operator<(loop_ref a, loop_ref b) {
+    return a.index_ < b.index_;
+  }
+};
+
+// Represents a hierarchical loop schedule for a pipeline, detached from
+// individual `func` definitions.
+//
+// A `loop_nest` is a tree of loops rooted at `root()`. Each loop tiles one or
+// more `(buffer, dim_var)` dimensions by `step`. During `build_pipeline`:
+// - Each `func` is executed at its explicit `place(buf, loop)` scope, or at the
+//   innermost loop tiling its outputs, or (for untiled internal `func`s) at the
+//   lowest common ancestor (LCA) of all loops where its consumers execute.
+// - Each intermediate buffer is allocated at its explicit `store(buf, loop)`
+//   scope, or by default at the tightest loop scope enclosing both its
+//   definition and all of its consumers.
+//
+// Example:
+//   loop_nest loops;
+//   loop_ref ly = loops.add_loop({out, y}, tile_y, loop::parallel);
+//   loop_ref lx = loops.add_loop(ly, {out, x}, tile_x);
+//   loops.place(producer_buf, ly);
+//   pipeline p = build_pipeline(ctx, inputs, {out}, loops);
+class loop_nest {
+ public:
+  // Identifies a tiled dimension by pairing a produced `buffer` with the
+  // symbolic dimension `var` declared on its producer `func::output::dims`.
+  // Combining `buffer` and `var` uniquely identifies both the produced buffer
+  // (and its producer `func`) and which dimension of that buffer is tiled.
+  struct dim {
+    buffer_expr_ptr buffer;
+    slinky::var var;
+  };
+
+  struct loop {
+    loop_ref parent;
+    // Buffer dimensions jointly tiled by this loop. Usually a single `dim`, or
+    // multiple `dim`s when one loop co-tiles several buffers in lockstep (e.g.,
+    // fused independent outputs).
+    std::vector<dim> dims;
+    expr step = 1;
+    expr max_workers = slinky::loop::serial;
+  };
+
+ private:
+  // Indexed by `loop_ref::index()`; `loops_[0]` is the dummy `root()` sentinel.
+  std::vector<loop> loops_ = {loop{}};
+  // Maps buffer symbol (`buf->sym()`) to the explicit loop scope where `buf`'s
+  // producer `func` was pinned via `place(buf, at)`.
+  std::map<var, loop_ref> placements_;
+  // Maps buffer symbol (`buf->sym()`) to the explicit loop scope where `buf`'s
+  // allocation was pinned via `store(buf, at)`.
+  std::map<var, loop_ref> stores_;
+
+ public:
+  loop_nest() = default;
+
+  constexpr loop_ref root() const { return loop_ref(0); }
+  std::size_t size() const { return loops_.size(); }
+  loop_ref loop_at(std::size_t index) const {
+    assert(index < loops_.size());
+    return loop_ref(static_cast<int>(index));
+  }
+
+  loop& operator[](loop_ref l) {
+    assert(!l.is_root() && static_cast<std::size_t>(l.index_) < loops_.size());
+    return loops_[l.index_];
+  }
+  const loop& operator[](loop_ref l) const {
+    assert(!l.is_root() && static_cast<std::size_t>(l.index_) < loops_.size());
+    return loops_[l.index_];
+  }
+
+  // Adds a loop under `parent` (or `root()`) tiling `d` by `step`.
+  // Overloads taking `std::vector<dim> dims` create a single shared loop
+  // that crops all specified `(buffer, var)` dimensions to `[i, i + step - 1]`
+  // on each iteration and iterates over the union of their bounds.
+  loop_ref add_loop(dim d, expr step = 1,
+                    expr max_workers = slinky::loop::serial) {
+    return add_loop(root(), std::move(d), std::move(step),
+                    std::move(max_workers));
+  }
+  loop_ref add_loop(loop_ref parent, dim d, expr step = 1,
+                    expr max_workers = slinky::loop::serial) {
+    return add_loop(parent, std::vector<dim>{std::move(d)}, std::move(step),
+                    std::move(max_workers));
+  }
+  loop_ref add_loop(std::vector<dim> dims, expr step = 1,
+                    expr max_workers = slinky::loop::serial) {
+    return add_loop(root(), std::move(dims), std::move(step),
+                    std::move(max_workers));
+  }
+  loop_ref add_loop(loop_ref parent, std::vector<dim> dims, expr step = 1,
+                    expr max_workers = slinky::loop::serial);
+
+  // Place computation of `buf` (and any multi-output siblings) at `at`.
+  void place(const buffer_expr_ptr& buf, loop_ref at);
+
+  // Override allocation scope of `buf` to `at` (e.g. `loops.root()`).
+  void store(const buffer_expr_ptr& buf, loop_ref at);
+
+  std::optional<loop_ref> placed_at(var sym) const;
+  std::optional<loop_ref> placed_at(const buffer_expr_ptr& buf) const {
+    return placed_at(buf->sym());
+  }
+  std::optional<loop_ref> stored_at(var sym) const;
+  std::optional<loop_ref> stored_at(const buffer_expr_ptr& buf) const {
+    return stored_at(buf->sym());
+  }
+
+  bool is_ancestor(loop_ref ancestor, loop_ref descendant) const;
+  loop_ref lca(loop_ref a, loop_ref b) const;
+};
+
 struct build_options {
   // If true, removes bounds checks
   bool no_checks = false;
@@ -386,6 +519,18 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
     const build_options& options = build_options());
 pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options = build_options());
+
+pipeline build_pipeline(node_context& ctx, std::vector<var> args,
+                        const std::vector<buffer_expr_ptr>& inputs,
+                        const std::vector<buffer_expr_ptr>& outputs,
+                        const loop_nest& loops,
+                        std::vector<std::pair<var, expr>> lets = {},
+                        const build_options& options = build_options());
+pipeline build_pipeline(node_context& ctx,
+                        const std::vector<buffer_expr_ptr>& inputs,
+                        const std::vector<buffer_expr_ptr>& outputs,
+                        const loop_nest& loops,
+                        const build_options& options = build_options());
 
 }  // namespace slinky
 

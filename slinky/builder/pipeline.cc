@@ -33,6 +33,90 @@ namespace slinky {
 // in print.cc, don't want to expose this.
 const node_context* set_default_print_context(const node_context* ctx);
 
+loop_ref loop_nest::add_loop(loop_ref parent, std::vector<dim> dims,
+                             expr step, expr max_workers) {
+  assert(parent.index_ >= 0 &&
+         static_cast<std::size_t>(parent.index_) < loops_.size());
+  assert(!dims.empty());
+  assert(step.defined());
+  for (const dim& d : dims) {
+    (void)d;
+    assert(d.buffer != nullptr);
+    assert(d.var.defined());
+  }
+  const int index = static_cast<int>(loops_.size());
+  loop l;
+  l.parent = parent;
+  l.dims = std::move(dims);
+  l.step = std::move(step);
+  l.max_workers = std::move(max_workers);
+  loops_.push_back(std::move(l));
+  return loop_ref(index);
+}
+
+void loop_nest::place(const buffer_expr_ptr& buf, loop_ref at) {
+  assert(buf != nullptr);
+  assert(at.index_ >= 0 && static_cast<std::size_t>(at.index_) < loops_.size());
+  placements_[buf->sym()] = at;
+}
+
+void loop_nest::store(const buffer_expr_ptr& buf, loop_ref at) {
+  assert(buf != nullptr);
+  assert(at.index_ >= 0 && static_cast<std::size_t>(at.index_) < loops_.size());
+  stores_[buf->sym()] = at;
+}
+
+std::optional<loop_ref> loop_nest::placed_at(var sym) const {
+  auto it = placements_.find(sym);
+  if (it == placements_.end()) return std::nullopt;
+  return it->second;
+}
+
+std::optional<loop_ref> loop_nest::stored_at(var sym) const {
+  auto it = stores_.find(sym);
+  if (it == stores_.end()) return std::nullopt;
+  return it->second;
+}
+
+bool loop_nest::is_ancestor(loop_ref ancestor, loop_ref descendant) const {
+  assert(ancestor.index_ >= 0 &&
+         static_cast<std::size_t>(ancestor.index_) < loops_.size());
+  assert(descendant.index_ >= 0 &&
+         static_cast<std::size_t>(descendant.index_) < loops_.size());
+  for (loop_ref cur = descendant;; cur = loops_[cur.index_].parent) {
+    if (cur == ancestor) return true;
+    if (cur.is_root()) return false;
+  }
+}
+
+loop_ref loop_nest::lca(loop_ref a, loop_ref b) const {
+  assert(a.index_ >= 0 && static_cast<std::size_t>(a.index_) < loops_.size());
+  assert(b.index_ >= 0 && static_cast<std::size_t>(b.index_) < loops_.size());
+  auto depth_of = [this](loop_ref l) {
+    int d = 0;
+    while (!l.is_root()) {
+      l = loops_[l.index_].parent;
+      ++d;
+    }
+    return d;
+  };
+  int da = depth_of(a);
+  int db = depth_of(b);
+  while (da > db) {
+    a = loops_[a.index_].parent;
+    --da;
+  }
+  while (db > da) {
+    b = loops_[b.index_].parent;
+    --db;
+  }
+  while (a != b) {
+    a = loops_[a.index_].parent;
+    b = loops_[b.index_].parent;
+  }
+  return a;
+}
+
 buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
     : sym_(sym), elem_size_(std::move(elem_size)), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
@@ -313,17 +397,22 @@ public:
   }
 };
 
+int unsliced_dim(const std::vector<expr>& slices, int d) {
+  int od = d;
+  for (int slice_d = 0; slice_d <= od && slice_d < static_cast<int>(slices.size()); ++slice_d) {
+    if (slices[slice_d].defined()) {
+      ++od;
+    }
+  }
+  return od;
+}
+
 bounds_map get_output_bounds(const std::vector<func::output>& outputs, const std::vector<expr>& slices) {
   bounds_map output_bounds;
   for (const func::output& o : outputs) {
     for (index_t d = 0; d < static_cast<index_t>(o.dims.size()); ++d) {
       // We need to skip the dimensions that we slice when indexing the buffer's dimensions.
-      index_t od = d;
-      for (index_t slice_d = 0; slice_d <= od && slice_d < static_cast<index_t>(slices.size()); ++slice_d) {
-        if (slices[slice_d].defined()) {
-          ++od;
-        }
-      }
+      index_t od = unsliced_dim(slices, d);
       std::optional<interval_expr>& output_bounds_d = output_bounds[o.dims[d]];
       if (!output_bounds_d) {
         output_bounds_d = buffer_bounds(o.sym(), od);
@@ -383,134 +472,6 @@ void topological_sort(const std::vector<buffer_expr_ptr>& outputs, std::vector<c
 
   // Reverse the order, so outputs go first.
   std::reverse(order.begin(), order.end());
-}
-
-// A simple structure to hold the node of the loop tree.
-struct loop_tree_node {
-  // Index of the parent node.
-  int parent_index = -1;
-  loop_id loop;
-};
-
-// Find a path from the node to the root of the tree.
-std::vector<int> find_path_from_root(const std::vector<loop_tree_node>& loop_tree, int node_id) {
-  std::vector<int> path_from_root = {node_id};
-  while (node_id > 0) {
-    node_id = loop_tree[node_id].parent_index;
-    path_from_root.push_back(node_id);
-  }
-  std::reverse(path_from_root.begin(), path_from_root.end());
-  return path_from_root;
-}
-
-// Compare two paths and return the last point where they match.
-int compare_paths_up_to(
-    const std::vector<int>& base_path_from_root, const std::vector<int>& other_path_from_root, int max_match) {
-  max_match = std::min(max_match, static_cast<int>(other_path_from_root.size()) - 1);
-  for (int iy = 0; iy <= max_match; iy++) {
-    if (other_path_from_root[iy] != base_path_from_root[iy]) {
-      max_match = iy - 1;
-      break;
-    }
-  }
-  return max_match;
-}
-
-// Compute the least common ancestor of multiple nodes in the tree.
-int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& parent_ids) {
-  // This is not the most optimal algorithm and likely can be improved
-  // if we see it as a bottleneck later.
-
-  // For each of the nodes find the path to the root of the tree.
-  std::vector<std::vector<int>> paths_from_root;
-  paths_from_root.reserve(parent_ids.size());
-  for (std::size_t parent_id : parent_ids) {
-    paths_from_root.push_back(find_path_from_root(loop_tree, parent_id));
-  }
-
-  // Compare paths to the root node until the diverge. The last node before
-  // the diversion point is the least common ancestor.
-  int max_match = static_cast<int>(paths_from_root[0].size()) - 1;
-  for (const std::vector<int>& path : paths_from_root) {
-    max_match = compare_paths_up_to(paths_from_root[0], path, max_match);
-  }
-
-  return paths_from_root[0][max_match];
-}
-
-void compute_innermost_locations(const std::vector<const func*>& order,
-    const std::map<const func*, std::vector<const func*>> deps, std::map<const func*, loop_id>& compute_at_levels,
-    std::map<const func*, loop_id>& realization_levels) {
-  // A tree which stores loop nest.
-  std::vector<loop_tree_node> loop_tree;
-  // Mapping between function and it's most innermost location.
-  std::map<const func*, int> func_to_loop_tree;
-  // Push the root loop.
-  loop_tree.push_back({-1, loop_id()});
-
-  // Iterate over functions in topological order starting from the output and build a loop nest tree.
-  for (const auto& f : order) {
-    int parent_id = -1;
-
-    const auto& p = deps.find(f);
-    if (p != deps.end()) {
-      assert(!p->second.empty());
-
-      // Check all of the consumers and find their innermost locations.
-      std::vector<int> parent_ids;
-      for (const auto& d : p->second) {
-        const auto& node = func_to_loop_tree.find(d);
-        assert(node != func_to_loop_tree.end());
-        parent_ids.push_back(node->second);
-      }
-
-      assert(parent_ids.size() > 0);
-      if (parent_ids.size() == 1) {
-        // We have just one consumer, so use its innermost location.
-        parent_id = parent_ids[0];
-      } else {
-        // There are multiple consumers, so we need to find the least common ancestor
-        // of their innermost locations.
-        parent_id = lca(loop_tree, parent_ids);
-      }
-      if (f->compute_at()) {
-        // If the func has explicitly defined compute_at location it needs
-        // to be somewhere in the path from the innermost location to the root.
-        std::vector<int> path = find_path_from_root(loop_tree, parent_id);
-        // Reset parent_id, because we want to change it based on the compute_at.
-        parent_id = -1;
-        for (int p : path) {
-          if (loop_tree[p].loop == *f->compute_at()) {
-            parent_id = p;
-          }
-        }
-        assert(parent_id != -1);
-        compute_at_levels[f] = *f->compute_at();
-      } else {
-        compute_at_levels[f] = loop_tree[parent_id].loop;
-      }
-    } else {
-      // This is an output so should be computed at root.
-      assert(!f->compute_at() || f->compute_at()->root());
-      parent_id = 0;
-      compute_at_levels[f] = loop_id();
-    }
-
-    assert(parent_id != -1);
-
-    // Add loops for this function to the loop nest. The loops are defined
-    // from innermost to outermost, so iterate in reverse order.
-    for (auto l = f->loops().rbegin(); l != f->loops().rend(); ++l) {
-      loop_tree.push_back({parent_id, {f, l->var}});
-      parent_id = static_cast<int>(loop_tree.size()) - 1;
-    }
-    if (f->loops().empty()) {
-      realization_levels[f] = compute_at_levels[f];
-    } else {
-      realization_levels[f] = {f, f->loops().front().var};
-    }
-    func_to_loop_tree[f] = parent_id;
-  }
 }
 
 // Update dims vector by substittuting expression from the map.
@@ -608,6 +569,51 @@ void find_dependent_dims(
   }
 }
 
+// Lowers a DAG of `func`s and a `loop_nest` schedule into a single Slinky IR
+// `stmt` prior to storage folding, copy aliasing, and simplification passes.
+//
+// Lowering proceeds in four stages:
+//
+// 1. Schedule normalization and resolution (`build_loop_nest_from_funcs`,
+//    `resolve_loop_nest`):
+//    - When no external `loop_nest` is supplied, translates legacy per-`func`
+//      directives (`func::loops()`, `func::compute_at()`, `store_at()`) into
+//      `loops_` (defaulting unpinned buffers to `root()`).
+//    - Expands each loop's tiled `(buffer, var)` dimensions to include sibling
+//      outputs of multi-output `func`s sharing the same dimension `var`.
+//    - Assigns each `func`'s execution scope `compute_at_[f]` to its explicit
+//      `loops.place(...)`, its innermost tiling loop, or the LCA of its
+//      consumers, and assigns each internal buffer's allocation scope
+//      `store_at_[sym]` to the LCA of its definition scope (outside any loops
+//      tiling `f`) and all of its consumers, or an explicit outer
+//      `loops.store(...)`.
+//
+// 2. Bounds and lifetime setup (`compute_allocation_bounds`,
+//    `substitute_buffer_dims`, `compute_deps_count`):
+//    - Infers required bounds backwards from outputs to inputs, substitutes
+//      them into internal buffer shapes, and counts buffer consumers and
+//      copy-aliasing ordering constraints (`copy_inputs_`, `copy_deps_`).
+//
+// 3. Recursive loop-tree lowering and allocation layout (`make_loop`):
+//    - At each scope `here` (starting from `loops_.root()`), contracts direct
+//      `func`s and immediate child loops into items topologically ordered by
+//      producer->consumer edges (breaking ties by `order_`), emitting direct
+//      calls via `produce` (recording `[lifetime_start, lifetime_end]` ranges,
+//      registering buffers at `store_at_`, and rewriting intermediate call/copy
+//      inputs to `.uncropped` clones) and recursing into child loops.
+//    - Lays out allocations owned by `here` via `lay_out_allocations`, building
+//      a balanced (~O(log N)-depth) allocation tree ordered by lifetime length
+//      while respecting copy-aliasing nesting constraints
+//      (`place_constrained_buffers`) and sinking constants
+//      (`place_constant_buffers`).
+//
+// 4. Per-iteration cropping and `loop` emission (`crop_buffers_for_loop`,
+//    `emit_loop_stmt`):
+//    - For non-root scopes, finds upstream buffers whose bounds transitively
+//      depend on `here`'s tiled dimensions and emits per-iteration crops (or
+//      metadata-only `make_buffer` nodes for inner allocations).
+//    - Crops `here`'s tiled dimensions to `[loop_var, loop_var + step - 1]`
+//      and wraps the body in a `loop` statement over their unioned bounds.
 class pipeline_builder {
   node_context& ctx;
 
@@ -640,39 +646,35 @@ class pipeline_builder {
     }
   };
 
-  struct loop_id_less {
-    bool operator()(const loop_id& a, const loop_id& b) const {
-      if (a.root() && b.root()) return false;
-      if (a.root()) return true;
-      if (b.root()) return false;
-      if (a.func == b.func) return a.var < b.var;
-      return a.func < b.func;
-    }
-  };
-  std::map<loop_id, std::set<var>, loop_id_less> candidates_for_allocation_;
+  // Candidate buffers scheduled for allocation at each loop scope, indexed by
+  // `loop_ref::index()` (`0` for `loops_.root()`, `1..loops_.size()-1` for
+  // child loops) and sized once in `resolve_loop_nest`.
+  std::vector<std::set<var>> candidates_for_allocation_;
   // Information tracking the lifetimes of the buffers.
   symbol_map<allocation_candidate> allocation_info_;
+  // `.uncropped` clone symbol for each intermediate buffer.
+  symbol_map<var> uncropped_syms_;
   std::set<var> copy_inputs_;
   std::map<var, std::vector<var>> copy_deps_;
   // Direct buffer dependencies wrt to bounds for each buffer.
   std::map<var, std::set<var>> bounds_deps_;
 
-  // Set of loops we've generated so far, this is used solely for the correctness
-  // checks.
-  std::set<loop_id, loop_id_less> loops_;
-
   int functions_produced_ = 0;
 
   // Topologically sorted functions.
   std::vector<const func*> order_;
-  // A mapping between func's and their compute_at locations.
-  std::map<const func*, loop_id> compute_at_levels_;
-  // A mapping between func's and the place where their actual call statement
-  // will be generated. This is different from the compute_at_levels_ map
-  // for the case when the func has loops. In this case compute_at will
-  // point to the loop_id at which loops should be placed and this structure
-  // will point to the func's own innermost loop.
-  std::map<const func*, loop_id> realization_levels_;
+  std::map<const func*, std::vector<const func*>> deps_;
+
+  loop_nest loops_;
+  // Buffer dimensions `(buffer_sym, dim)` cropped by each `loop_ref::index()`.
+  std::vector<std::vector<std::pair<var, int>>> loop_crops_;
+  // Functions computed inside each `loop_ref::index()`'s subtree, in `order_`.
+  std::vector<std::vector<const func*>> loop_funcs_;
+  // Resolved execution scope of each `func` and allocation scope of each
+  // intermediate buffer in `loops_`.
+  std::map<const func*, loop_ref> compute_at_;
+  std::map<var, loop_ref> store_at_;
+  bool may_slide_or_fold_ = false;
 
   symbol_map<box_expr> allocation_bounds_;
   symbol_map<std::vector<dim_expr>> inferred_dims_;
@@ -703,11 +705,28 @@ class pipeline_builder {
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
 
+        const bool can_fold_buffer =
+            store_at_.at(b->sym()) != compute_at_.at(f);
         substitutions.clear();
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           substitutions.emplace_back(buffer_stride(b->sym(), d), expr());
+          if (!can_fold_buffer) {
+            substitutions.emplace_back(buffer_fold_factor(b->sym(), d), expr());
+          }
         }
         dims = substitute_from_map(dims, substitutions);
+        if (!can_fold_buffer) {
+          for (dim_expr& d : dims) {
+            if (is_positive_infinity(d.fold_factor)) d.fold_factor = expr();
+          }
+        } else {
+          for (const dim_expr& d : dims) {
+            if (!is_finite(d.fold_factor)) {
+              may_slide_or_fold_ = true;
+              break;
+            }
+          }
+        }
 
         std::vector<dim_expr> shape;
         std::vector<interval_expr> tmp;
@@ -727,33 +746,6 @@ class pipeline_builder {
       if (!allocation_bounds_[i.first]) continue;
       inferred_bounds_[i.first] = allocation_bounds_[i.first];
     }
-  }
-
-  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
-    // Crop all the outputs of this func for this loop.
-    for (const func::output& o : f->outputs()) {
-      for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d] == loop.sym()) {
-          expr loop_step = sanitizer_.mutate(loop.step);
-          interval_expr bounds = slinky::bounds(loop.var, simplify(loop.var + loop_step - 1));
-          body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
-        }
-      }
-    }
-    return body;
-  }
-
-  interval_expr get_loop_bounds(const func* f, const func::loop_info& loop) {
-    interval_expr bounds = interval_expr::union_identity();
-    for (const func::output& o : f->outputs()) {
-      for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d] == loop.sym()) {
-          // This output uses this loop. Add it to the bounds.
-          bounds |= buffer_bounds(o.sym(), d);
-        }
-      }
-    }
-    return simplify(bounds);
   }
 
   void compute_allocation_bounds() {
@@ -790,23 +782,17 @@ class pipeline_builder {
   // Returns generated statement for this function, as well as the
   // lifetime range covered by it.
   statement_with_range produce(const func* f) {
-    stmt result = sanitizer_.mutate(f->make_call());
+    stmt result =
+        substitute_inputs(sanitizer_.mutate(f->make_call()), uncropped_syms_);
 
     for (const func::output& o : f->outputs()) {
       const buffer_expr_ptr& b = o.buffer;
       if (output_syms_.count(b->sym())) continue;
 
-      if (b->store_at()) {
-        if (b->store_at()->innermost(f)) {
-          candidates_for_allocation_[compute_at_levels_[f]].insert(b->sym());
-        } else {
-          // Check that this loop_id actually exists.
-          assert(loops_.count(*b->store_at()) > 0);
-          candidates_for_allocation_[*b->store_at()].insert(b->sym());
-        }
-      } else {
-        candidates_for_allocation_[loop_id()].insert(b->sym());
-      }
+      uncropped_syms_[b->sym()] =
+          ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
+      const int store_idx = store_at_.at(b->sym()).index();
+      candidates_for_allocation_[store_idx].insert(b->sym());
       std::optional<allocation_candidate>& info = allocation_info_[b->sym()];
       info->buffer = b;
       info->lifetime_start = functions_produced_;
@@ -840,11 +826,10 @@ class pipeline_builder {
   }
 
   // Wraps provided body statement with the allocation node for a given buffer.
-  statement_with_range produce_allocation(
-      const buffer_expr_ptr& b, statement_with_range s, symbol_map<var>& uncropped_subs) {
-    var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
-    uncropped_subs[b->sym()] = uncropped;
-    s.body = clone_buffer::make(uncropped, b->sym(), s.body);
+  statement_with_range produce_allocation(const buffer_expr_ptr& b,
+                                          statement_with_range s) {
+    assert(uncropped_syms_[b->sym()]);
+    s.body = clone_buffer::make(*uncropped_syms_[b->sym()], b->sym(), s.body);
 
     const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
     assert(allocation_bounds_[b->sym()]);
@@ -921,9 +906,10 @@ class pipeline_builder {
     return true;
   }
 
-  void place_constrained_buffers(std::vector<statement_with_range>& results, std::set<var>& candidates,
-      const std::vector<allocation_candidate>& special, std::vector<allocation_candidate>& new_special,
-      symbol_map<var>& uncropped_subs) {
+  void place_constrained_buffers(
+      std::vector<statement_with_range>& results, std::set<var>& candidates,
+      const std::vector<allocation_candidate>& special,
+      std::vector<allocation_candidate>& new_special) {
     new_special.reserve(special.size());
     for (std::size_t iy = 0; iy < special.size(); iy++) {
       bool found = false;
@@ -934,7 +920,7 @@ class pipeline_builder {
 
         // The block range must fully cover the allocation range.
         if (results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= results[ix].end) {
-          results[ix] = produce_allocation(candidate, results[ix], uncropped_subs);
+          results[ix] = produce_allocation(candidate, results[ix]);
           candidates.erase(candidate->sym());
           found = true;
           break;
@@ -978,14 +964,13 @@ class pipeline_builder {
   // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
   // should be O(N*log(N)).
   statement_with_range lay_out_allocations(
-      const loop_id& at, std::vector<statement_with_range> results, symbol_map<var>& uncropped_subs) {
+      std::set<var>& candidates_at, std::vector<statement_with_range> results) {
     // The vector of allocations at this loop level.
     std::vector<allocation_candidate> lifetimes;
     // The same as above, but also has a set of special dependencies to
     // satisfy.
     std::vector<allocation_candidate> special;
-    for (const auto& b : candidates_for_allocation_[at]) {
-      if (output_syms_.count(b)) continue;
+    for (const auto& b : candidates_at) {
       if (copy_inputs_.count(b) > 0) {
         special.push_back(*allocation_info_[b]);
       } else {
@@ -1047,10 +1032,10 @@ class pipeline_builder {
           buffer_expr_ptr b = lifetimes[ix].buffer;
 
           statement_with_range new_result = {new_body, new_min, new_max, std::move(combined_allocs)};
-          new_result = produce_allocation(b, new_result, uncropped_subs);
+          new_result = produce_allocation(b, new_result);
           new_results.push_back(new_result);
 
-          candidates_for_allocation_[at].erase(b->sym());
+          candidates_at.erase(b->sym());
         }
 
         // Move to the next buffer.
@@ -1067,7 +1052,8 @@ class pipeline_builder {
 
       // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
       // This only can happen if all of it's dependencies are inside of the block.
-      place_constrained_buffers(new_results, candidates_for_allocation_[at], special, new_special, uncropped_subs);
+      place_constrained_buffers(new_results, candidates_at, special,
+                                new_special);
 
       // Attempt to place constant buffers as close to their usage location as possible.
       place_constant_buffers(new_results.data(), new_results.size());
@@ -1097,11 +1083,10 @@ class pipeline_builder {
     for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
-        if (output_syms_.count(b->sym())) continue;
-        if (candidates_for_allocation_[at].count(b->sym()) == 0) continue;
+        if (candidates_at.count(b->sym()) == 0) continue;
 
-        result = produce_allocation(b, result, uncropped_subs);
-        candidates_for_allocation_[at].erase(b->sym());
+        result = produce_allocation(b, result);
+        candidates_at.erase(b->sym());
       }
     }
 
@@ -1111,62 +1096,6 @@ class pipeline_builder {
     return result;
   }
 
-  // This function works together with the produce() and make_loop() functions
-  // to build an initial IR. The high-level approach is the following:
-  // * the `build()` function looks through the list of func's
-  //   to find funcs which need to be produced or allocated at given
-  //   loop level `at`. If func need to be produced it calls the
-  //   `produce()` function which actually produces the body of the
-  //   func. If func has loops it calls the 'make_loop()' func to produce
-  //   corresponding loops.
-  // * the `produce()` for a given func produces it's body.
-  // * the `make_loop()` will produce the necessary loops defined for the function.
-  //   For each of the new loops, the `build()` is called for the case when there
-  //   are func which need to be produced in that new loop.
-  std::vector<statement_with_range> build(const func* base_f, const loop_id& at, symbol_map<var>& uncropped_subs) {
-    std::vector<statement_with_range> results;
-    // Build the functions computed at this loop level.
-    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
-      const func* f = *i;
-      const auto& compute_at = compute_at_levels_.find(f);
-      assert(compute_at != compute_at_levels_.end());
-      std::set<var> old_candidates = candidates_for_allocation_[at];
-
-      const auto& realize_at = realization_levels_.find(f);
-      assert(realize_at != realization_levels_.end());
-
-      if (compute_at->second == at && !f->loops().empty()) {
-        // Generate the loops that we want to be explicit by recursively calling make_loop starting
-        // from the outer loop.
-        statement_with_range f_body = make_loop(f, f->loops().size() - 1);
-
-        // This is a special case for the buffers which are produced and consumed inside
-        // of this loop. In this case we simply wrap loop body with corresponding allocations.
-        if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
-          std::vector<var> to_remove;
-          for (auto b : candidates_for_allocation_[at]) {
-            // We only want candidates which are not in the old_candidates list.
-            if (old_candidates.count(b) > 0) continue;
-            if (copy_inputs_.count(b) > 0) continue;
-            std::optional<allocation_candidate>& info = allocation_info_[b];
-            if (info->consumers_produced != info->deps_count) continue;
-
-            f_body = produce_allocation(info->buffer, f_body, uncropped_subs);
-            to_remove.push_back(b);
-          }
-          for (auto b : to_remove) {
-            candidates_for_allocation_[at].erase(b);
-          }
-        }
-
-        results.push_back(f_body);
-      } else if (realize_at->second == at) {
-        results.push_back(produce(f));
-      }
-    }
-
-    return results;
-  }
   // Returns true if v is connected to one of the terminal node.
   bool find_transitive_deps_impl(
       const var& v, const std::set<var>& terminal, std::set<var>& visited, std::set<var>& result) {
@@ -1211,13 +1140,254 @@ class pipeline_builder {
     }
   }
 
-public:
-  pipeline_builder(
-      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
+  bool has_external_output(const func* f) const {
+    return std::any_of(f->outputs().begin(), f->outputs().end(),
+                       [this](const func::output& o) {
+                         return output_syms_.count(o.sym()) > 0;
+                       });
+  }
+
+  // Lowers legacy per-`func` scheduling directives (`func::loops()`,
+  // `func::compute_at()`, and `buffer_expr::store_at()`) into an equivalent
+  // `loop_nest` so `pipeline_builder` has a single scheduling representation.
+  loop_nest build_loop_nest_from_funcs() const {
+    loop_nest loops;
+    std::map<std::pair<const func*, var>, loop_ref> id_to_ref;
+    std::map<const func*, loop_ref> func_innermost;
+
+    auto resolve_id = [&](const loop_id& id) {
+      if (id.root()) return loops.root();
+      auto it = id_to_ref.find({id.func, id.var});
+      assert(it != id_to_ref.end());
+      return it->second;
+    };
+
+    for (const func* f : order_) {
+      loop_ref compute_at = loops.root();
+      auto deps_it = deps_.find(f);
+      if (!has_external_output(f) && deps_it != deps_.end() &&
+          !deps_it->second.empty()) {
+        compute_at = func_innermost.at(deps_it->second[0]);
+        for (std::size_t k = 1; k < deps_it->second.size(); ++k) {
+          compute_at =
+              loops.lca(compute_at, func_innermost.at(deps_it->second[k]));
+        }
+      }
+      if (f->compute_at()) {
+        loop_ref explicit_at = resolve_id(*f->compute_at());
+        assert(loops.is_ancestor(explicit_at, compute_at));
+        compute_at = explicit_at;
+      }
+
+      // `func::loops()` lists loops from innermost to outermost.
+      loop_ref parent = compute_at;
+      for (auto l = f->loops().rbegin(); l != f->loops().rend(); ++l) {
+        assert(!f->outputs().empty());
+        parent = loops.add_loop(parent, {f->outputs()[0].buffer, l->var},
+                                l->step, l->max_workers);
+        id_to_ref[{f, l->var}] = parent;
+      }
+      func_innermost[f] = parent;
+      if (f->compute_at() && !f->outputs().empty()) {
+        loops.place(f->outputs()[0].buffer, parent);
+      }
+
+      // Preserve legacy default root storage when `store_at()` is unset so
+      // `slide_and_fold_storage` folds unpinned buffers into root allocations.
+      for (const func::output& o : f->outputs()) {
+        if (output_syms_.count(o.sym())) continue;
+        const buffer_expr_ptr& b = o.buffer;
+        if (!b->store_at()) {
+          loops.store(b, loops.root());
+        } else if (b->store_at()->innermost(f)) {
+          loops.store(b, compute_at);
+        } else {
+          loops.store(b, resolve_id(*b->store_at()));
+        }
+      }
+    }
+
+    return loops;
+  }
+
+  // Resolves the `loops_` schedule into concrete per-loop crops and
+  // per-`func` / per-buffer scopes in two passes:
+  // 1. For each loop `l`, maps its symbolic `loop_nest::dim{buffer, var}`
+  //    entries to concrete `(buffer_sym, dim_index)` pairs in
+  //    `loop_crops_[idx]` (including sibling outputs of multi-output `func`s
+  //    that share `var`) and records `l` in `func_tiling_loops[f]`.
+  // 2. Walks `order_` from outputs to inputs (consumers before producers) to
+  //    assign each `func`'s execution scope `compute_at_[f]` (explicit
+  //    `place`, innermost tiling loop, or consumer LCA) and each internal
+  //    buffer's allocation scope `store_at_[sym]` (explicit `store` or LCA of
+  //    its definition scope and all consumers).
+  void resolve_loop_nest() {
+    std::map<const func*, std::vector<loop_ref>> func_tiling_loops;
+    candidates_for_allocation_.resize(loops_.size());
+    loop_crops_.resize(loops_.size());
+    loop_funcs_.resize(loops_.size());
+    const std::set<const func*> reachable_funcs(order_.begin(), order_.end());
+    // Pass 1: expand each loop's symbolic `dim`s into `(sym, dim)` pairs in
+    // `loop_crops_` and collect `func_tiling_loops`.
+    for (std::size_t idx = 1; idx < loops_.size(); ++idx) {
+      loop_ref l = loops_.loop_at(idx);
+      std::vector<std::pair<var, int>>& crops = loop_crops_[idx];
+      for (const loop_nest::dim& dim : loops_[l].dims) {
+        const func* f = dim.buffer->producer();
+        assert(f != nullptr);
+        if (reachable_funcs.count(f) == 0) continue;
+        std::vector<loop_ref>& tiling = func_tiling_loops[f];
+        if (std::find(tiling.begin(), tiling.end(), l) == tiling.end()) {
+          tiling.push_back(l);
+        }
+        const std::vector<expr> no_slices;
+        const std::vector<expr>& slices =
+            f->inputs().empty() ? no_slices : f->inputs()[0].output_slice;
+        bool matched = false;
+        for (const func::output& o : f->outputs()) {
+          for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
+            if (o.dims[d] == dim.var) {
+              matched = true;
+              const auto pair =
+                  std::make_pair(o.sym(), unsliced_dim(slices, d));
+              if (std::find(crops.begin(), crops.end(), pair) == crops.end()) {
+                crops.push_back(pair);
+              }
+            }
+          }
+        }
+        assert(matched);
+      }
+    }
+
+    // Pass 2: walk `order_` (consumers before producers) to resolve
+    // `compute_at_[f]` and `store_at_[sym]`, tracking the running LCA of
+    // consumer execution scopes in `buf_consumer_lca`.
+    std::map<var, loop_ref> buf_consumer_lca;
+    for (const func* f : order_) {
+      // Check if any output of `f` was explicitly pinned via `loops_.place()`.
+      std::optional<loop_ref> explicit_place;
+      for (const func::output& o : f->outputs()) {
+        if (std::optional<loop_ref> p = loops_.placed_at(o.sym())) {
+          assert(!explicit_place || *explicit_place == *p);
+          explicit_place = *p;
+        }
+      }
+
+      // `f` is emitted once and must execute inside every loop that tiles it.
+      // Because each loop has a single parent, all loops tiling `f` must nest
+      // inside one another along one chain between `outermost_tiling` and
+      // `innermost_tiling` (matching `f->loops()` in the legacy API).
+      loop_ref innermost_tiling = loops_.root();
+      loop_ref outermost_tiling = loops_.root();
+      auto tiling_it = func_tiling_loops.find(f);
+      if (tiling_it != func_tiling_loops.end()) {
+        innermost_tiling = outermost_tiling = tiling_it->second[0];
+        for (std::size_t k = 1; k < tiling_it->second.size(); ++k) {
+          loop_ref l = tiling_it->second[k];
+          if (loops_.is_ancestor(innermost_tiling, l)) {
+            innermost_tiling = l;
+          } else {
+            assert(loops_.is_ancestor(l, innermost_tiling));
+            if (loops_.is_ancestor(l, outermost_tiling)) {
+              outermost_tiling = l;
+            }
+          }
+        }
+      }
+
+      const bool is_external = has_external_output(f);
+
+      // Resolve `compute_at_[f]`: explicit `place` wins, then
+      // `innermost_tiling`, then (for internal untiled `func`s) the LCA of all
+      // consumers.
+      loop_ref compute_at = loops_.root();
+      if (explicit_place) {
+        assert(loops_.is_ancestor(innermost_tiling, *explicit_place));
+        compute_at = *explicit_place;
+      } else if (!innermost_tiling.is_root()) {
+        compute_at = innermost_tiling;
+      } else if (!is_external) {
+        bool first = true;
+        for (const func::output& o : f->outputs()) {
+          auto it = buf_consumer_lca.find(o.sym());
+          if (it == buf_consumer_lca.end()) continue;
+          compute_at = first ? it->second : loops_.lca(compute_at, it->second);
+          first = false;
+        }
+      }
+      // External outputs are not cropped by consumer loops, so every enclosing
+      // loop of `f` must tile `f`.
+      if (is_external) {
+        for (loop_ref l = compute_at; !l.is_root(); l = loops_[l].parent) {
+          assert(tiling_it != func_tiling_loops.end() &&
+                 std::find(tiling_it->second.begin(), tiling_it->second.end(),
+                           l) != tiling_it->second.end());
+        }
+      }
+      compute_at_[f] = compute_at;
+      for (loop_ref l = compute_at; !l.is_root(); l = loops_[l].parent) {
+        loop_funcs_[l.index()].push_back(f);
+      }
+
+      // An output of `f` is defined once all loops tiling `f` finish
+      // (`def_scope`), and must remain live across `def_scope` and all of its
+      // consumers (`min_store`).
+      const loop_ref def_scope = outermost_tiling.is_root()
+                                     ? compute_at
+                                     : loops_[outermost_tiling].parent;
+      for (const func::output& o : f->outputs()) {
+        var sym = o.sym();
+        // If a multi-output `func` is tiled by loop `l` along a dimension not
+        // present on output `sym`, no consumer of `sym` may execute inside `l`.
+        if (tiling_it != func_tiling_loops.end() && f->outputs().size() > 1 &&
+            deps_.count(f)) {
+          for (loop_ref l : tiling_it->second) {
+            const auto& l_crops = loop_crops_[l.index()];
+            if (std::any_of(l_crops.begin(), l_crops.end(),
+                            [sym](const auto& p) { return p.first == sym; })) {
+              continue;
+            }
+            for (const func* c : deps_.at(f)) {
+              for (const func::input& in : c->inputs()) {
+                if (in.sym() == sym) {
+                  assert(!loops_.is_ancestor(l, compute_at_.at(c)));
+                }
+              }
+            }
+          }
+        }
+        if (output_syms_.count(sym)) continue;
+        auto cons_it = buf_consumer_lca.find(sym);
+        const loop_ref min_store = (cons_it != buf_consumer_lca.end())
+                                       ? loops_.lca(def_scope, cons_it->second)
+                                       : def_scope;
+        if (std::optional<loop_ref> explicit_store = loops_.stored_at(sym)) {
+          assert(loops_.is_ancestor(*explicit_store, min_store));
+          store_at_[sym] = *explicit_store;
+        } else {
+          store_at_[sym] = min_store;
+        }
+      }
+
+      // Propagate `f`'s execution scope to its input buffers' consumer LCAs.
+      for (const func::input& in : f->inputs()) {
+        auto [it, inserted] =
+            buf_consumer_lca.try_emplace(in.sym(), compute_at);
+        if (!inserted) {
+          it->second = loops_.lca(it->second, compute_at);
+        }
+      }
+    }
+  }
+
+ public:
+  pipeline_builder(node_context& ctx,
+                   const std::vector<buffer_expr_ptr>& inputs,
+                   const std::vector<buffer_expr_ptr>& outputs,
+                   const loop_nest* loops = nullptr)
       : ctx(ctx), sanitizer_(ctx) {
-    // Dependencies between the functions.
-    std::map<const func*, std::vector<const func*>> deps;
-    topological_sort(outputs, order_, deps);
+    topological_sort(outputs, order_, deps_);
 
     sanitizer_.external.reserve(outputs.size() + inputs.size());
     for (auto& i : outputs) {
@@ -1230,8 +1400,19 @@ public:
     }
     std::sort(sanitizer_.external.begin(), sanitizer_.external.end());
 
-    // Build a loop nest tree and computes compute_at locations when neccessary.
-    compute_innermost_locations(order_, deps, compute_at_levels_, realization_levels_);
+    if (loops != nullptr) {
+      assert(std::all_of(order_.begin(), order_.end(), [](const func* f) {
+        return f->loops().empty() && !f->compute_at() &&
+               std::all_of(f->outputs().begin(), f->outputs().end(),
+                           [](const func::output& o) {
+                             return !o.buffer->store_at();
+                           });
+      }));
+      loops_ = *loops;
+    } else {
+      loops_ = build_loop_nest_from_funcs();
+    }
+    resolve_loop_nest();
 
     // Compute allocation bounds.
     compute_allocation_bounds();
@@ -1244,6 +1425,7 @@ public:
   }
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
+  bool may_slide_or_fold() const { return may_slide_or_fold_; }
 
   stmt add_crop(stmt body, var sym, const std::vector<interval_expr>& bounds, const std::vector<int>& dependent_dim) {
     // In order to just produce crop without taking into account what dims can change use :
@@ -1262,59 +1444,169 @@ public:
     return body;
   }
 
-  // Creates a loop body for a given function including all function bodies computed inside of the loops.
-  // It may recursively call itself if there are nested loops, it's assumed that loops are produced
-  // starting from the outer one. If base_f function is nullptr, the assumption is that we need to
-  // create a "root" loop which  only will have body.
-  statement_with_range make_loop(const func* base_f, int loop_index) {
-    func::loop_info loop;
-    loop_id here;
-    if (base_f != nullptr) {
-      loop = base_f->loops()[loop_index];
-      here = {base_f, loop.var};
+  // An executable unit directly inside a loop scope: either a single `func`
+  // computed at that scope, or an immediate child loop (standing in for all
+  // `func`s computed anywhere inside that child loop's subtree).
+  struct scope_item {
+    const func* direct_func = nullptr;
+    loop_ref child_loop;
+  };
+
+  statement_with_range make_loop() { return make_loop(loops_.root()); }
+
+  // Recursively lowers a `loop_nest` scope `here` (and its child loops) into
+  // buffer allocations, per-iteration crops, and a `loop` statement.
+  statement_with_range make_loop(loop_ref here) {
+    // 1. Order the direct `func`s and immediate child loops of `here` so every
+    //    producer runs before its consumers, then emit each item in sequence.
+    //    Sequential emission matters because `produce()` stamps each `func`
+    //    with a monotonic `functions_produced_` index used as the
+    //    `[lifetime_start, lifetime_end]` interval during allocation layout.
+    std::vector<scope_item> items = order_scope_items(here);
+    if (items.empty()) return {};
+
+    std::vector<statement_with_range> results;
+    results.reserve(items.size());
+    for (const scope_item& item : items) {
+      results.push_back(item.direct_func ? produce(item.direct_func)
+                                         : make_loop(item.child_loop));
     }
 
-    loops_.insert(here);
+    // 2. Wrap the emitted statements in `allocate` (and `clone_buffer` for
+    //    `.uncropped` inputs) for all intermediate buffers stored at `here`.
+    statement_with_range body = lay_out_allocations(
+        candidates_for_allocation_[here.index()], std::move(results));
 
-    symbol_map<var> uncropped_subs;
-    std::vector<statement_with_range> results = build(base_f, here, uncropped_subs);
+    // The root scope has no enclosing loop or per-iteration cropping.
+    if (here.is_root()) return body;
 
-    if (loop_index > 0) {
-      statement_with_range inner_loop = make_loop(base_f, loop_index - 1);
-      results.push_back(inner_loop);
+    // 3. Wrap the body with per-iteration crops (or metadata-only `make_buffer`
+    //    nodes for buffers allocated inside `here`) for upstream buffers whose
+    //    bounds depend on `here`'s tiled dimensions.
+    const std::vector<std::pair<var, int>>& crops = loop_crops_[here.index()];
+    body.body = crop_buffers_for_loop(here, std::move(body.body),
+                                      body.allocations, crops);
+
+    // 4. Crop `here`'s own tiled output dimensions to
+    //    `[loop_var, loop_var + step - 1]` and wrap the body in a `loop`.
+    body.body = emit_loop_stmt(here, crops, std::move(body.body));
+    return body;
+  }
+
+  // Returns the direct `func`s and immediate child loops of `here` in a valid
+  // execution order.
+  //
+  // A plain scan of `order_` is not enough when a child loop contains multiple
+  // `func`s whose producers and consumers at `here` interleave: because a child
+  // loop executes as a single statement at `here`, it must run after every item
+  // at `here` that feeds *any* `func` in its subtree and before every item at
+  // `here` that consumes from *any* `func` in its subtree. Contracting each
+  // immediate child loop's subtree into one `scope_item` and topologically
+  // sorting those items enforces both constraints.
+  std::vector<scope_item> order_scope_items(loop_ref here) const {
+    const std::vector<const func*>& funcs =
+        here.is_root() ? order_ : loop_funcs_[here.index()];
+    std::vector<scope_item> items;
+    std::vector<std::vector<std::size_t>> preds;
+    std::map<const func*, std::size_t> func_to_item;
+    std::map<loop_ref, std::size_t> child_to_item;
+
+    // `order_` (and `loop_funcs_`) lists outputs/consumers first and inputs/
+    // producers last, so iterating in reverse visits every producer before all
+    // of its consumers.
+    for (auto it = funcs.rbegin(); it != funcs.rend(); ++it) {
+      const func* f = *it;
+      loop_ref loc = compute_at_.at(f);
+
+      // Map `f` to its item at `here`: a new item if `f` runs directly at
+      // `here`, or the shared item for the immediate child loop of `here`
+      // containing `loc`.
+      std::size_t item_idx = items.size();
+      if (loc == here) {
+        items.push_back({f, loop_ref()});
+        preds.emplace_back();
+      } else {
+        while (loops_[loc].parent != here) {
+          loc = loops_[loc].parent;
+        }
+        auto [child_it, inserted] = child_to_item.try_emplace(loc, item_idx);
+        if (inserted) {
+          items.push_back({nullptr, loc});
+          preds.emplace_back();
+        }
+        item_idx = child_it->second;
+      }
+      func_to_item[f] = item_idx;
+
+      // Record dependencies on earlier items in `here`'s subtree. Producers
+      // computed outside `here` are not in `func_to_item` and already dominate
+      // `here`; dependencies within the same child loop (`pit->second ==
+      // item_idx`) are ordered when `make_loop` recurses into that child loop.
+      for (const func::input& in : f->inputs()) {
+        auto pit = func_to_item.find(in.buffer->producer());
+        if (pit != func_to_item.end() && pit->second != item_idx) {
+          preds[item_idx].push_back(pit->second);
+        }
+      }
     }
+    // Post-order DFS emits every predecessor item before its dependents while
+    // preserving `order_` tie-breaking among independent items.
+    enum class visit_state { unvisited, visiting, visited };
+    std::vector<visit_state> state(items.size(), visit_state::unvisited);
+    std::vector<scope_item> ordered;
+    ordered.reserve(items.size());
 
-    statement_with_range body = lay_out_allocations(here, std::move(results), uncropped_subs);
+    auto visit = [&](auto& self, std::size_t item_idx) -> void {
+      const visit_state cur_state = state[item_idx];
+      if (cur_state == visit_state::visited) return;
+      // Hitting an in-progress (`visiting`) item means two sibling items have a
+      // circular producer/consumer dependency across `here` (e.g. a child loop
+      // both consumes from and feeds a `func` or sibling loop at `here`).
+      assert(cur_state == visit_state::unvisited);
+      state[item_idx] = visit_state::visiting;
+      for (std::size_t pred_idx : preds[item_idx]) {
+        self(self, pred_idx);
+      }
+      state[item_idx] = visit_state::visited;
+      ordered.push_back(items[item_idx]);
+    };
+    for (std::size_t i = 0; i < items.size(); ++i) {
+      visit(visit, i);
+    }
+    return ordered;
+  }
 
-    // Substitute references to the intermediate buffers with the 'name.uncropped' when they
-    // are used as an input arguments. This does a batch substitution by replacing multiple
-    // buffer names at once and relies on the fact that the same var can't be written
-    // by two different funcs.
-    body.body = substitute_inputs(body.body, uncropped_subs);
-
-    if (here.root()) return body;
-
-    // Find which buffers are used inside of the body.
-    // We separate input and output buffers list, because we don't need to find transitive
-    // dependencies for the inputs. Also, we only care about inputs of the copies, because for others
-    // all neccessary buffers will be in the transitive dependencies.
-    // TODO(vksnk): we can add a function which does both of these in one pass.
-    std::vector<var> input_buffers_used = find_buffer_dependencies(body.body, false, true, false, false);
-    std::vector<var> buffers_used = find_buffer_dependencies(body.body, false, true);
-    // The function above doesn't add buffers allocated inside of the body into the outputs list,
-    // but we still need to define their dependencies.
-    for (var v : body.allocations) {
-      buffers_used.push_back(v);
+  // Wraps `body` with per-iteration crops (or metadata-only `make_buffer`
+  // nodes for inner allocations) for upstream buffers varying with `crops`.
+  stmt crop_buffers_for_loop(loop_ref here, stmt body,
+                             const std::set<var>& allocations,
+                             const std::vector<std::pair<var, int>>& crops) {
+    // Copy inputs (`input_buffers_used`) don't need transitive bounds
+    // expansion, whereas produced and allocated buffers (`buffers_used`) do.
+    // Because `store_at_[sym]` is an ancestor of `compute_at_[f]` for every
+    // output `sym` of `f`, every buffer allocated inside `here` (`allocations`)
+    // is produced by some `f` in `loop_funcs_[here.index()]`.
+    std::vector<var> input_buffers_used;
+    std::vector<var> buffers_used;
+    for (const func* f : loop_funcs_[here.index()]) {
+      for (const func::output& o : f->outputs()) {
+        buffers_used.push_back(o.sym());
+      }
+      if (!f->impl()) {
+        for (const func::input& in : f->inputs()) {
+          if (allocations.count(in.sym()) == 0) {
+            input_buffers_used.push_back(in.sym());
+          }
+        }
+      }
     }
 
     std::set<var> all_deps;
     std::set<var> terminal;
-    if (base_f) {
-      // These are the crops which can actually affect other crops and we don't want
-      // any dependencies which can't reach one of these.
-      for (const func::output& o : base_f->outputs()) {
-        terminal.insert(o.buffer->sym());
-      }
+    std::map<var, std::vector<int>> dependent_dims;
+    for (const auto& [sym, dim] : crops) {
+      terminal.insert(sym);
+      dependent_dims[sym].push_back(dim);
     }
 
     // We also need to include transitive dependencies of the used buffers in case metadata
@@ -1326,24 +1618,9 @@ public:
       all_deps.insert(v);
     }
 
-    // We actually don't need to produce a full crop, but only dimensions
-    // which (transitively) depend on the this loop's base function crop_dim.
-    std::map<var, std::vector<int>> dependent_dims;
-    // Add a dimension which will have crop_dim.
-    if (base_f) {
-      for (const func::output& o : base_f->outputs()) {
-        for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-          if (o.dims[d] == loop.sym()) {
-            dependent_dims[o.sym()].push_back(d);
-          }
-        }
-      }
-    }
-
     // Propagate dependent dims starting from the outer crop.
     for (auto i = order_.begin(); i != order_.end(); ++i) {
       const func* f = *i;
-      if (f == base_f) continue;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (!inferred_bounds_[b->sym()]) continue;
@@ -1359,51 +1636,67 @@ public:
       if (!allocation_bounds_[sym]) continue;
       if (all_deps.count(sym) == 0) continue;
       find_dependent_dims(sym, *allocation_bounds_[sym], dependent_dims);
-      body.body = add_crop(body.body, sym, *allocation_bounds_[sym], dependent_dims[sym]);
+      body = add_crop(body, sym, *allocation_bounds_[sym], dependent_dims[sym]);
     }
 
     // Followed by intermediate buffers in the reverse topological order
     // (i.e. the outermost buffers are closer to the outputs of the pipeline).
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
-
-      if (f == base_f) {
-        // Don't really need to emit buffer_crop for base_f, because they will
-        // have crop_dim anyway.
-        continue;
-      }
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (!inferred_bounds_[b->sym()]) continue;
         if (all_deps.count(b->sym()) == 0) continue;
-        if (body.allocations.count(b->sym()) > 0) {
+        if (allocations.count(b->sym()) > 0) {
           // We can't produce the crop for the buffers which weren't allocated yet,
           // so produce make_buffer, because some other buffers might use metadata from them.
           const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
           if (!maybe_dims) continue;
-          body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
+          body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
         } else {
-          body.body = add_crop(body.body, b->sym(), *inferred_bounds_[b->sym()], dependent_dims[b->sym()]);
+          std::vector<int> dims_to_crop;
+          for (int d : dependent_dims[b->sym()]) {
+            const auto pair = std::make_pair(b->sym(), d);
+            if (std::find(crops.begin(), crops.end(), pair) == crops.end()) {
+              dims_to_crop.push_back(d);
+            }
+          }
+          body = add_crop(body, b->sym(), *inferred_bounds_[b->sym()], dims_to_crop);
         }
       }
     }
-
-    // The loop body is done, and we have an actual loop to make here. Crop the body.
-    body.body = crop_for_loop(body.body, base_f, loop);
-    // And make the actual loop.
-    expr loop_step = sanitizer_.mutate(loop.step);
-    interval_expr loop_bounds = get_loop_bounds(base_f, loop);
-    // Make sure that a loop variable is unique.
-    std::string loop_var_name;
-    if (base_f->outputs().size() == 1) {
-      loop_var_name = ctx.name(base_f->outputs()[0].sym()) + ".";
-    }
-    loop_var_name += ctx.name(loop.sym());
-    var loop_var = ctx.insert_unique(loop_var_name);
-    body.body = substitute(body.body, loop.sym(), loop_var);
-    body.body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body.body);
-
     return body;
+  }
+
+  // Crops `crops` to a single `loop_var` step and wraps `body` in `loop`.
+  stmt emit_loop_stmt(loop_ref here,
+                      const std::vector<std::pair<var, int>>& crops,
+                      stmt body) {
+    assert(!crops.empty());
+    const loop_nest::loop& l = loops_[here];
+    // Create a unique loop variable (e.g. `buf.x`, or `x` for multi-output
+    // funcs) from the first tiled dimension.
+    const loop_nest::dim& primary = l.dims[0];
+    const func* f = primary.buffer->producer();
+    std::string name;
+    if (f->outputs().size() == 1) {
+      name = ctx.name(primary.buffer->sym()) + ".";
+    }
+    name += ctx.name(primary.var);
+    var loop_var = ctx.insert_unique(name);
+
+    // Crop each dimension tiled by `here` to `[loop_var, loop_var + step - 1]`
+    // and union their uncropped bounds for the loop range.
+    expr step = sanitizer_.mutate(l.step);
+    interval_expr tile =
+        slinky::bounds(loop_var, simplify(loop_var + step - 1));
+    interval_expr loop_bounds = interval_expr::union_identity();
+    for (const auto& [sym, dim] : crops) {
+      body = crop_dim::make(sym, sym, dim, tile, body);
+      loop_bounds |= buffer_bounds(sym, dim);
+    }
+    return loop::make(loop_var, sanitizer_.mutate(l.max_workers),
+                      simplify(loop_bounds), step, body);
   }
 
   stmt define_sanitized_replacements(const stmt& body) { return sanitizer_.define_replacements(body); }
@@ -1541,17 +1834,18 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
   return result;
 }
 
-}  // namespace
-
-pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
+pipeline build_pipeline_impl(node_context& ctx, std::vector<var> args,
+                             const std::vector<buffer_expr_ptr>& inputs,
+                             const std::vector<buffer_expr_ptr>& outputs,
+                             std::vector<std::pair<var, expr>> lets,
+                             const build_options& options,
+                             const loop_nest* loops) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
-  pipeline_builder builder(ctx, inputs, outputs);
+  pipeline_builder builder(ctx, inputs, outputs, loops);
 
-  stmt result;
-  result = builder.make_loop(nullptr, 0).body;
+  stmt result = builder.make_loop().body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
@@ -1578,7 +1872,9 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
   }
   result = block::make(std::move(buffer_checks), std::move(result));
 
-  result = slide_and_fold_storage(result, ctx);
+  if (builder.may_slide_or_fold()) {
+    result = slide_and_fold_storage(result, ctx);
+  }
   result = deshadow(result, builder.external_symbols(), ctx);
   result = lift_constants(result);
   result = simplify(result);
@@ -1635,16 +1931,46 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
   set_default_print_context(old_context);
 
   pipeline p;
-  p.args = args;
+  p.args = std::move(args);
   p.inputs = vars(inputs);
   p.outputs = vars(outputs);
   p.body = std::move(result);
   return p;
 }
 
-pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
+}  // namespace
+
+pipeline build_pipeline(node_context& ctx, std::vector<var> args,
+                        const std::vector<buffer_expr_ptr>& inputs,
+                        const std::vector<buffer_expr_ptr>& outputs,
+                        std::vector<std::pair<var, expr>> lets,
+                        const build_options& options) {
+  return build_pipeline_impl(ctx, std::move(args), inputs, outputs,
+                             std::move(lets), options, nullptr);
+}
+
+pipeline build_pipeline(node_context& ctx,
+                        const std::vector<buffer_expr_ptr>& inputs,
+                        const std::vector<buffer_expr_ptr>& outputs,
+                        const build_options& options) {
   return build_pipeline(ctx, {}, inputs, outputs, {}, options);
+}
+
+pipeline build_pipeline(node_context& ctx, std::vector<var> args,
+                        const std::vector<buffer_expr_ptr>& inputs,
+                        const std::vector<buffer_expr_ptr>& outputs,
+                        const loop_nest& loops,
+                        std::vector<std::pair<var, expr>> lets,
+                        const build_options& options) {
+  return build_pipeline_impl(ctx, std::move(args), inputs, outputs,
+                             std::move(lets), options, &loops);
+}
+
+pipeline build_pipeline(node_context& ctx,
+                        const std::vector<buffer_expr_ptr>& inputs,
+                        const std::vector<buffer_expr_ptr>& outputs,
+                        const loop_nest& loops, const build_options& options) {
+  return build_pipeline(ctx, {}, inputs, outputs, loops, {}, options);
 }
 
 }  // namespace slinky
