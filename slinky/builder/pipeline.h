@@ -397,13 +397,25 @@ class loop_ref {
 // individual `func` definitions.
 //
 // A `loop_nest` is a tree of loops rooted at `root()`. Each loop tiles one or
-// more `(buffer, dim_var)` dimensions by `step`. During `build_pipeline`:
+// more `output_dim{buf, dim}` entries by `step`. During `build_pipeline`:
 // - Each `func` is executed at its explicit `place(buf, loop)` scope, or at the
 //   innermost loop tiling its outputs, or (for untiled internal `func`s) at the
 //   lowest common ancestor (LCA) of all loops where its consumers execute.
 // - Each intermediate buffer is allocated at its explicit `store(buf, loop)`
 //   scope, or by default at the tightest loop scope enclosing both its
 //   definition and all of its consumers.
+//
+// Validity constraints (checked via `assert` during `build_pipeline`):
+// - All loops tiling outputs of a single `func` must nest along one
+//   root-to-leaf path (not sibling loops), and any `place(buf, at)` must lie at
+//   or inside that `func`'s innermost tiling loop.
+// - External pipeline outputs may only execute inside loops that tile them.
+// - Any `store(buf, at)` must enclose `buf`'s definition scope and all of its
+//   consumers, and if a multi-output `func` is tiled by a loop that does not
+//   crop one of its outputs, no consumer of that output may execute inside that
+//   loop.
+// - Sibling loops at the same scope may not have cyclic producer-consumer
+//   dependencies.
 //
 // Example:
 //   loop_nest loops;
@@ -413,21 +425,19 @@ class loop_ref {
 //   pipeline p = build_pipeline(ctx, inputs, {out}, loops);
 class loop_nest {
  public:
-  // Identifies a tiled dimension by pairing a produced `buffer` with the
-  // symbolic dimension `var` declared on its producer `func::output::dims`.
-  // Combining `buffer` and `var` uniquely identifies both the produced buffer
-  // (and its producer `func`) and which dimension of that buffer is tiled.
-  struct dim {
-    buffer_expr_ptr buffer;
-    slinky::var var;
+  // Pairs a produced `func::output` buffer `buf` (intermediate or pipeline
+  // output) with one of its symbolic `func::output::dims` `dim`.
+  struct output_dim {
+    buffer_expr_ptr buf;
+    var dim;
   };
 
   struct loop {
     loop_ref parent;
-    // Buffer dimensions jointly tiled by this loop. Usually a single `dim`, or
-    // multiple `dim`s when one loop co-tiles several buffers in lockstep (e.g.,
-    // fused independent outputs).
-    std::vector<dim> dims;
+    // Output dimensions jointly tiled by this loop. Usually a single
+    // `output_dim`, or multiple when one loop co-tiles several buffers in
+    // lockstep (e.g., fused independent outputs).
+    std::vector<output_dim> dims;
     expr step = 1;
     expr max_workers = slinky::loop::serial;
   };
@@ -462,26 +472,26 @@ class loop_nest {
   }
 
   // Adds a loop under `parent` (or `root()`) tiling `d` by `step`.
-  // Overloads taking `std::vector<dim> dims` create a single shared loop
-  // that crops all specified `(buffer, var)` dimensions to `[i, i + step - 1]`
-  // on each iteration and iterates over the union of their bounds.
-  loop_ref add_loop(dim d, expr step = 1,
+  // Overloads taking `std::vector<output_dim> dims` create a single shared loop
+  // that crops all specified `(buf, dim)` dimensions to `[i, i + step - 1]` on
+  // each iteration and iterates over the union of their bounds.
+  loop_ref add_loop(output_dim d, expr step = 1,
                     expr max_workers = slinky::loop::serial) {
     return add_loop(root(), std::move(d), std::move(step),
                     std::move(max_workers));
   }
-  loop_ref add_loop(loop_ref parent, dim d, expr step = 1,
+  loop_ref add_loop(loop_ref parent, output_dim d, expr step = 1,
                     expr max_workers = slinky::loop::serial) {
-    return add_loop(parent, std::vector<dim>{std::move(d)}, std::move(step),
-                    std::move(max_workers));
+    return add_loop(parent, std::vector<output_dim>{std::move(d)},
+                    std::move(step), std::move(max_workers));
   }
-  loop_ref add_loop(std::vector<dim> dims, expr step = 1,
+  loop_ref add_loop(std::vector<output_dim> dims, expr step = 1,
                     expr max_workers = slinky::loop::serial) {
     return add_loop(root(), std::move(dims), std::move(step),
                     std::move(max_workers));
   }
-  loop_ref add_loop(loop_ref parent, std::vector<dim> dims, expr step = 1,
-                    expr max_workers = slinky::loop::serial);
+  loop_ref add_loop(loop_ref parent, std::vector<output_dim> dims,
+                    expr step = 1, expr max_workers = slinky::loop::serial);
 
   // Place computation of `buf` (and any multi-output siblings) at `at`.
   void place(const buffer_expr_ptr& buf, loop_ref at);
@@ -489,11 +499,11 @@ class loop_nest {
   // Override allocation scope of `buf` to `at` (e.g. `loops.root()`).
   void store(const buffer_expr_ptr& buf, loop_ref at);
 
-  std::optional<loop_ref> placed_at(var sym) const;
+  std::optional<loop_ref> placed_at(var buf) const;
   std::optional<loop_ref> placed_at(const buffer_expr_ptr& buf) const {
     return placed_at(buf->sym());
   }
-  std::optional<loop_ref> stored_at(var sym) const;
+  std::optional<loop_ref> stored_at(var buf) const;
   std::optional<loop_ref> stored_at(const buffer_expr_ptr& buf) const {
     return stored_at(buf->sym());
   }

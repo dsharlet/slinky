@@ -33,16 +33,16 @@ namespace slinky {
 // in print.cc, don't want to expose this.
 const node_context* set_default_print_context(const node_context* ctx);
 
-loop_ref loop_nest::add_loop(loop_ref parent, std::vector<dim> dims,
+loop_ref loop_nest::add_loop(loop_ref parent, std::vector<output_dim> dims,
                              expr step, expr max_workers) {
   assert(parent.index_ >= 0 &&
          static_cast<std::size_t>(parent.index_) < loops_.size());
   assert(!dims.empty());
   assert(step.defined());
-  for (const dim& d : dims) {
+  for (const output_dim& d : dims) {
     (void)d;
-    assert(d.buffer != nullptr);
-    assert(d.var.defined());
+    assert(d.buf != nullptr);
+    assert(d.dim.defined());
   }
   const int index = static_cast<int>(loops_.size());
   loop l;
@@ -66,14 +66,14 @@ void loop_nest::store(const buffer_expr_ptr& buf, loop_ref at) {
   stores_[buf->sym()] = at;
 }
 
-std::optional<loop_ref> loop_nest::placed_at(var sym) const {
-  auto it = placements_.find(sym);
+std::optional<loop_ref> loop_nest::placed_at(var buf) const {
+  auto it = placements_.find(buf);
   if (it == placements_.end()) return std::nullopt;
   return it->second;
 }
 
-std::optional<loop_ref> loop_nest::stored_at(var sym) const {
-  auto it = stores_.find(sym);
+std::optional<loop_ref> loop_nest::stored_at(var buf) const {
+  auto it = stores_.find(buf);
   if (it == stores_.end()) return std::nullopt;
   return it->second;
 }
@@ -1212,14 +1212,14 @@ class pipeline_builder {
 
   // Resolves the `loops_` schedule into concrete per-loop crops and
   // per-`func` / per-buffer scopes in two passes:
-  // 1. For each loop `l`, maps its symbolic `loop_nest::dim{buffer, var}`
-  //    entries to concrete `(buffer_sym, dim_index)` pairs in
-  //    `loop_crops_[idx]` (including sibling outputs of multi-output `func`s
-  //    that share `var`) and records `l` in `func_tiling_loops[f]`.
+  // 1. For each loop `l`, maps its symbolic `loop_nest::output_dim{buf, dim}`
+  //    entries to concrete `(buf_sym, dim_index)` pairs in `loop_crops_[idx]`
+  //    (including sibling outputs of multi-output `func`s that share `dim`) and
+  //    records `l` in `func_tiling_loops[f]`.
   // 2. Walks `order_` from outputs to inputs (consumers before producers) to
   //    assign each `func`'s execution scope `compute_at_[f]` (explicit
   //    `place`, innermost tiling loop, or consumer LCA) and each internal
-  //    buffer's allocation scope `store_at_[sym]` (explicit `store` or LCA of
+  //    buffer's allocation scope `store_at_[buf]` (explicit `store` or LCA of
   //    its definition scope and all consumers).
   void resolve_loop_nest() {
     std::map<const func*, std::vector<loop_ref>> func_tiling_loops;
@@ -1227,13 +1227,13 @@ class pipeline_builder {
     loop_crops_.resize(loops_.size());
     loop_funcs_.resize(loops_.size());
     const std::set<const func*> reachable_funcs(order_.begin(), order_.end());
-    // Pass 1: expand each loop's symbolic `dim`s into `(sym, dim)` pairs in
-    // `loop_crops_` and collect `func_tiling_loops`.
+    // Pass 1: expand each loop's symbolic `output_dim`s into `(buf, dim)` pairs
+    // in `loop_crops_` and collect `func_tiling_loops`.
     for (std::size_t idx = 1; idx < loops_.size(); ++idx) {
       loop_ref l = loops_.loop_at(idx);
       std::vector<std::pair<var, int>>& crops = loop_crops_[idx];
-      for (const loop_nest::dim& dim : loops_[l].dims) {
-        const func* f = dim.buffer->producer();
+      for (const loop_nest::output_dim& out_dim : loops_[l].dims) {
+        const func* f = out_dim.buf->producer();
         assert(f != nullptr);
         if (reachable_funcs.count(f) == 0) continue;
         std::vector<loop_ref>& tiling = func_tiling_loops[f];
@@ -1246,7 +1246,7 @@ class pipeline_builder {
         bool matched = false;
         for (const func::output& o : f->outputs()) {
           for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-            if (o.dims[d] == dim.var) {
+            if (o.dims[d] == out_dim.dim) {
               matched = true;
               const auto pair =
                   std::make_pair(o.sym(), unsliced_dim(slices, d));
@@ -1676,13 +1676,13 @@ class pipeline_builder {
     const loop_nest::loop& l = loops_[here];
     // Create a unique loop variable (e.g. `buf.x`, or `x` for multi-output
     // funcs) from the first tiled dimension.
-    const loop_nest::dim& primary = l.dims[0];
-    const func* f = primary.buffer->producer();
+    const loop_nest::output_dim& primary = l.dims[0];
+    const func* f = primary.buf->producer();
     std::string name;
     if (f->outputs().size() == 1) {
-      name = ctx.name(primary.buffer->sym()) + ".";
+      name = ctx.name(primary.buf->sym()) + ".";
     }
-    name += ctx.name(primary.var);
+    name += ctx.name(primary.dim);
     var loop_var = ctx.insert_unique(name);
 
     // Crop each dimension tiled by `here` to `[loop_var, loop_var + step - 1]`
@@ -1691,9 +1691,9 @@ class pipeline_builder {
     interval_expr tile =
         slinky::bounds(loop_var, simplify(loop_var + step - 1));
     interval_expr loop_bounds = interval_expr::union_identity();
-    for (const auto& [sym, dim] : crops) {
-      body = crop_dim::make(sym, sym, dim, tile, body);
-      loop_bounds |= buffer_bounds(sym, dim);
+    for (const auto& [buf, dim] : crops) {
+      body = crop_dim::make(buf, buf, dim, tile, body);
+      loop_bounds |= buffer_bounds(buf, dim);
     }
     return loop::make(loop_var, sanitizer_.mutate(l.max_workers),
                       simplify(loop_bounds), step, body);

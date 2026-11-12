@@ -56,6 +56,8 @@ TEST(loop_nest, tree_queries) {
 
   loops[l1].step = 16;
   loops[l1].max_workers = loop::parallel;
+  EXPECT_EQ(loops[l1].dims[0].buf, a);
+  EXPECT_EQ(loops[l1].dims[0].dim, y);
   EXPECT_TRUE(is_constant(loops[l1].step, 16));
   EXPECT_TRUE(is_constant(loops[l1].max_workers, loop::parallel));
 }
@@ -384,6 +386,77 @@ TEST(loop_nest, multi_output_co_cropping) {
     }
     for (int i = 0; i < W; ++i) {
       ASSERT_EQ(out_buf(i, j), (in_buf(i, j) - mn) + (mx - mn));
+    }
+  }
+}
+
+TEST(loop_nest, multi_output_nested_loops_across_siblings) {
+  node_context ctx;
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto mid = buffer_expr::make(ctx, "mid", 2, sizeof(int));
+  auto a = buffer_expr::make(ctx, "a", 2, sizeof(int));
+  auto b = buffer_expr::make(ctx, "b", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  const int W = 8;
+  const int H = 6;
+  const int split_x = 4;
+  const int split_y = 2;
+
+  func prep =
+      func::make(add_1<int>, {{in, {point(x), point(y)}}}, {{mid, {x, y}}});
+
+  int calls = 0;
+  func both = func::make(
+      [&](const buffer<const int>& src, const buffer<int>& out_a,
+          const buffer<int>& out_b) -> index_t {
+        ++calls;
+        EXPECT_EQ(out_a.dim(0).min(), out_b.dim(0).min());
+        EXPECT_EQ(out_a.dim(0).max(), out_b.dim(0).max());
+        EXPECT_EQ(out_a.dim(1).min(), out_b.dim(1).min());
+        EXPECT_EQ(out_a.dim(1).max(), out_b.dim(1).max());
+        EXPECT_EQ(out_a.dim(0).extent(), split_x);
+        EXPECT_EQ(out_a.dim(1).extent(), split_y);
+        for (index_t j = out_a.dim(1).begin(); j < out_a.dim(1).end(); ++j) {
+          for (index_t i = out_a.dim(0).begin(); i < out_a.dim(0).end(); ++i) {
+            out_a(i, j) = src(i, j) + 1;
+            out_b(i, j) = src(i, j) * 2;
+          }
+        }
+        return 0;
+      },
+      {{mid, {point(x), point(y)}}}, {{a, {x, y}}, {b, {x, y}}});
+
+  // Outer loop tiles `{a, x}` and nested inner loop tiles `{b, y}`: both loops
+  // co-crop `a` and `b` and `both` executes at the inner loop.
+  loop_nest loops;
+  loop_ref lx = loops.add_loop({a, x}, split_x);
+  loops.add_loop(lx, {b, y}, split_y);
+
+  pipeline p = build_pipeline(ctx, {in}, {a, b}, loops);
+
+  buffer<int, 2> in_buf({W, H});
+  buffer<int, 2> a_buf({W, H});
+  buffer<int, 2> b_buf({W, H});
+  init_random(in_buf);
+  a_buf.allocate();
+  b_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&a_buf, &b_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  EXPECT_EQ(calls, (W / split_x) * (H / split_y));
+  ASSERT_EQ(eval_ctx.heap.allocs,
+            std::vector<index_t>((W / split_x) * (H / split_y),
+                                 split_x * split_y * sizeof(int)));
+  for (int j = 0; j < H; ++j) {
+    for (int i = 0; i < W; ++i) {
+      ASSERT_EQ(a_buf(i, j), in_buf(i, j) + 2);
+      ASSERT_EQ(b_buf(i, j), (in_buf(i, j) + 1) * 2);
     }
   }
 }
