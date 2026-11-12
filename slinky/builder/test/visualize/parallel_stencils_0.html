@@ -398,10 +398,10 @@ function pipeline(in1, in2, out) {
                 produce(_5);
                 __event_t++;
               }}
-              { let ___3 = crop_dim(_3, 1, [_7, _7]); {
-                let _3 = ___3;
+              { let ___2 = crop_dim(_2, 1, [_7, _7]); {
+                let _2 = ___2;
                 consume(_5);
-                produce(_3);
+                produce(_2);
                 __event_t++;
               }}
               { let ___4 = crop_dim(_4, 1, [(_7 + 2), (_7 + 2)]); {
@@ -410,16 +410,16 @@ function pipeline(in1, in2, out) {
                 produce(_4);
                 __event_t++;
               }}
-              { let ___2 = crop_dim(_2, 1, [_7, _7]); {
-                let _2 = ___2;
+              { let ___3 = crop_dim(_3, 1, [_7, _7]); {
+                let _3 = ___3;
                 consume(_4);
-                produce(_2);
+                produce(_3);
                 __event_t++;
               }}
               { let ___8 = crop_dim(out, 1, [_7, _7]); {
                 let _8 = ___8;
-                consume(_3);
                 consume(_2);
+                consume(_3);
                 produce(_8);
                 __event_t++;
               }}
