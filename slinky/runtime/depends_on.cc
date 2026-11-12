@@ -16,7 +16,7 @@ namespace slinky {
 
 namespace {
 
-class dependencies : public recursive_node_visitor {
+class dependencies {
 public:
   bool is_pure = true;
 
@@ -67,7 +67,7 @@ public:
 
   depends_on_result* no_dummy(depends_on_result* deps) const { return deps != &dummy_deps ? deps : nullptr; }
 
-  void visit(const variable* op) override {
+  void visit(const variable* op) {
     if (is_pure && op->field != buffer_field::none) is_pure = false;
     if (depends_on_result* deps = find_deps(op->sym)) {
       switch (op->field) {
@@ -84,7 +84,7 @@ public:
       }
     }
   }
-  void visit(const call* op) override {
+  void visit(const call* op) {
     if (op->intrinsic == intrinsic::buffer_at) {
       is_pure = false;
       assert(op->args.size() >= 1);
@@ -97,13 +97,15 @@ public:
       }
 
       for (std::size_t i = 1; i < op->args.size(); ++i) {
-        if (op->args[i].defined()) op->args[i].accept(this);
+        visit(op->args[i]);
       }
     } else {
       if (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::validate_buffer) {
         is_pure = false;
       }
-      recursive_node_visitor::visit(op);
+      for (const expr& i : op->args) {
+        visit(i);
+      }
     }
   }
 
@@ -111,20 +113,36 @@ public:
   void visit_let(const T* op) {
     size_t var_deps_count = var_deps.size();
     for (const auto& p : op->lets) {
-      p.second.accept(this);
+      visit(p.second);
       if (decl_needs_shadow(p.first)) {
         var_deps.push_back({p.first, &dummy_deps});
       }
     }
-    op->body.accept(this);
+    visit(op->body);
     var_deps.resize(var_deps_count);
   }
 
-  void visit(const let* op) override { visit_let(op); }
-  void visit(const let_stmt* op) override { visit_let(op); }
+  void visit(const let* op) { visit_let(op); }
+  void visit(const let_stmt* op) { visit_let(op); }
+
+  void visit(const binary_op* op) {
+    visit(op->a);
+    visit(op->b);
+  }
+  void visit(const logical_not* op) { visit(op->a); }
+  void visit(const class select* op) {
+    visit(op->condition);
+    visit(op->true_value);
+    visit(op->false_value);
+  }
+
+  void visit(const block* op) {
+    for (const stmt& s : op->stmts) {
+      visit(s);
+    }
+  }
 
   void visit_sym_body(var sym, depends_on_result* src_deps, const stmt& body) {
-    if (!body.defined()) return;
     size_t var_deps_count = var_deps.size();
     if (no_dummy(src_deps)) {
       // We have src_deps we want to transitively add to via this declaration.
@@ -138,29 +156,28 @@ public:
       // contaminating the dependencies.
       var_deps.push_back({sym, &dummy_deps});
     }
-    body.accept(this);
+    visit(body);
     var_deps.resize(var_deps_count);
   }
 
   void visit_sym_body(var sym, var src, depends_on_result* src_deps, const stmt& body) {
     if (sym == src) {
-      if (!body.defined()) return;
-      body.accept(this);
+      visit(body);
     } else {
       visit_sym_body(sym, src_deps, body);
     }
   }
 
-  void visit(const loop* op) override {
-    op->bounds.min.accept(this);
-    op->bounds.max.accept(this);
-    if (op->step.defined()) op->step.accept(this);
-    if (op->max_workers.defined()) op->max_workers.accept(this);
+  void visit(const loop* op) {
+    visit(op->bounds.min);
+    visit(op->bounds.max);
+    visit(op->step);
+    visit(op->max_workers);
 
     visit_sym_body(op->sym, nullptr, op->body);
   }
 
-  void visit(const call_stmt* op) override {
+  void visit(const call_stmt* op) {
     for (var i : op->inputs) {
       if (depends_on_result* deps = find_deps(i)) {
         deps->var = true;
@@ -177,11 +194,11 @@ public:
       }
     }
     for (const expr& i : op->scalars) {
-      if (i.defined()) i.accept(this);
+      visit(i);
     }
   }
 
-  void visit(const copy_stmt* op) override {
+  void visit(const copy_stmt* op) {
     if (depends_on_result* deps = find_deps(op->src)) {
       deps->var = true;
       deps->buffer_src = true;
@@ -210,38 +227,38 @@ public:
       }
     }
     for (const expr& i : op->src_x) {
-      i.accept(this);
+      visit(i);
     }
     var_deps.resize(var_deps_count);
   }
 
-  void visit(const clone_buffer* op) override { visit_sym_body(op->sym, op->src, find_deps(op->src), op->body); }
+  void visit(const clone_buffer* op) { visit_sym_body(op->sym, op->src, find_deps(op->src), op->body); }
 
-  void visit(const allocate* op) override {
-    op->elem_size.accept(this);
+  void visit(const allocate* op) {
+    visit(op->elem_size);
     for (const dim_expr& i : op->dims) {
-      i.bounds.min.accept(this);
-      i.bounds.max.accept(this);
-      if (i.stride.defined()) i.stride.accept(this);
-      if (i.fold_factor.defined()) i.fold_factor.accept(this);
+      visit(i.bounds.min);
+      visit(i.bounds.max);
+      visit(i.stride);
+      visit(i.fold_factor);
     }
     visit_sym_body(op->sym, nullptr, op->body);
   }
-  void visit(const make_buffer* op) override {
-    if (op->base.defined()) op->base.accept(this);
-    if (op->elem_size.defined()) op->elem_size.accept(this);
+  void visit(const make_buffer* op) {
+    visit(op->base);
+    visit(op->elem_size);
     for (const dim_expr& i : op->dims) {
-      if (i.bounds.min.defined()) i.bounds.min.accept(this);
-      if (i.bounds.max.defined()) i.bounds.max.accept(this);
-      if (i.stride.defined()) i.stride.accept(this);
-      if (i.fold_factor.defined()) i.fold_factor.accept(this);
+      visit(i.bounds.min);
+      visit(i.bounds.max);
+      visit(i.stride);
+      visit(i.fold_factor);
     }
     visit_sym_body(op->sym, nullptr, op->body);
   }
-  void visit(const crop_buffer* op) override {
+  void visit(const crop_buffer* op) {
     for (const interval_expr& i : op->bounds) {
-      if (i.min.defined()) i.min.accept(this);
-      if (i.max.defined()) i.max.accept(this);
+      visit(i.min);
+      visit(i.max);
     }
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
@@ -250,9 +267,9 @@ public:
     }
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
-  void visit(const crop_dim* op) override {
-    if (op->bounds.min.defined()) op->bounds.min.accept(this);
-    if (op->bounds.max.defined()) op->bounds.max.accept(this);
+  void visit(const crop_dim* op) {
+    visit(op->bounds.min);
+    visit(op->bounds.max);
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
       deps->buffer_bounds = true;
@@ -260,9 +277,9 @@ public:
     }
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
-  void visit(const slice_buffer* op) override {
+  void visit(const slice_buffer* op) {
     for (const expr& i : op->at) {
-      if (i.defined()) i.accept(this);
+      visit(i);
     }
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
@@ -271,8 +288,8 @@ public:
     }
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
-  void visit(const slice_dim* op) override {
-    op->at.accept(this);
+  void visit(const slice_dim* op) {
+    visit(op->at);
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
       deps->buffer_bounds = true;
@@ -280,13 +297,66 @@ public:
     }
     visit_sym_body(op->sym, op->src, deps, op->body);
   }
-  void visit(const transpose* op) override {
+  void visit(const transpose* op) {
     depends_on_result* deps = find_deps(op->src);
     if (deps) {
       deps->buffer_bounds = true;  // TODO: Maybe not?
       deps->buffer_dims = true;
     }
     visit_sym_body(op->sym, op->src, deps, op->body);
+  }
+
+  void visit(const async* op) {
+    visit(op->task);
+    visit(op->body);
+  }
+  void visit(const check* op) { visit(op->condition); }
+
+  void visit(expr_ref e) {
+    switch (e.type()) {
+    case expr_node_type::variable: return visit(static_cast<const variable*>(e.get()));
+    case expr_node_type::let: return visit(static_cast<const let*>(e.get()));
+    case expr_node_type::add:
+    case expr_node_type::sub:
+    case expr_node_type::mul:
+    case expr_node_type::div:
+    case expr_node_type::mod:
+    case expr_node_type::min:
+    case expr_node_type::max:
+    case expr_node_type::equal:
+    case expr_node_type::not_equal:
+    case expr_node_type::less:
+    case expr_node_type::less_equal:
+    case expr_node_type::logical_and:
+    case expr_node_type::logical_or: return visit(static_cast<const binary_op*>(e.get()));
+    case expr_node_type::logical_not: return visit(static_cast<const logical_not*>(e.get()));
+    case expr_node_type::select: return visit(static_cast<const class select*>(e.get()));
+    case expr_node_type::call: return visit(static_cast<const call*>(e.get()));
+    case expr_node_type::constant:
+    case expr_node_type::constant_buffer:
+    case expr_node_type::none: return;
+    }
+  }
+
+  void visit(stmt_ref s) {
+    switch (s.type()) {
+    case stmt_node_type::call_stmt: return visit(static_cast<const call_stmt*>(s.get()));
+    case stmt_node_type::copy_stmt: return visit(static_cast<const copy_stmt*>(s.get()));
+    case stmt_node_type::let_stmt: return visit(static_cast<const let_stmt*>(s.get()));
+    case stmt_node_type::block: return visit(static_cast<const block*>(s.get()));
+    case stmt_node_type::loop: return visit(static_cast<const loop*>(s.get()));
+    case stmt_node_type::allocate: return visit(static_cast<const allocate*>(s.get()));
+    case stmt_node_type::make_buffer: return visit(static_cast<const make_buffer*>(s.get()));
+    case stmt_node_type::clone_buffer: return visit(static_cast<const clone_buffer*>(s.get()));
+    case stmt_node_type::crop_buffer: return visit(static_cast<const crop_buffer*>(s.get()));
+    case stmt_node_type::crop_dim: return visit(static_cast<const crop_dim*>(s.get()));
+    case stmt_node_type::slice_buffer: return visit(static_cast<const slice_buffer*>(s.get()));
+    case stmt_node_type::slice_dim: return visit(static_cast<const slice_dim*>(s.get()));
+    case stmt_node_type::transpose: return visit(static_cast<const transpose*>(s.get()));
+    case stmt_node_type::async: return visit(static_cast<const async*>(s.get()));
+    case stmt_node_type::check: return visit(static_cast<const check*>(s.get()));
+    case stmt_node_type::none: return;
+    }
   }
 };
 
@@ -295,14 +365,14 @@ public:
 void depends_on(expr_ref e, span<std::pair<var, depends_on_result&>> var_deps) {
   if (var_deps.empty()) return;
   dependencies v(var_deps);
-  if (e.defined()) e.accept(&v);
+  v.visit(e);
 }
 
 void depends_on(stmt_ref s, span<std::pair<var, depends_on_result&>> var_deps) {
   scoped_trace trace("depends_on");
   if (var_deps.empty()) return;
   dependencies v(var_deps);
-  if (s.defined()) s.accept(&v);
+  v.visit(s);
 }
 
 void depends_on(expr_ref e, var x, depends_on_result& deps) {
@@ -358,7 +428,7 @@ bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data(
 
 bool is_pure(expr_ref x) {
   dependencies v;
-  x.accept(&v);
+  v.visit(x);
   return v.is_pure;
 }
 
@@ -378,13 +448,13 @@ std::vector<var> keys(const std::map<var, depends_on_result>& m) {
 std::vector<var> find_dependencies(expr_ref e) {
   std::map<var, depends_on_result> deps;
   dependencies v(deps);
-  if (e.defined()) e.accept(&v);
+  v.visit(e);
   return keys(deps);
 }
 std::vector<var> find_dependencies(stmt_ref s) {
   std::map<var, depends_on_result> deps;
   dependencies v(deps);
-  if (s.defined()) s.accept(&v);
+  v.visit(s);
   return keys(deps);
 }
 
@@ -397,7 +467,7 @@ std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output) {
 std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool src, bool output, bool dst) {
   std::map<var, depends_on_result> deps;
   dependencies v(deps);
-  if (s.defined()) s.accept(&v);
+  v.visit(s);
 
   std::vector<var> result;
   result.reserve(deps.size());
@@ -413,7 +483,7 @@ std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool src, bool
 var find_buffer_data_dependency(expr_ref e) {
   std::map<var, depends_on_result> deps;
   dependencies v(deps);
-  if (e.defined()) e.accept(&v);
+  v.visit(e);
 
   var result;
   for (const auto& i : deps) {
