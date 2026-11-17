@@ -1,4 +1,14 @@
 cmake_minimum_required(VERSION 3.23)
+
+# De-duplicate static libraries on link lines when the linker supports it
+# (e.g. Apple ld, which otherwise warns about duplicate libraries).
+if (POLICY CMP0156)
+    cmake_policy(SET CMP0156 NEW)
+endif ()
+if (POLICY CMP0179)
+    cmake_policy(SET CMP0179 NEW)
+endif ()
+
 project(slinky VERSION 0.1.0 LANGUAGES CXX)
 
 include(CMakeDependentOption)

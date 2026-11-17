@@ -2785,7 +2785,7 @@ public:
   symbolic_bound_evaluator(int sign) : sign(sign) { assert(sign != 0); }
 
   using node_mutator::mutate;
-  expr mutate(const expr& x) {
+  expr mutate(const expr& x) override {
     switch (x.type()) {
     case expr_node_type::constant:
     case expr_node_type::variable: return x;
