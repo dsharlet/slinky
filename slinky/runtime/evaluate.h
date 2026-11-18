@@ -131,10 +131,24 @@ public:
   void* user_data = nullptr;
 };
 
-index_t evaluate(const expr& e, eval_context& context);
-index_t evaluate(const stmt& s, eval_context& context);
-index_t evaluate(const expr& e);
-index_t evaluate(const stmt& s);
+namespace internal {
+
+index_t evaluate_impl(expr_ref e, eval_context& context);
+index_t evaluate_impl(expr_ref e);
+
+}  // namespace internal
+
+inline index_t evaluate(expr_ref e, eval_context& context) {
+  if (auto c = as_constant(e)) return *c;
+  return internal::evaluate_impl(e, context);
+}
+inline index_t evaluate(expr_ref e) {
+  if (auto c = as_constant(e)) return *c;
+  return internal::evaluate_impl(e);
+}
+
+index_t evaluate(stmt_ref s, eval_context& context);
+index_t evaluate(stmt_ref s);
 
 }  // namespace slinky
 
