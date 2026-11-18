@@ -1257,6 +1257,7 @@ class pipeline_builder {
           }
         }
         assert(matched);
+        (void)matched;
       }
     }
 

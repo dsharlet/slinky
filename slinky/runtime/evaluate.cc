@@ -1031,16 +1031,18 @@ SLINKY_INLINE index_t eval(const check* op, eval_context& ctx) {
 
 }  // namespace
 
-index_t evaluate(const expr& e, eval_context& context) { return eval(e, context); }
+namespace internal {
 
-index_t evaluate(const stmt& s, eval_context& context) { return eval(s, context); }
-
-index_t evaluate(const expr& e) {
+index_t evaluate_impl(expr_ref e, eval_context& context) { return eval(e, context); }
+index_t evaluate_impl(expr_ref e) {
   eval_context ctx;
-  return evaluate(e, ctx);
+  return evaluate_impl(e, ctx);
 }
 
-index_t evaluate(const stmt& s) {
+}  // namespace internal
+
+index_t evaluate(stmt_ref s, eval_context& context) { return eval(s, context); }
+index_t evaluate(stmt_ref s) {
   eval_context ctx;
   return evaluate(s, ctx);
 }
