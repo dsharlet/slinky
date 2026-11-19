@@ -1474,6 +1474,33 @@ TEST(simplify, modulus_remainder) {
   ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {8, 0}}}), matches((x + 15) / 16));
 }
 
+TEST(simplify, div_mod_min_negative_one) {
+  const index_t int_min = std::numeric_limits<index_t>::min();
+  eval_context ctx;
+  ctx[x] = int_min;
+
+  // Simplification removes / -1 without overflow; runtime evaluation must remain consistent and well-defined.
+  expr div_twice = (x / -1) / -1;
+  ASSERT_THAT(simplify(div_twice), matches(x));
+  ASSERT_EQ(evaluate(simplify(div_twice), ctx), int_min);
+  ASSERT_EQ(evaluate(div_twice, ctx), evaluate(simplify(div_twice), ctx));
+
+  expr div_twice_const = (expr(int_min) / -1) / -1;
+  ASSERT_THAT(simplify(div_twice_const), matches(int_min));
+  ASSERT_EQ(evaluate(div_twice_const), evaluate(simplify(div_twice_const)));
+
+  // Bounds analysis proves % -1 is 0; both evaluate() and simplify() must handle it without UB in modulus_of.
+  expr mod_const = expr(int_min) % -1;
+  ASSERT_EQ(evaluate_constant(mod_const), 0);
+  ASSERT_EQ(evaluate(mod_const), 0);
+  ASSERT_EQ(evaluate(simplify(mod_const)), 0);
+
+  expr mod_var = x % -1;
+  ASSERT_THAT(simplify(mod_var), matches(0));
+  ASSERT_EQ(evaluate_constant(mod_var), 0);
+  ASSERT_EQ(evaluate(mod_var, ctx), 0);
+}
+
 TEST(simplify, fuzz) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);
