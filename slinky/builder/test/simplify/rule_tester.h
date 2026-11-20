@@ -86,38 +86,6 @@ SLINKY_UNIQUE auto substitute(const pattern_staircase<X, A, B, C>& p, const matc
   return x;
 }
 
-template <typename T, typename Fn>
-SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
-  return r.fn(substitute(r.a, ctx));
-}
-
-template <typename T>
-SLINKY_UNIQUE index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
-  return substitute(r.a, ctx);
-}
-
-template <typename T>
-SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
-  return boolean(substitute(r.a, ctx));
-}
-
-template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
-SLINKY_UNIQUE index_t substitute(
-    const replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>& r, const match_context& ctx) {
-  index_t a1 = substitute(r.a1, ctx);
-  index_t b1 = substitute(r.b1, ctx);
-  index_t c1 = substitute(r.c1, ctx);
-  index_t a2 = substitute(r.a2, ctx);
-  index_t b2 = substitute(r.b2, ctx);
-  index_t c2 = substitute(r.c2, ctx);
-  auto bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
-  if (r.bound_sign < 0) {
-    return bounds.min ? *bounds.min : std::numeric_limits<index_t>::min();
-  } else {
-    return bounds.max ? *bounds.max : std::numeric_limits<index_t>::max();
-  }
-}
-
 }  // namespace rewrite
 
 class rule_tester {
