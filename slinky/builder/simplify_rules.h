@@ -295,7 +295,9 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + (c0 - y), (x - y) + c0) ||
       apply((x + may_be<0>(c0)) + (y + may_be<0>(c1)), when(c0 != 0 || c1 != 0, (x + y) + eval(c0 + c1))) ||
 
-      apply(staircase(x, c0, c1, c2) + c3, when(c0 != 0 && c1 != 0 && c2 != 0 && c3%c2 == 0, ((x + eval((c3/c2)*c1 + c0))/c1)*c2)) ||
+      apply(staircase(x, c0, c1, c2) + c3,
+        when(c0 != 0 && c1 != 0 && c2 != 0 && c3%c2 == 0, ((x + eval((c3/c2)*c1 + c0))/c1)*c2,
+          euclid(c3, c2), cong(x + ((c3/c2)*c1 + c0), x + c0, c1, c3/c2))) ||
       apply(staircase(x, 0, c0, c0) + x%c0, when(c0 != 0, x)) ||
 
       apply(min(x, y + c1) + c2, when(c1 == -c2, min(y, x + c2))) ||
@@ -332,10 +334,24 @@ bool apply_sub_rules(Fn&& apply) {
 
       // These rules taken from
       // https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Sub.cpp#L411-L421
-      apply((x + y)/c0 - (x + may_be<0>(c1))/c0, when(c0 > 0, ((y - c1) + ((x + eval(c1%c0))%c0))/c0)) ||
-      apply((x + may_be<0>(c1))/c0 - (x + y)/c0, when(c0 > 0, ((eval(c0 + c1 - 1) - y) - ((x + eval(c1%c0))%c0))/c0)) ||
-      apply((x - y)/c0 - (x + may_be<0>(c1))/c0, when(c0 > 0, (((x + eval(c1%c0))%c0) - y - c1)/c0)) ||
-      apply((x + may_be<0>(c1))/c0 - (x - y)/c0, when(c0 > 0, ((y + eval(c0 + c1 - 1)) - ((x + eval(c1%c0))%c0))/c0)) ||
+      apply((x + y)/c0 - (x + may_be<0>(c1))/c0,
+        when(c0 > 0, ((y - c1) + ((x + eval(c1%c0))%c0))/c0,
+          euclid(c1, c0), cong(x + c1, x + c1%c0, c0, c1/c0), euclid(x + c1, c0),
+          cong(x + y, (y - c1) + (x + c1%c0)%c0, c0, (x + c1)/c0))) ||
+      apply((x + may_be<0>(c1))/c0 - (x + y)/c0,
+        when(c0 > 0, ((eval(c0 + c1 - 1) - y) - ((x + eval(c1%c0))%c0))/c0,
+          euclid(c1, c0), cong(x + c1, x + c1%c0, c0, c1/c0), euclid(x + c1, c0),
+          cong(x + y, (y - c1) + (x + c1%c0)%c0, c0, (x + c1)/c0),
+          negdiv(((c0 + c1 - 1) - y) - (x + c1%c0)%c0, (y - c1) + (x + c1%c0)%c0, c0))) ||
+      apply((x - y)/c0 - (x + may_be<0>(c1))/c0,
+        when(c0 > 0, (((x + eval(c1%c0))%c0) - y - c1)/c0,
+          euclid(c1, c0), cong(x + c1, x + c1%c0, c0, c1/c0), euclid(x + c1, c0),
+          cong(x - y, ((x + c1%c0)%c0 - y) - c1, c0, (x + c1)/c0))) ||
+      apply((x + may_be<0>(c1))/c0 - (x - y)/c0,
+        when(c0 > 0, ((y + eval(c0 + c1 - 1)) - ((x + eval(c1%c0))%c0))/c0,
+          euclid(c1, c0), cong(x + c1, x + c1%c0, c0, c1/c0), euclid(x + c1, c0),
+          cong(x - y, ((x + c1%c0)%c0 - y) - c1, c0, (x + c1)/c0),
+          negdiv((y + (c0 + c1 - 1)) - (x + c1%c0)%c0, ((x + c1%c0)%c0 - y) - c1, c0))) ||
       apply(x - (x/c0)*c0, when(c0 > 0, x%c0)) ||
       apply((x/c0)*c0 - x, when(c0 > 0, -(x%c0))) ||
 
@@ -420,13 +436,25 @@ bool apply_div_rules(Fn&& apply) {
       apply((x/c0)/c1, when(c0 > 0, x/eval(c0*c1))) ||
       apply((x*y)/x, y*(x != 0)) ||
 
-      apply((x + may_be<1>(y)*c0)/c1, when(c0%c1 == 0, y*eval(c0/c1) + x/c1)) ||
-      apply((may_be<1>(y)*c0 - x)/c1, when(c0%c1 == 0 && c0 != 0, y*eval(c0/c1) + (-x)/c1)) ||
+      apply((x + may_be<1>(y)*c0)/c1,
+        when(c0%c1 == 0, y*eval(c0/c1) + x/c1,
+          cong(x + y*c0, x, c1, y*eval(c0/c1)))) ||
+      apply((may_be<1>(y)*c0 - x)/c1,
+        when(c0%c1 == 0 && c0 != 0, y*eval(c0/c1) + (-x)/c1,
+          cong(y*c0 - x, -x, c1, y*eval(c0/c1)))) ||
 
-      apply(min(y, may_be<0>(z) + x*c0)/c1, when(c1 > 0 && c0%c1 == 0, min(x*eval(c0/c1) + z/c1, y/c1))) ||
-      apply(max(y, may_be<0>(z) + x*c0)/c1, when(c1 > 0 && c0%c1 == 0, max(x*eval(c0/c1) + z/c1, y/c1))) ||
-      apply(min(y, x*c0 - z)/c1, when(c1 > 0 && c0%c1 == 0, min(x*eval(c0/c1) + (-z)/c1, y/c1))) ||
-      apply(max(y, x*c0 - z)/c1, when(c1 > 0 && c0%c1 == 0, max(x*eval(c0/c1) + (-z)/c1, y/c1))) ||
+      apply(min(y, may_be<0>(z) + x*c0)/c1,
+        when(c1 > 0 && c0%c1 == 0, min(x*eval(c0/c1) + z/c1, y/c1),
+          cong(z + x*c0, z, c1, x*eval(c0/c1)))) ||
+      apply(max(y, may_be<0>(z) + x*c0)/c1,
+        when(c1 > 0 && c0%c1 == 0, max(x*eval(c0/c1) + z/c1, y/c1),
+          cong(z + x*c0, z, c1, x*eval(c0/c1)))) ||
+      apply(min(y, x*c0 - z)/c1,
+        when(c1 > 0 && c0%c1 == 0, min(x*eval(c0/c1) + (-z)/c1, y/c1),
+          cong(x*c0 - z, -z, c1, x*eval(c0/c1)))) ||
+      apply(max(y, x*c0 - z)/c1,
+        when(c1 > 0 && c0%c1 == 0, max(x*eval(c0/c1) + (-z)/c1, y/c1),
+          cong(x*c0 - z, -z, c1, x*eval(c0/c1)))) ||
 
       apply(select(x, c0, c1)/c2, select(x, eval(c0/c2), eval(c1/c2))) ||
       apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
@@ -443,7 +471,9 @@ bool apply_mod_rules(Fn&& apply) {
   return
       apply(x%x, 0) ||
 
-      apply((x + c0)%c1, when(c0%c1 != c0, (x + eval(c0%c1))%c1)) ||
+      apply((x + c0)%c1,
+        when(c0%c1 != c0, (x + eval(c0%c1))%c1,
+          euclid(c0, c1), cong(x + c0, x + c0%c1, c1, c0/c1))) ||
 
       apply(select(x, c0, c1)%c2, select(x, eval(c0%c2), eval(c1%c2))) ||
       apply(select(x, y, c1)%c2, select(x, y%c2, eval(c1%c2))) ||
