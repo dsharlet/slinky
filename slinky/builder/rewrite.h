@@ -332,7 +332,7 @@ SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, con
 }
 SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const mod*) {
   if (is_zero(a)) return a;
-  if (is_one(b)) return 0;
+  if (is_zero(b) || is_one(b) || is_constant(b, -1)) return 0;
   return make_binary<mod>(std::move(a), std::move(b));
 }
 SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const logical_and*) {

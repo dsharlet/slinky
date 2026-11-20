@@ -147,17 +147,18 @@ expr simplify(const mul* op, expr a, expr b) {
     return *ca * *cb;
   }
 
+  if (is_zero(a) || is_zero(b)) {
+    return 0;
+  }
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   int inf_a = is_infinity(a);
   int inf_b = is_infinity(b);
   if (inf_a && inf_b) return infinity(inf_a * inf_b);
   if (inf_a || inf_b) {
-    // As in mul::make, x * 0 is 0 for any x. Otherwise, the sign of the result depends on the sign of the finite
-    // operand.
+    // The sign of the result depends on the sign of the finite operand.
     const expr& other = inf_a ? b : a;
     const int sign = inf_a + inf_b;
-    if (is_zero(other)) return 0;
     if (is_positive(other)) return infinity(sign);
     if (is_negative(other)) return infinity(-sign);
     return slinky::indeterminate();
@@ -180,6 +181,9 @@ expr simplify(const div* op, expr a, expr b) {
     return euclidean_div(*ca, *cb);
   }
 
+  if (is_zero(a) || is_zero(b)) {
+    return 0;
+  }
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   int inf_a = is_infinity(a);
@@ -187,8 +191,6 @@ expr simplify(const div* op, expr a, expr b) {
   if (inf_a && inf_b) return slinky::indeterminate();
   if (inf_b) return 0;
   if (inf_a) {
-    // As for mul, x / 0 is 0 for any x, and otherwise we need to know the sign of b.
-    if (is_zero(b)) return 0;
     if (is_positive(b)) return infinity(inf_a);
     if (is_negative(b)) return infinity(-inf_a);
     return slinky::indeterminate();
@@ -211,6 +213,9 @@ expr simplify(const mod* op, expr a, expr b) {
     return euclidean_mod(*ca, *cb);
   }
 
+  if (is_zero(a) || is_zero(b) || is_one(b) || is_constant(b, -1)) {
+    return 0;
+  }
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
   if (is_infinity(a) || is_infinity(b)) return slinky::indeterminate();
@@ -401,8 +406,7 @@ expr simplify(const class logical_not* op, expr a) {
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  // Infinities are truthy.
-  if (is_true(c) || is_infinity(c)) {
+  if (is_true(c)) {
     return t;
   } else if (is_false(c)) {
     return f;
@@ -431,15 +435,18 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
 expr simplify(const call* op, intrinsic fn, const call::callable& target, std::vector<expr> args) {
   if (fn == intrinsic::and_then || fn == intrinsic::or_else) {
     assert(args.size() == 2);
+    const bool is_and = fn == intrinsic::and_then;
+    if (is_and && is_false(args[0])) return expr(0);
+    if (!is_and && is_true(args[0])) return expr(1);
+    if (!args[0].defined() || !args[1].defined()) return expr();
     for (expr& i : args) {
       // Infinities are truthy.
       if (is_infinity(i)) i = true;
     }
-    const bool is_and = fn == intrinsic::and_then;
     if (auto ca = as_constant(args[0])) {
       // If a is false (for and_then) or true (for or_else), b isn't evaluated. Otherwise, the result is boolean(b).
       if ((*ca != 0) != is_and) return !is_and;
-      return is_indeterminate(args[1]) ? args[1] : boolean(args[1]);
+      return boolean(args[1]);
     }
     if (is_indeterminate(args[0])) return args[0];
     if (is_indeterminate(args[1])) return args[1];
@@ -483,7 +490,9 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
     }
   } else if (fn == intrinsic::abs) {
     assert(args.size() == 1);
-    if (is_indeterminate(args[0])) {
+    if (!args[0].defined()) {
+      return expr();
+    } else if (is_indeterminate(args[0])) {
       return args[0];
     } else if (is_infinity(args[0])) {
       return positive_infinity();

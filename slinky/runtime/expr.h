@@ -690,11 +690,6 @@ SLINKY_INLINE bool is_constant(expr_ref x, index_t value) {
 }
 SLINKY_INLINE bool is_zero(expr_ref x) { return is_constant(x, 0); }
 SLINKY_INLINE bool is_one(expr_ref x) { return is_constant(x, 1); }
-SLINKY_INLINE bool is_true(expr_ref x) {
-  const constant* cx = x.as<constant>();
-  return cx ? cx->value != 0 : false;
-}
-SLINKY_INLINE bool is_false(expr_ref x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
 SLINKY_INLINE const call* as_intrinsic(expr_ref x, intrinsic fn) {
@@ -710,6 +705,24 @@ SLINKY_INLINE int is_infinity(expr_ref x) {
   if (is_negative_infinity(x)) return -1;
   return 0;
 }
+
+SLINKY_INLINE bool is_true(expr_ref x) {
+  if (const constant* cx = x.as<constant>()) {
+    return cx->value != 0;
+  }
+  if (x.type() != expr_node_type::call) {
+    return false;
+  }
+  while (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    x = c->args[0];
+  }
+  if (const constant* cx = x.as<constant>()) {
+    return cx->value != 0;
+  }
+  return is_infinity(x) != 0;
+}
+SLINKY_INLINE bool is_false(expr_ref x) { return is_zero(x); }
 bool is_finite(expr_ref x);
 // Returns true if `x` contains an infinity or indeterminate anywhere in its tree.
 bool contains_non_finite(expr_ref x);

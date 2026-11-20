@@ -10,6 +10,7 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -333,8 +334,8 @@ expr div::make(expr a, expr b) {
   return make_bin_op<div>(std::move(a), std::move(b));
 }
 expr mod::make(expr a, expr b) {
-  // `0%x`, `x%0` and `x%1` are all zero.
-  if (is_zero(a) || is_zero(b) || is_one(b)) return expr(0);
+  // `0%x`, `x%0`, `x%1` and `x%-1` are all zero.
+  if (is_zero(a) || is_zero(b) || is_one(b) || is_constant(b, -1)) return expr(0);
   return make_bin_op<mod>(std::move(a), std::move(b));
 }
 expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)); }
@@ -354,9 +355,9 @@ expr logical_or::make(expr a, expr b) {
   return make_bin_op<logical_or>(std::move(a), std::move(b));
 }
 expr logical_not::make(expr a) {
-  if (const constant* c = a.as<constant>()) {
-    return expr(make_constant(c->value == 0 ? 1 : 0));
-  }
+  if (!a.defined()) return a;
+  if (is_true(a)) return expr(0);
+  if (is_false(a)) return expr(1);
   logical_not* n = new logical_not();
   n->a = std::move(a);
   return expr(n);
@@ -459,16 +460,31 @@ expr interval_expr::contains(expr_ref x) const {
 }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
-  if (is_one(scale)) {
+  if ((is_positive_infinity(min) && is_negative_infinity(max)) || is_one(scale)) {
+    // Empty interval stays empty; scaling by 1 is a no-op.
+  } else if (is_indeterminate(scale)) {
+    if (is_zero(min) && is_zero(max)) {
+      min = max = expr(0);
+    } else {
+      *this = all();
+    }
   } else if (is_point()) {
     min = max = mul::make(min, scale);
+  } else if (is_zero(scale)) {
+    min = max = expr(0);
   } else if (is_non_negative(scale)) {
-    if (min.defined()) min = mul::make(min, scale);
-    if (max.defined()) max = mul::make(max, scale);
+    if (min.defined() && !is_infinity(min)) min = mul::make(min, scale);
+    if (max.defined() && !is_infinity(max)) max = mul::make(max, scale);
   } else if (is_negative(scale)) {
     std::swap(min, max);
-    if (min.defined()) min = mul::make(min, scale);
-    if (max.defined()) max = mul::make(max, scale);
+    if (min.defined()) {
+      min = is_infinity(min) ? infinity(-is_infinity(min)) : mul::make(min, scale);
+    }
+    if (max.defined()) {
+      max = is_infinity(max) ? infinity(-is_infinity(max)) : mul::make(max, scale);
+    }
+  } else if (is_infinity(min) || is_infinity(max)) {
+    *this = all();
   } else {
     if (min.defined()) min = mul::make(min, scale);
     if (max.defined()) max = mul::make(max, scale);
@@ -478,16 +494,27 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
 }
 
 interval_expr& interval_expr::operator/=(const expr& scale) {
-  if (is_one(scale)) {
+  if ((is_positive_infinity(min) && is_negative_infinity(max)) || is_one(scale)) {
+    // Empty interval stays empty; dividing by 1 is a no-op.
+  } else if (is_indeterminate(scale)) {
+    *this |= -*this;
   } else if (is_point()) {
     min = max = div::make(min, scale);
+  } else if (is_zero(scale)) {
+    min = max = expr(0);
   } else if (is_non_negative(scale)) {
-    if (min.defined()) min = div::make(min, scale);
-    if (max.defined()) max = div::make(max, scale);
+    if (min.defined() && !is_infinity(min)) min = div::make(min, scale);
+    if (max.defined() && !is_infinity(max)) max = div::make(max, scale);
   } else if (is_negative(scale)) {
     std::swap(min, max);
-    if (min.defined()) min = div::make(min, scale);
-    if (max.defined()) max = div::make(max, scale);
+    if (min.defined()) {
+      min = is_infinity(min) ? infinity(-is_infinity(min)) : div::make(min, scale);
+    }
+    if (max.defined()) {
+      max = is_infinity(max) ? infinity(-is_infinity(max)) : div::make(max, scale);
+    }
+  } else if (is_infinity(min) || is_infinity(max)) {
+    *this = all();
   } else {
     if (min.defined()) min = div::make(min, scale);
     if (max.defined()) max = div::make(max, scale);
@@ -617,20 +644,22 @@ interval_expr select(const expr& c, interval_expr t, interval_expr f) {
 }
 
 box_expr operator|(box_expr a, const box_expr& b) {
-  a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < b.size(); ++i) {
+  const std::size_t old_a = a.size();
+  const std::size_t n = std::min(old_a, b.size());
+  a.resize(std::max(old_a, b.size()));
+  for (std::size_t i = 0; i < n; ++i) {
     a[i] |= b[i];
+  }
+  for (std::size_t i = n; i < old_a; ++i) {
+    a[i] = interval_expr();
   }
   return a;
 }
 
 box_expr operator&(box_expr a, const box_expr& b) {
   a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
+  for (std::size_t i = 0; i < b.size(); ++i) {
     a[i] &= b[i];
-  }
-  for (std::size_t i = b.size(); i < a.size(); ++i) {
-    a[i] = b[i];
   }
   return a;
 }
@@ -959,11 +988,97 @@ const expr& indeterminate() {
   return e;
 }
 
+namespace {
+
+class non_finite_finder : public expr_visitor {
+public:
+  bool check_undefined;
+  bool found = false;
+  std::unordered_set<const base_expr_node*> visited;
+
+  explicit non_finite_finder(bool check_undefined) : check_undefined(check_undefined) {}
+
+  void check(expr_ref e) {
+    if (found) return;
+    if (!e.defined()) {
+      if (check_undefined) found = true;
+      return;
+    }
+    const expr_node_type t = e.type();
+    if (t == expr_node_type::variable || t == expr_node_type::constant || t == expr_node_type::constant_buffer) {
+      return;
+    }
+    if (is_infinity(e) || is_indeterminate(e)) {
+      found = true;
+      return;
+    }
+    if (!visited.insert(e.get()).second) return;
+    e.accept(this);
+  }
+
+  void visit(const variable*) override {}
+  void visit(const constant*) override {}
+  void visit(const constant_buffer*) override {}
+  void visit(const let* op) override {
+    for (const auto& p : op->lets) {
+      check(p.second);
+    }
+    check(op->body);
+  }
+  void visit_binary(const binary_op* op) {
+    check(op->a);
+    check(op->b);
+  }
+  void visit(const add* op) override { visit_binary(op); }
+  void visit(const sub* op) override { visit_binary(op); }
+  void visit(const mul* op) override { visit_binary(op); }
+  void visit(const div* op) override { visit_binary(op); }
+  void visit(const mod* op) override { visit_binary(op); }
+  void visit(const class min* op) override { visit_binary(op); }
+  void visit(const class max* op) override { visit_binary(op); }
+  void visit(const equal* op) override { visit_binary(op); }
+  void visit(const not_equal* op) override { visit_binary(op); }
+  void visit(const less* op) override { visit_binary(op); }
+  void visit(const less_equal* op) override { visit_binary(op); }
+  void visit(const logical_and* op) override { visit_binary(op); }
+  void visit(const logical_or* op) override { visit_binary(op); }
+  void visit(const logical_not* op) override { check(op->a); }
+  void visit(const class select* op) override {
+    check(op->condition);
+    check(op->true_value);
+    check(op->false_value);
+  }
+  void visit(const call* op) override {
+    const bool optional_args = op->intrinsic == intrinsic::buffer_at ||
+                               op->intrinsic == intrinsic::semaphore_init ||
+                               op->intrinsic == intrinsic::semaphore_signal ||
+                               op->intrinsic == intrinsic::semaphore_wait;
+    for (std::size_t i = 0; i < op->args.size(); ++i) {
+      if (optional_args && i > 0 && !op->args[i].defined()) continue;
+      check(op->args[i]);
+    }
+  }
+};
+
+bool find_non_finite(expr_ref x, bool check_undefined) {
+  if (!x.defined()) return check_undefined;
+  const expr_node_type t = x.type();
+  if (t == expr_node_type::variable || t == expr_node_type::constant || t == expr_node_type::constant_buffer) {
+    return false;
+  }
+  if (is_infinity(x) || is_indeterminate(x)) return true;
+  non_finite_finder finder(check_undefined);
+  finder.check(x);
+  return finder.found;
+}
+
+}  // namespace
+
 bool is_positive(expr_ref x) {
   if (is_positive_infinity(x)) return true;
   if (const call* c = as_intrinsic(x, intrinsic::abs)) {
     assert(c->args.size() == 1);
-    return is_positive(c->args[0]);
+    return is_positive(c->args[0]) || is_negative(c->args[0]);
   }
   auto c = as_constant(x);
   return c ? *c > 0 : false;
@@ -971,7 +1086,10 @@ bool is_positive(expr_ref x) {
 
 bool is_non_negative(expr_ref x) {
   if (is_positive_infinity(x)) return true;
-  if (as_intrinsic(x, intrinsic::abs)) return true;
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return is_non_negative(c->args[0]) || is_negative(c->args[0]) || !find_non_finite(c->args[0], true);
+  }
   auto c = as_constant(x);
   return c ? *c >= 0 : false;
 }
@@ -996,7 +1114,10 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
   }
 }
 
-expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
+expr abs(expr x) {
+  if (!x.defined()) return x;
+  return call::make(intrinsic::abs, {std::move(x)});
+}
 expr align_down(expr x, const expr& a) { return is_one(a) ? x : (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return is_one(a) ? x : ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {
@@ -1007,8 +1128,16 @@ interval_expr align(interval_expr x, const expr& a) {
   }
 }
 
-expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
-expr or_else(expr a, expr b) { return call::make(intrinsic::or_else, {std::move(a), std::move(b)}); }
+expr and_then(expr a, expr b) {
+  if (is_false(a)) return expr(0);
+  if (!a.defined() || !b.defined()) return expr();
+  return call::make(intrinsic::and_then, {std::move(a), std::move(b)});
+}
+expr or_else(expr a, expr b) {
+  if (is_true(a)) return expr(1);
+  if (!a.defined() || !b.defined()) return expr();
+  return call::make(intrinsic::or_else, {std::move(a), std::move(b)});
+}
 
 expr buffer_rank(var buf) { return variable::make(buf, buffer_field::rank); }
 expr buffer_elem_size(var buf) { return variable::make(buf, buffer_field::elem_size); }
@@ -1087,35 +1216,13 @@ bool is_finite(expr_ref x) {
   return false;
 }
 
-namespace {
-
-class non_finite_finder : public recursive_node_visitor {
-public:
-  bool found = false;
-
-  void visit(const call* op) override {
-    if (is_infinity(op) || is_indeterminate(op)) {
-      found = true;
-    } else {
-      recursive_node_visitor::visit(op);
-    }
-  }
-};
-
-}  // namespace
-
-bool contains_non_finite(expr_ref x) {
-  if (!x.defined()) return false;
-  non_finite_finder finder;
-  x.accept(&finder);
-  return finder.found;
-}
+bool contains_non_finite(expr_ref x) { return find_non_finite(x, false); }
 
 expr boolean(expr x) {
-  if (!x.defined() || is_boolean(x)) {
+  if (!x.defined() || is_boolean(x) || is_indeterminate(x)) {
     return x;
-  } else if (auto c = as_constant(x)) {
-    return *c != 0;
+  } else if (is_true(x)) {
+    return expr(1);
   } else {
     return not_equal::make(std::move(x), 0);
   }
