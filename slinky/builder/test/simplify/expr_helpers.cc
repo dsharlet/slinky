@@ -56,7 +56,6 @@ public:
   explicit helper_expr_generator(Rng& rng, int var_count = 4) : rng_(rng), gen_(rng, var_count) {}
 
   void init_context(eval_context& ctx) { gen_.init_context(ctx); }
-  index_t random_constant(int max = 100) { return gen_.random_constant(max); }
 
   expr random_finite_expr(int depth) {
     if (depth <= 0) {
@@ -192,7 +191,7 @@ TEST(expr_helpers, boolean_and_truthiness) {
   helper_expr_generator<gtest_seeded_mt19937> gen(rng);
   eval_context ctx;
 
-  auto check_expr = [&](const expr& e, bool fatal) {
+  auto check_expr = [&](const expr& e) {
     if (!e.defined()) {
       EXPECT_FALSE(boolean(e).defined());
       EXPECT_FALSE(is_boolean(e));
@@ -211,11 +210,7 @@ TEST(expr_helpers, boolean_and_truthiness) {
     auto check = [&](bool cond, const std::string& msg) {
       if (!cond) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << msg << " (e=" << e << ", boolean(e)=" << b << ")";
-        } else {
-          EXPECT_TRUE(cond) << msg << " (e=" << e << ", boolean(e)=" << b << ")";
-        }
+        ADD_FAILURE() << msg << " (e=" << e << ", boolean(e)=" << b << ")";
       }
     };
 
@@ -302,10 +297,10 @@ TEST(expr_helpers, boolean_and_truthiness) {
   };
 
   for (const expr& e : edge_case_exprs()) {
-    check_expr(e, /*fatal=*/false);
+    check_expr(e);
   }
   for (auto _ : fuzz_test(fuzz_duration)) {
-    if (!check_expr(gen.random_extended_expr(2), /*fatal=*/true)) break;
+    if (!check_expr(gen.random_extended_expr(2))) break;
   }
 }
 
@@ -315,7 +310,7 @@ TEST(expr_helpers, sign_predicates) {
   helper_expr_generator<gtest_seeded_mt19937> gen(rng);
   eval_context ctx;
 
-  auto check_expr = [&](const expr& e, bool fatal) {
+  auto check_expr = [&](const expr& e) {
     const bool pos = is_positive(e);
     const bool non_neg = is_non_negative(e);
     const bool neg = is_negative(e);
@@ -327,11 +322,7 @@ TEST(expr_helpers, sign_predicates) {
     auto check = [&](bool cond, const std::string& msg) {
       if (!cond) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << msg << " (e=" << e << ")";
-        } else {
-          EXPECT_TRUE(cond) << msg << " (e=" << e << ")";
-        }
+        ADD_FAILURE() << msg << " (e=" << e << ")";
       }
     };
 
@@ -393,10 +384,12 @@ TEST(expr_helpers, sign_predicates) {
   };
 
   for (const expr& e : edge_case_exprs()) {
-    check_expr(e, /*fatal=*/false);
+    check_expr(e);
   }
+  // Nested undefined inside abs() must not satisfy is_non_negative().
+  EXPECT_FALSE(is_non_negative(abs(select(x, expr(), 5))));
   for (auto _ : fuzz_test(fuzz_duration)) {
-    if (!check_expr(gen.random_extended_expr(2), /*fatal=*/true)) break;
+    if (!check_expr(gen.random_extended_expr(2))) break;
   }
 }
 
@@ -411,19 +404,23 @@ TEST(expr_helpers, finiteness_predicates) {
   EXPECT_FALSE(contains_non_finite(expr()));
   EXPECT_FALSE(is_finite(expr()));
 
+  // Shared-subexpression DAG should be checked in linear time by contains_non_finite().
+  expr dag = x;
+  for (int i = 0; i < 40; ++i) {
+    dag = dag + dag;
+  }
+  EXPECT_FALSE(contains_non_finite(dag));
+  EXPECT_TRUE(is_non_negative(abs(dag)));
+
   gtest_seeded_mt19937 rng;
   helper_expr_generator<gtest_seeded_mt19937> gen(rng);
 
-  auto check_expr = [&](const expr& e, bool fatal) {
+  auto check_expr = [&](const expr& e) {
     bool ok = true;
     auto check = [&](bool cond, const std::string& msg) {
       if (!cond) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << msg << " (e=" << e << ")";
-        } else {
-          EXPECT_TRUE(cond) << msg << " (e=" << e << ")";
-        }
+        ADD_FAILURE() << msg << " (e=" << e << ")";
       }
     };
 
@@ -449,10 +446,10 @@ TEST(expr_helpers, finiteness_predicates) {
   };
 
   for (const expr& e : edge_case_exprs()) {
-    check_expr(e, /*fatal=*/false);
+    check_expr(e);
   }
   for (auto _ : fuzz_test(fuzz_duration)) {
-    if (!check_expr(gen.random_extended_expr(2), /*fatal=*/true)) break;
+    if (!check_expr(gen.random_extended_expr(2))) break;
   }
 }
 
@@ -473,7 +470,7 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
     return true;
   };
 
-  auto check_binary_pair = [&](const expr& a, const expr& b, bool fatal) {
+  auto check_binary_pair = [&](const expr& a, const expr& b) {
     bool ok = true;
     auto check_op = [&](auto tag, const char* name, expr via_make) {
       using Op = std::remove_pointer_t<decltype(tag)>;
@@ -481,13 +478,8 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
       expr rhs = simplify(simplify(static_cast<const Op*>(nullptr), a, b));
       if (!equivalent(lhs, rhs)) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << name << "::make(" << a << ", " << b << ") simplified to " << lhs
-                        << ", but simplify(" << name << ", ...) gave " << rhs;
-        } else {
-          EXPECT_TRUE(false) << name << "::make(" << a << ", " << b << ") simplified to " << lhs
-                             << ", but simplify(" << name << ", ...) gave " << rhs;
-        }
+        ADD_FAILURE() << name << "::make(" << a << ", " << b << ") simplified to " << lhs
+                      << ", but simplify(" << name << ", ...) gave " << rhs;
       }
     };
 
@@ -511,13 +503,8 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
       expr rhs = simplify(simplify(static_cast<const call*>(nullptr), fn, {a, b}));
       if (!equivalent(lhs, rhs)) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << name << "(" << a << ", " << b << ") simplified to " << lhs
-                        << ", but simplify(" << name << ", ...) gave " << rhs;
-        } else {
-          EXPECT_TRUE(false) << name << "(" << a << ", " << b << ") simplified to " << lhs
-                             << ", but simplify(" << name << ", ...) gave " << rhs;
-        }
+        ADD_FAILURE() << name << "(" << a << ", " << b << ") simplified to " << lhs
+                      << ", but simplify(" << name << ", ...) gave " << rhs;
       }
     };
     check_call(intrinsic::and_then, "and_then", and_then(a, b));
@@ -527,11 +514,7 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
     auto check_match = [&](const expr& lhs, const expr& rhs, const char* label) {
       if (!equivalent(lhs, rhs)) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << label << " mismatch for (" << a << ", " << b << "): " << lhs << " vs " << rhs;
-        } else {
-          EXPECT_TRUE(false) << label << " mismatch for (" << a << ", " << b << "): " << lhs << " vs " << rhs;
-        }
+        ADD_FAILURE() << label << " mismatch for (" << a << ", " << b << "): " << lhs << " vs " << rhs;
       }
     };
     check_match(simplify(a > b), simplify(b < a), "a > b vs b < a");
@@ -542,16 +525,12 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
     return ok;
   };
 
-  auto check_unary = [&](const expr& a, bool fatal) {
+  auto check_unary = [&](const expr& a) {
     bool ok = true;
     auto check_match = [&](const expr& lhs, const expr& rhs, const char* label) {
       if (!equivalent(lhs, rhs)) {
         ok = false;
-        if (fatal) {
-          ADD_FAILURE() << label << " mismatch for " << a << ": " << lhs << " vs " << rhs;
-        } else {
-          EXPECT_TRUE(false) << label << " mismatch for " << a << ": " << lhs << " vs " << rhs;
-        }
+        ADD_FAILURE() << label << " mismatch for " << a << ": " << lhs << " vs " << rhs;
       }
     };
     check_match(simplify(logical_not::make(a)), simplify(simplify(static_cast<const logical_not*>(nullptr), a)),
@@ -561,22 +540,18 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
     return ok;
   };
 
-  auto check_select = [&](const expr& c, const expr& t, const expr& f, bool fatal) {
+  auto check_select = [&](const expr& c, const expr& t, const expr& f) {
     expr via_make = select::make(c, t, f);
     expr lhs = simplify(via_make);
     expr rhs = simplify(simplify(static_cast<const class select*>(nullptr), c, t, f));
     // If select::make did not fold, full simplify() may still prove c constant via bounds (e.g. and_then(y, 0))
-    // and discard an indeterminate dead arm that single-op simplify(select, ...) cannot prove dead.
+    // and discard a non-finite dead arm that single-op simplify(select, ...) cannot prove dead.
     const auto* s = via_make.as<class select>();
     const bool unfolded = s && s->condition.same_as(c) && s->true_value.same_as(t) && s->false_value.same_as(f);
-    if (!equivalent(lhs, rhs) && !(unfolded && is_indeterminate(rhs))) {
-      if (fatal) {
-        ADD_FAILURE() << "select::make(" << c << ", " << t << ", " << f << ") simplified to " << lhs
-                      << ", but simplify(select, ...) gave " << rhs;
-      } else {
-        EXPECT_TRUE(false) << "select::make(" << c << ", " << t << ", " << f << ") simplified to " << lhs
-                           << ", but simplify(select, ...) gave " << rhs;
-      }
+    const bool non_finite_arm = contains_non_finite(t) || contains_non_finite(f);
+    if (!equivalent(lhs, rhs) && !(unfolded && is_indeterminate(rhs) && non_finite_arm)) {
+      ADD_FAILURE() << "select::make(" << c << ", " << t << ", " << f << ") simplified to " << lhs
+                    << ", but simplify(select, ...) gave " << rhs;
       return false;
     }
     return true;
@@ -584,9 +559,9 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
 
   const std::vector<expr> operands = simplified_edge_operands();
   for (const expr& a : operands) {
-    check_unary(a, /*fatal=*/false);
+    check_unary(a);
     for (const expr& b : operands) {
-      check_binary_pair(a, b, /*fatal=*/false);
+      check_binary_pair(a, b);
     }
   }
 
@@ -614,7 +589,7 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
       {expr(0), expr(1), expr(-2), expr(x), positive_infinity(), negative_infinity(), indeterminate()}) {
     for (const expr& t : {expr(0), expr(x), positive_infinity(), indeterminate()}) {
       for (const expr& f : {expr(1), expr(y), negative_infinity(), indeterminate()}) {
-        check_select(c, t, f, /*fatal=*/false);
+        check_select(c, t, f);
       }
     }
   }
@@ -623,9 +598,9 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
     expr a = gen.random_simplified_operand();
     expr b = gen.random_simplified_operand();
     expr c = gen.random_simplified_operand();
-    if (!check_unary(a, /*fatal=*/true)) break;
-    if (!check_binary_pair(a, b, /*fatal=*/true)) break;
-    if (!check_select(c, a, b, /*fatal=*/true)) break;
+    if (!check_unary(a)) break;
+    if (!check_binary_pair(a, b)) break;
+    if (!check_select(c, a, b)) break;
 
     if (!contains_non_finite(a) && !contains_non_finite(b)) {
       gen.init_context(ctx);
@@ -643,7 +618,8 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
 }
 
 // Non-annihilating operations propagate undefined operands, while annihilating operations (0 * x, 0 / x, x / 0,
-// 0 % x, x % 0, x % 1, false && x, true || x) fold to the annihilator in both constructors and simplify().
+// 0 % x, x % 0, x % +/-1, false && x, true || x, and_then(false, x), or_else(true, x)) fold to the annihilator
+// in both constructors and simplify().
 TEST(expr_helpers, undefined_propagation) {
   const expr undef;
 
@@ -655,11 +631,14 @@ TEST(expr_helpers, undefined_propagation) {
   EXPECT_THAT(mod::make(undef, 0), matches(0));
   EXPECT_THAT(mod::make(0, undef), matches(0));
   EXPECT_THAT(mod::make(undef, 1), matches(0));
+  EXPECT_THAT(mod::make(undef, -1), matches(0));
   EXPECT_THAT(logical_and::make(undef, 0), matches(0));
   EXPECT_THAT(logical_and::make(0, undef), matches(0));
+  EXPECT_THAT(and_then(0, undef), matches(0));
   for (const expr& truthy : {expr(1), expr(-1), expr(2), positive_infinity(), negative_infinity()}) {
     EXPECT_THAT(logical_or::make(undef, truthy), matches(1)) << "undef || " << truthy;
     EXPECT_THAT(logical_or::make(truthy, undef), matches(1)) << truthy << " || undef";
+    EXPECT_THAT(or_else(truthy, undef), matches(1)) << "or_else(" << truthy << ", undef)";
   }
 
   // Annihilating instances inside simplify() when an operand simplifies to undefined
@@ -667,6 +646,7 @@ TEST(expr_helpers, undefined_propagation) {
   expr undef_expr = select(expr(y) == y, undef, 2);
   expr zero_expr = y - y;
   expr one_expr = y - y + 1;
+  expr neg_one_expr = y - y - 1;
   EXPECT_THAT(simplify(undef_expr * zero_expr), matches(0));
   EXPECT_THAT(simplify(zero_expr * undef_expr), matches(0));
   EXPECT_THAT(simplify(undef_expr / zero_expr), matches(0));
@@ -674,10 +654,18 @@ TEST(expr_helpers, undefined_propagation) {
   EXPECT_THAT(simplify(undef_expr % zero_expr), matches(0));
   EXPECT_THAT(simplify(zero_expr % undef_expr), matches(0));
   EXPECT_THAT(simplify(undef_expr % one_expr), matches(0));
+  EXPECT_THAT(simplify(undef_expr % neg_one_expr), matches(0));
   EXPECT_THAT(simplify(undef_expr && zero_expr), matches(0));
   EXPECT_THAT(simplify(zero_expr && undef_expr), matches(0));
   EXPECT_THAT(simplify(undef_expr || one_expr), matches(1));
   EXPECT_THAT(simplify(one_expr || undef_expr), matches(1));
+  EXPECT_THAT(simplify(and_then(zero_expr, undef_expr)), matches(0));
+  EXPECT_THAT(simplify(or_else(one_expr, undef_expr)), matches(1));
+  EXPECT_FALSE(simplify(abs(undef_expr)).defined());
+  EXPECT_FALSE(simplify(and_then(one_expr, undef_expr)).defined());
+  EXPECT_FALSE(simplify(and_then(undef_expr, zero_expr)).defined());
+  EXPECT_FALSE(simplify(or_else(zero_expr, undef_expr)).defined());
+  EXPECT_FALSE(simplify(or_else(undef_expr, one_expr)).defined());
 
   // Non-annihilating instances must propagate undefined.
   for (const expr& a : {expr(0), expr(1), expr(-1), expr(2), expr(x), positive_infinity(), indeterminate()}) {
@@ -692,7 +680,7 @@ TEST(expr_helpers, undefined_propagation) {
       EXPECT_FALSE(div::make(a, undef).defined()) << "div(" << a << ", undef)";
       EXPECT_FALSE(mod::make(a, undef).defined()) << "mod(" << a << ", undef)";
     }
-    if (!is_zero(a) && !is_one(a)) {
+    if (!is_zero(a) && !is_one(a) && !is_constant(a, -1)) {
       EXPECT_FALSE(mod::make(undef, a).defined()) << "mod(undef, " << a << ")";
     }
     EXPECT_FALSE(min::make(undef, a).defined()) << "min(undef, " << a << ")";
@@ -710,13 +698,18 @@ TEST(expr_helpers, undefined_propagation) {
     if (!is_false(a)) {
       EXPECT_FALSE(logical_and::make(undef, a).defined()) << "logical_and(undef, " << a << ")";
       EXPECT_FALSE(logical_and::make(a, undef).defined()) << "logical_and(" << a << ", undef)";
+      EXPECT_FALSE(and_then(a, undef).defined()) << "and_then(" << a << ", undef)";
     }
-    if (!is_true(a) && !is_infinity(a)) {
+    EXPECT_FALSE(and_then(undef, a).defined()) << "and_then(undef, " << a << ")";
+    if (!is_true(a)) {
       EXPECT_FALSE(logical_or::make(undef, a).defined()) << "logical_or(undef, " << a << ")";
       EXPECT_FALSE(logical_or::make(a, undef).defined()) << "logical_or(" << a << ", undef)";
+      EXPECT_FALSE(or_else(a, undef).defined()) << "or_else(" << a << ", undef)";
     }
+    EXPECT_FALSE(or_else(undef, a).defined()) << "or_else(undef, " << a << ")";
     EXPECT_FALSE(select::make(undef, a, a).defined()) << "select(undef, " << a << ", " << a << ")";
   }
+  EXPECT_FALSE(abs(undef).defined()) << "abs(undef)";
   EXPECT_FALSE(logical_not::make(undef).defined()) << "logical_not(undef)";
   EXPECT_FALSE(select::make(x, undef, undef).defined()) << "select(x, undef, undef)";
   EXPECT_FALSE(boolean(undef).defined()) << "boolean(undef)";
@@ -744,17 +737,47 @@ TEST(expr_helpers, bounds_of_select) {
   EXPECT_THAT(bounds_of(static_cast<const class select*>(nullptr), bounds(-5, -2), t, f), matches(t));
   EXPECT_THAT(bounds_of(static_cast<const class select*>(nullptr), bounds(0, 0), t, f), matches(f));
 
-  // Exhaustive soundness check over small integer condition intervals.
+  // Exhaustive soundness check over small integer condition intervals for select, logical_not, logical_and, logical_or.
   for (int c_min = -3; c_min <= 3; ++c_min) {
     for (int c_max = c_min; c_max <= 3; ++c_max) {
       interval_expr b = bounds_of(static_cast<const class select*>(nullptr), bounds(c_min, c_max), t, f);
       index_t bmin = evaluate(b.min);
       index_t bmax = evaluate(b.max);
+      interval_expr bn = bounds_of(static_cast<const logical_not*>(nullptr), bounds(c_min, c_max));
+      index_t bn_min = evaluate(bn.min);
+      index_t bn_max = evaluate(bn.max);
+      EXPECT_LE(bn_min, bn_max) << "logical_not inverted for c=[" << c_min << ", " << c_max << "]: " << bn;
       for (int c_val = c_min; c_val <= c_max; ++c_val) {
         index_t arm_min = c_val != 0 ? 10 : 100;
         index_t arm_max = c_val != 0 ? 20 : 200;
         EXPECT_LE(bmin, arm_min) << "c=[" << c_min << ", " << c_max << "], c_val=" << c_val << ", b=" << b;
         EXPECT_GE(bmax, arm_max) << "c=[" << c_min << ", " << c_max << "], c_val=" << c_val << ", b=" << b;
+        index_t not_val = c_val == 0 ? 1 : 0;
+        EXPECT_LE(bn_min, not_val) << "logical_not c=[" << c_min << ", " << c_max << "], c_val=" << c_val;
+        EXPECT_GE(bn_max, not_val) << "logical_not c=[" << c_min << ", " << c_max << "], c_val=" << c_val;
+      }
+
+      for (int d_min = -2; d_min <= 2; ++d_min) {
+        for (int d_max = d_min; d_max <= 2; ++d_max) {
+          interval_expr ba =
+              bounds_of(static_cast<const logical_and*>(nullptr), bounds(c_min, c_max), bounds(d_min, d_max));
+          interval_expr bo =
+              bounds_of(static_cast<const logical_or*>(nullptr), bounds(c_min, c_max), bounds(d_min, d_max));
+          index_t ba_min = evaluate(ba.min), ba_max = evaluate(ba.max);
+          index_t bo_min = evaluate(bo.min), bo_max = evaluate(bo.max);
+          EXPECT_LE(ba_min, ba_max);
+          EXPECT_LE(bo_min, bo_max);
+          for (int cv = c_min; cv <= c_max; ++cv) {
+            for (int dv = d_min; dv <= d_max; ++dv) {
+              index_t and_v = (cv != 0 && dv != 0) ? 1 : 0;
+              index_t or_v = (cv != 0 || dv != 0) ? 1 : 0;
+              EXPECT_LE(ba_min, and_v);
+              EXPECT_GE(ba_max, and_v);
+              EXPECT_LE(bo_min, or_v);
+              EXPECT_GE(bo_max, or_v);
+            }
+          }
+        }
       }
     }
   }
@@ -879,7 +902,7 @@ TEST(expr_helpers, interval_expr_algebra) {
     EXPECT_THAT(simplify(iv & iv), matches(simplify(iv)));
   }
 
-  // Agreement with bounds_of for scaling/dividing unbounded intervals by unknown scalars.
+  // Agreement with bounds_of for scaling/dividing unbounded, empty, and indeterminate intervals.
   EXPECT_THAT(simplify(interval_expr::all() + y), matches(interval_expr::all()));
   EXPECT_THAT(simplify(-interval_expr::all()), matches(interval_expr::all()));
   EXPECT_THAT(simplify(interval_expr::all() * 2), matches(interval_expr::all()));
@@ -889,13 +912,28 @@ TEST(expr_helpers, interval_expr_algebra) {
       matches(bounds_of(static_cast<const mul*>(nullptr), interval_expr::all(), point(y))));
   EXPECT_THAT(simplify(interval_expr::all() / y),
       matches(bounds_of(static_cast<const div*>(nullptr), interval_expr::all(), point(y))));
-  // Dividing an interval by indeterminate (an unknown index_t) yields union(iv, -iv).
+  EXPECT_THAT(simplify(interval_expr::all() * abs(y)), matches(interval_expr::all()));
+  EXPECT_THAT(simplify(interval_expr::all() / abs(y)), matches(interval_expr::all()));
+  EXPECT_THAT(simplify(bounds(0, positive_infinity()) * abs(y)), matches(bounds(0, positive_infinity())));
+  EXPECT_THAT(simplify(bounds(0, positive_infinity()) / abs(y)), matches(bounds(0, positive_infinity())));
+  // Empty interval stays empty under scaling/division.
+  EXPECT_THAT(simplify(interval_expr::none() * 0), matches(interval_expr::none()));
+  EXPECT_THAT(simplify(interval_expr::none() / 0), matches(interval_expr::none()));
+  EXPECT_THAT(simplify(interval_expr::none() / positive_infinity()), matches(interval_expr::none()));
+  EXPECT_THAT(simplify(interval_expr::none() * abs(y)), matches(interval_expr::none()));
+  EXPECT_THAT(simplify(interval_expr::none() * indeterminate()), matches(interval_expr::none()));
+  EXPECT_THAT(simplify(interval_expr::none() / indeterminate()), matches(interval_expr::none()));
+  // Scaling by indeterminate widens non-zero intervals to all(); dividing yields union(iv, -iv).
+  EXPECT_THAT(simplify(bounds(2, 5) * indeterminate()), matches(interval_expr::all()));
+  EXPECT_THAT(simplify(point(5) * indeterminate()), matches(interval_expr::all()));
+  EXPECT_THAT(simplify(point(0) * indeterminate()), matches(point(0)));
+  EXPECT_THAT(simplify(bounds(0, 0) * indeterminate()), matches(point(0)));
+  EXPECT_THAT(simplify(interval_expr::all() * indeterminate()), matches(interval_expr::all()));
   EXPECT_THAT(simplify(bounds(2, 5) / indeterminate()), matches(bounds(-5, 5)));
   EXPECT_THAT(simplify(bounds(-3, 5) / indeterminate()), matches(bounds(-5, 5)));
   EXPECT_THAT(simplify(point(5) / indeterminate()), matches(bounds(-5, 5)));
   EXPECT_THAT(simplify(point(0) / indeterminate()), matches(point(0)));
   EXPECT_THAT(simplify(interval_expr::all() / indeterminate()), matches(interval_expr::all()));
-  EXPECT_THAT(simplify(interval_expr::none() / indeterminate()), matches(interval_expr::none()));
 
   // select(c, t, f) with infinite/empty arms must not produce a select node containing infinities.
   for (const interval_expr& t : {bounds(x, y), point(x), interval_expr::all(), interval_expr::none()}) {
@@ -1006,22 +1044,35 @@ TEST(expr_helpers, interval_expr_algebra) {
 
 // Algebraic properties of box_expr union/intersection.
 TEST(expr_helpers, box_expr_algebra) {
-  // Union and intersection of boxes should be commutative, even when ranks differ.
+  // Union and intersection of boxes should be commutative and produce exact expected bounds, even when ranks differ.
   box_expr a = {bounds(0, 5)};
   box_expr b = {bounds(1, 4), bounds(2, 3)};
 
-  box_expr u_ab = a | b;
-  box_expr u_ba = b | a;
-  ASSERT_EQ(u_ab.size(), u_ba.size());
-  for (std::size_t d = 0; d < u_ab.size(); ++d) {
-    EXPECT_THAT(simplify(u_ab[d]), matches(simplify(u_ba[d]))) << "box union not commutative at dim " << d;
+  for (const box_expr& u : {a | b, b | a}) {
+    ASSERT_EQ(u.size(), 2u);
+    EXPECT_THAT(simplify(u[0]), matches(bounds(0, 5)));
+    EXPECT_FALSE(u[1].min.defined());
+    EXPECT_FALSE(u[1].max.defined());
   }
 
-  box_expr i_ab = a & b;
-  box_expr i_ba = b & a;
-  ASSERT_EQ(i_ab.size(), i_ba.size());
-  for (std::size_t d = 0; d < i_ab.size(); ++d) {
-    EXPECT_THAT(simplify(i_ab[d]), matches(simplify(i_ba[d]))) << "box intersection not commutative at dim " << d;
+  for (const box_expr& i : {a & b, b & a}) {
+    ASSERT_EQ(i.size(), 2u);
+    EXPECT_THAT(simplify(i[0]), matches(bounds(1, 4)));
+    EXPECT_THAT(simplify(i[1]), matches(bounds(2, 3)));
+  }
+
+  // Empty box_expr{} acts as unconstrained (unbounded) on all dimensions.
+  for (const box_expr& u : {b | box_expr{}, box_expr{} | b}) {
+    ASSERT_EQ(u.size(), 2u);
+    EXPECT_FALSE(u[0].min.defined());
+    EXPECT_FALSE(u[0].max.defined());
+    EXPECT_FALSE(u[1].min.defined());
+    EXPECT_FALSE(u[1].max.defined());
+  }
+  for (const box_expr& i : {b & box_expr{}, box_expr{} & b}) {
+    ASSERT_EQ(i.size(), 2u);
+    EXPECT_THAT(simplify(i[0]), matches(bounds(1, 4)));
+    EXPECT_THAT(simplify(i[1]), matches(bounds(2, 3)));
   }
 }
 

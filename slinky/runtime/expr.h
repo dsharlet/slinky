@@ -707,6 +707,12 @@ SLINKY_INLINE int is_infinity(expr_ref x) {
 }
 
 SLINKY_INLINE bool is_true(expr_ref x) {
+  if (const constant* cx = x.as<constant>()) {
+    return cx->value != 0;
+  }
+  if (x.type() != expr_node_type::call) {
+    return false;
+  }
   while (const call* c = as_intrinsic(x, intrinsic::abs)) {
     assert(c->args.size() == 1);
     x = c->args[0];

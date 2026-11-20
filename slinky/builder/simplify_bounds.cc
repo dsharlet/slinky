@@ -369,11 +369,36 @@ interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
   }
 }
 
+namespace {
+
+// Coerce an arbitrary integer interval to a [0, 1] truthiness interval.
+// If the interval is already a point or has boolean endpoints, returns it unchanged.
+interval_expr bounds_of_boolean(interval_expr a) {
+  if (a.is_point() || (is_boolean(a.min) && is_boolean(a.max))) {
+    return a;
+  }
+  expr min_bool = simplify(static_cast<const logical_or*>(nullptr),
+      simplify(static_cast<const less*>(nullptr), a.max, 0),
+      simplify(static_cast<const less*>(nullptr), 0, a.min));
+  expr max_bool = simplify(static_cast<const logical_or*>(nullptr),
+      simplify(static_cast<const not_equal*>(nullptr), a.min, 0),
+      simplify(static_cast<const not_equal*>(nullptr), a.max, 0));
+  return {std::move(min_bool), std::move(max_bool)};
+}
+
+}  // namespace
+
 interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  }
+  return bounds_of_linear(op, bounds_of_boolean(std::move(a)), bounds_of_boolean(std::move(b)));
 }
 interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  }
+  return bounds_of_linear(op, bounds_of_boolean(std::move(a)), bounds_of_boolean(std::move(b)));
 }
 interval_expr bounds_of(const logical_not* op, interval_expr a) {
   if (a.is_point(op)) {
@@ -381,6 +406,7 @@ interval_expr bounds_of(const logical_not* op, interval_expr a) {
   } else if (a.is_point()) {
     return point(simplify(op, std::move(a.min)));
   } else {
+    a = bounds_of_boolean(std::move(a));
     return {simplify(op, std::move(a.max)), simplify(op, std::move(a.min))};
   }
 }

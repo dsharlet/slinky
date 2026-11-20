@@ -435,15 +435,18 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
 expr simplify(const call* op, intrinsic fn, const call::callable& target, std::vector<expr> args) {
   if (fn == intrinsic::and_then || fn == intrinsic::or_else) {
     assert(args.size() == 2);
+    const bool is_and = fn == intrinsic::and_then;
+    if (is_and && is_false(args[0])) return expr(0);
+    if (!is_and && is_true(args[0])) return expr(1);
+    if (!args[0].defined() || !args[1].defined()) return expr();
     for (expr& i : args) {
       // Infinities are truthy.
       if (is_infinity(i)) i = true;
     }
-    const bool is_and = fn == intrinsic::and_then;
     if (auto ca = as_constant(args[0])) {
       // If a is false (for and_then) or true (for or_else), b isn't evaluated. Otherwise, the result is boolean(b).
       if ((*ca != 0) != is_and) return !is_and;
-      return is_indeterminate(args[1]) ? args[1] : boolean(args[1]);
+      return boolean(args[1]);
     }
     if (is_indeterminate(args[0])) return args[0];
     if (is_indeterminate(args[1])) return args[1];
@@ -487,7 +490,9 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
     }
   } else if (fn == intrinsic::abs) {
     assert(args.size() == 1);
-    if (is_indeterminate(args[0])) {
+    if (!args[0].defined()) {
+      return expr();
+    } else if (is_indeterminate(args[0])) {
       return args[0];
     } else if (is_infinity(args[0])) {
       return positive_infinity();
