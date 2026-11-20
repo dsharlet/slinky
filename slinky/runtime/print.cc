@@ -152,10 +152,8 @@ public:
   printer& operator<<(var sym) {
     if (context) {
       os << context->name(sym);
-    } else if (sym.defined()) {
-      os << "." << sym.id;
     } else {
-      os << "<>";
+      os << to_string(sym);
     }
     return *this;
   }
@@ -496,13 +494,6 @@ void print(std::ostream& os, const expr& e, const node_context* ctx) {
 void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   printer p(os, ctx ? ctx : default_context);
   p << s;
-}
-
-std::string to_string(var x) {
-  std::stringstream ss;
-  printer p(ss, default_context);
-  p << x;
-  return ss.str();
 }
 
 std::ostream& operator<<(std::ostream& os, var sym) {

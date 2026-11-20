@@ -350,9 +350,9 @@ function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   {
-    let _2 = make_buffer('<constant>', 0, 1, [{bounds: [0, 53], stride:1, fold_factor:NaN}]);
+    let _c = make_buffer('<constant>', 0, 1, [{bounds: [0, 53], stride:1, fold_factor:NaN}]);
     {
-      let _3 = trace_begin(buffer_at(_2, 45));
+      let _d = trace_begin(buffer_at(_c, 45));
       check(__in);
       check((buffer_rank(__in) == 2));
       check(validate_buffer(__in));
@@ -367,62 +367,62 @@ function pipeline(__in, out) {
       check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
       check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
       check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-      { let _4 = allocate('.4', 2, [
+      { let _e = allocate('.e', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:6}
         ]);
-        { let _5 = allocate('.5', 2, [
-            {bounds:[(buffer_min(_4, 0) + -1), (buffer_max(_4, 0) + 1)], stride:NaN, fold_factor:NaN},
-            {bounds:[(buffer_min(_4, 1) + -1), (buffer_max(_4, 1) + 1)], stride:NaN, fold_factor:6}
+        { let _f = allocate('.f', 2, [
+            {bounds:[(buffer_min(_e, 0) + -1), (buffer_max(_e, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(_e, 1) + -1), (buffer_max(_e, 1) + 1)], stride:NaN, fold_factor:6}
           ]);
           {
-            let _6 = trace_begin(buffer_at(_2, 21));
+            let _g = trace_begin(buffer_at(_c, 21));
             let __loop_min = (buffer_min(out, 1) + -4);
             let __loop_max = buffer_max(out, 1);
             let __loop_step = 4;
-            for(let _7 = __loop_min; _7 <= __loop_max; _7 += __loop_step) {
+            for(let _h = __loop_min; _h <= __loop_max; _h += __loop_step) {
               {
-                let _8 = trace_begin(buffer_at(_2, 0));
-                { let ___5 = crop_dim(_5, 1, [(_7 + 2), (_7 + 5)]); {
-                  let _5 = ___5;
+                let _i = trace_begin(buffer_at(_c, 0));
+                { let ___f = crop_dim(_f, 1, [(_h + 2), (_h + 5)]); {
+                  let _f = ___f;
                   {
-                    let _10 = trace_begin(buffer_at(_2, 32));
+                    let _k = trace_begin(buffer_at(_c, 32));
                     consume(__in);
-                    produce(_5);
+                    produce(_f);
                     __event_t++;
-                    check(trace_end(_10));
+                    check(trace_end(_k));
                   }
                 }}
-                { let ___4 = crop_dim(_4, 1, [(_7 + 1), (_7 + 4)]); {
-                  let _4 = ___4;
+                { let ___e = crop_dim(_e, 1, [(_h + 1), (_h + 4)]); {
+                  let _e = ___e;
                   {
-                    let _10 = trace_begin(buffer_at(_2, 38));
-                    consume(_5);
-                    produce(_4);
+                    let _k = trace_begin(buffer_at(_c, 38));
+                    consume(_f);
+                    produce(_e);
                     __event_t++;
-                    check(trace_end(_10));
+                    check(trace_end(_k));
                   }
                 }}
-                { let ___9 = crop_dim(out, 1, [_7, (_7 + 3)]); {
-                  let _9 = ___9;
+                { let ___j = crop_dim(out, 1, [_h, (_h + 3)]); {
+                  let _j = ___j;
                   {
-                    let _10 = trace_begin(buffer_at(_2, 38));
-                    consume(_4);
-                    produce(_9);
+                    let _k = trace_begin(buffer_at(_c, 38));
+                    consume(_e);
+                    produce(_j);
                     __event_t++;
-                    check(trace_end(_10));
+                    check(trace_end(_k));
                   }
                 }}
-                check(trace_end(_8));
+                check(trace_end(_i));
               }
             }
-            check(trace_end(_6));
+            check(trace_end(_g));
           }
-          free(_5);
+          free(_f);
         }
-        free(_4);
+        free(_e);
       }
-      check(trace_end(_3));
+      check(trace_end(_d));
     }
   }
 }
