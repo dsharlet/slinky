@@ -223,9 +223,18 @@ TEST(expr_helpers, boolean_and_truthiness) {
     check(match(boolean(b), b), "boolean(boolean(e)) != boolean(e)");
 
     // Algebraic agreement of boolean(e) with simplify.
-    check(match(sb, sne), "simplify(boolean(e)) != simplify(e != 0)");
-    check(match(sb, snotnot), "simplify(boolean(e)) != simplify(!!e)");
-    check(match(sb, ssel), "simplify(boolean(e)) != simplify(select(e, 1, 0))");
+    auto equiv = [&](const expr& lhs, const expr& rhs) {
+      if (match(lhs, rhs)) return true;
+      if (contains_non_finite(lhs) || contains_non_finite(rhs)) return false;
+      for (int i = 0; i < eval_checks; ++i) {
+        gen.init_context(ctx);
+        if (evaluate(lhs, ctx) != evaluate(rhs, ctx)) return false;
+      }
+      return true;
+    };
+    check(equiv(sb, sne), "simplify(boolean(e)) != simplify(e != 0)");
+    check(equiv(sb, snotnot), "simplify(boolean(e)) != simplify(!!e)");
+    check(equiv(sb, ssel), "simplify(boolean(e)) != simplify(select(e, 1, 0))");
 
     // On constants and non-finite literals, boolean(e) should fold directly to the simplified value
     // (1 for +/-oo and nonzero constants, 0 for 0, indeterminate for indeterminate), without leaving
@@ -454,13 +463,23 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
   helper_expr_generator<gtest_seeded_mt19937> gen(rng);
   eval_context ctx;
 
+  auto equivalent = [&](const expr& lhs, const expr& rhs) {
+    if (match(lhs, rhs)) return true;
+    if (contains_non_finite(lhs) || contains_non_finite(rhs)) return false;
+    for (int i = 0; i < eval_checks; ++i) {
+      gen.init_context(ctx);
+      if (evaluate(lhs, ctx) != evaluate(rhs, ctx)) return false;
+    }
+    return true;
+  };
+
   auto check_binary_pair = [&](const expr& a, const expr& b, bool fatal) {
     bool ok = true;
     auto check_op = [&](auto tag, const char* name, expr via_make) {
       using Op = std::remove_pointer_t<decltype(tag)>;
       expr lhs = simplify(via_make);
       expr rhs = simplify(simplify(static_cast<const Op*>(nullptr), a, b));
-      if (!match(lhs, rhs)) {
+      if (!equivalent(lhs, rhs)) {
         ok = false;
         if (fatal) {
           ADD_FAILURE() << name << "::make(" << a << ", " << b << ") simplified to " << lhs
@@ -490,7 +509,7 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
     auto check_call = [&](intrinsic fn, const char* name, expr via_helper) {
       expr lhs = simplify(via_helper);
       expr rhs = simplify(simplify(static_cast<const call*>(nullptr), fn, {a, b}));
-      if (!match(lhs, rhs)) {
+      if (!equivalent(lhs, rhs)) {
         ok = false;
         if (fatal) {
           ADD_FAILURE() << name << "(" << a << ", " << b << ") simplified to " << lhs
@@ -506,7 +525,7 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
 
     // Derived comparison & arithmetic operator helpers.
     auto check_match = [&](const expr& lhs, const expr& rhs, const char* label) {
-      if (!match(lhs, rhs)) {
+      if (!equivalent(lhs, rhs)) {
         ok = false;
         if (fatal) {
           ADD_FAILURE() << label << " mismatch for (" << a << ", " << b << "): " << lhs << " vs " << rhs;
@@ -526,7 +545,7 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
   auto check_unary = [&](const expr& a, bool fatal) {
     bool ok = true;
     auto check_match = [&](const expr& lhs, const expr& rhs, const char* label) {
-      if (!match(lhs, rhs)) {
+      if (!equivalent(lhs, rhs)) {
         ok = false;
         if (fatal) {
           ADD_FAILURE() << label << " mismatch for " << a << ": " << lhs << " vs " << rhs;
@@ -543,9 +562,14 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
   };
 
   auto check_select = [&](const expr& c, const expr& t, const expr& f, bool fatal) {
-    expr lhs = simplify(select::make(c, t, f));
+    expr via_make = select::make(c, t, f);
+    expr lhs = simplify(via_make);
     expr rhs = simplify(simplify(static_cast<const class select*>(nullptr), c, t, f));
-    if (!match(lhs, rhs)) {
+    // If select::make did not fold, full simplify() may still prove c constant via bounds (e.g. and_then(y, 0))
+    // and discard an indeterminate dead arm that single-op simplify(select, ...) cannot prove dead.
+    const auto* s = via_make.as<class select>();
+    const bool unfolded = s && s->condition.same_as(c) && s->true_value.same_as(t) && s->false_value.same_as(f);
+    if (!equivalent(lhs, rhs) && !(unfolded && is_indeterminate(rhs))) {
       if (fatal) {
         ADD_FAILURE() << "select::make(" << c << ", " << t << ", " << f << ") simplified to " << lhs
                       << ", but simplify(select, ...) gave " << rhs;
@@ -639,8 +663,8 @@ TEST(expr_helpers, undefined_propagation) {
   }
 
   // Annihilating instances inside simplify() when an operand simplifies to undefined
-  // (e.g. select(y == y, undef, 2) simplifies to undef, while y - y simplifies to 0).
-  expr undef_expr = select(y == y, undef, 2);
+  // (e.g. select(expr(y) == y, undef, 2) simplifies to undef, while y - y simplifies to 0).
+  expr undef_expr = select(expr(y) == y, undef, 2);
   expr zero_expr = y - y;
   expr one_expr = y - y + 1;
   EXPECT_THAT(simplify(undef_expr * zero_expr), matches(0));
@@ -865,6 +889,13 @@ TEST(expr_helpers, interval_expr_algebra) {
       matches(bounds_of(static_cast<const mul*>(nullptr), interval_expr::all(), point(y))));
   EXPECT_THAT(simplify(interval_expr::all() / y),
       matches(bounds_of(static_cast<const div*>(nullptr), interval_expr::all(), point(y))));
+  // Dividing an interval by indeterminate (an unknown index_t) yields union(iv, -iv).
+  EXPECT_THAT(simplify(bounds(2, 5) / indeterminate()), matches(bounds(-5, 5)));
+  EXPECT_THAT(simplify(bounds(-3, 5) / indeterminate()), matches(bounds(-5, 5)));
+  EXPECT_THAT(simplify(point(5) / indeterminate()), matches(bounds(-5, 5)));
+  EXPECT_THAT(simplify(point(0) / indeterminate()), matches(point(0)));
+  EXPECT_THAT(simplify(interval_expr::all() / indeterminate()), matches(interval_expr::all()));
+  EXPECT_THAT(simplify(interval_expr::none() / indeterminate()), matches(interval_expr::none()));
 
   // select(c, t, f) with infinite/empty arms must not produce a select node containing infinities.
   for (const interval_expr& t : {bounds(x, y), point(x), interval_expr::all(), interval_expr::none()}) {

@@ -857,10 +857,16 @@ public:
   void visit_binary(const T* op) {
     expr_info a_info;
     expr a = mutate(op->a, &a_info);
-    if (!a.defined()) return set_result(expr(), expr_info());
     expr_info b_info;
     expr b = mutate(op->b, &b_info);
-    if (!b.defined()) return set_result(expr(), expr_info());
+    if (!a.defined() || !b.defined()) {
+      if constexpr (T::static_type == expr_node_type::mul || T::static_type == expr_node_type::div) {
+        if (is_zero(a) || is_zero(b)) return set_result(expr(0), {point(0), {0, 0}});
+      } else if constexpr (T::static_type == expr_node_type::mod) {
+        if (is_zero(a) || is_zero(b) || is_one(b) || is_constant(b, -1)) return set_result(expr(0), {point(0), {0, 0}});
+      }
+      return set_result(expr(), expr_info());
+    }
 
     if (T::static_type == expr_node_type::mul) {
       // TODO: This is really ugly, we should have a better way of expressing such simplifications.
@@ -951,10 +957,16 @@ public:
   void visit_logical(const T* op, bool coerce_boolean = false) {
     expr_info a_info;
     expr a = coerce_boolean ? mutate_boolean(op->a, &a_info) : mutate(op->a, &a_info);
-    if (!a.defined()) return set_result(expr(), expr_info());
     expr_info b_info;
     expr b = coerce_boolean ? mutate_boolean(op->b, &b_info) : mutate(op->b, &b_info);
-    if (!b.defined()) return set_result(expr(), expr_info());
+    if (!a.defined() || !b.defined()) {
+      if constexpr (T::static_type == expr_node_type::logical_and) {
+        if (is_false(a) || is_false(b)) return set_result(expr(0), {point(0), {0, 0}});
+      } else if constexpr (T::static_type == expr_node_type::logical_or) {
+        if (is_true(a) || is_true(b)) return set_result(expr(1), {point(1), {0, 1}});
+      }
+      return set_result(expr(), expr_info());
+    }
 
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {

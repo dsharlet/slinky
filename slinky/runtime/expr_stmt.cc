@@ -354,9 +354,9 @@ expr logical_or::make(expr a, expr b) {
   return make_bin_op<logical_or>(std::move(a), std::move(b));
 }
 expr logical_not::make(expr a) {
-  if (const constant* c = a.as<constant>()) {
-    return expr(make_constant(c->value == 0 ? 1 : 0));
-  }
+  if (!a.defined()) return a;
+  if (is_true(a)) return expr(0);
+  if (is_false(a)) return expr(1);
   logical_not* n = new logical_not();
   n->a = std::move(a);
   return expr(n);
@@ -469,6 +469,10 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
     std::swap(min, max);
     if (min.defined()) min = mul::make(min, scale);
     if (max.defined()) max = mul::make(max, scale);
+  } else if (is_positive_infinity(min) && is_negative_infinity(max)) {
+    // Empty interval stays empty.
+  } else if (is_infinity(min) || is_infinity(max)) {
+    *this = all();
   } else {
     if (min.defined()) min = mul::make(min, scale);
     if (max.defined()) max = mul::make(max, scale);
@@ -479,6 +483,10 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
 
 interval_expr& interval_expr::operator/=(const expr& scale) {
   if (is_one(scale)) {
+  } else if (is_indeterminate(scale)) {
+    if (!(is_positive_infinity(min) && is_negative_infinity(max))) {
+      *this |= -*this;
+    }
   } else if (is_point()) {
     min = max = div::make(min, scale);
   } else if (is_non_negative(scale)) {
@@ -488,6 +496,10 @@ interval_expr& interval_expr::operator/=(const expr& scale) {
     std::swap(min, max);
     if (min.defined()) min = div::make(min, scale);
     if (max.defined()) max = div::make(max, scale);
+  } else if (is_positive_infinity(min) && is_negative_infinity(max)) {
+    // Empty interval stays empty.
+  } else if (is_infinity(min) || is_infinity(max)) {
+    *this = all();
   } else {
     if (min.defined()) min = div::make(min, scale);
     if (max.defined()) max = div::make(max, scale);
@@ -617,9 +629,13 @@ interval_expr select(const expr& c, interval_expr t, interval_expr f) {
 }
 
 box_expr operator|(box_expr a, const box_expr& b) {
+  const std::size_t n = std::min(a.size(), b.size());
   a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < b.size(); ++i) {
+  for (std::size_t i = 0; i < n; ++i) {
     a[i] |= b[i];
+  }
+  for (std::size_t i = n; i < a.size(); ++i) {
+    a[i] = interval_expr();
   }
   return a;
 }
@@ -960,7 +976,7 @@ bool is_positive(expr_ref x) {
   if (is_positive_infinity(x)) return true;
   if (const call* c = as_intrinsic(x, intrinsic::abs)) {
     assert(c->args.size() == 1);
-    return is_positive(c->args[0]);
+    return is_positive(c->args[0]) || is_negative(c->args[0]);
   }
   auto c = as_constant(x);
   return c ? *c > 0 : false;
@@ -968,7 +984,11 @@ bool is_positive(expr_ref x) {
 
 bool is_non_negative(expr_ref x) {
   if (is_positive_infinity(x)) return true;
-  if (as_intrinsic(x, intrinsic::abs)) return true;
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return c->args[0].defined() &&
+           (is_non_negative(c->args[0]) || is_negative(c->args[0]) || !contains_non_finite(c->args[0]));
+  }
   auto c = as_constant(x);
   return c ? *c >= 0 : false;
 }
@@ -1109,10 +1129,12 @@ bool contains_non_finite(expr_ref x) {
 }
 
 expr boolean(expr x) {
-  if (!x.defined() || is_boolean(x)) {
+  if (!x.defined() || is_boolean(x) || is_indeterminate(x)) {
     return x;
-  } else if (auto c = as_constant(x)) {
-    return *c != 0;
+  } else if (is_true(x)) {
+    return expr(1);
+  } else if (is_false(x)) {
+    return expr(0);
   } else {
     return not_equal::make(std::move(x), 0);
   }

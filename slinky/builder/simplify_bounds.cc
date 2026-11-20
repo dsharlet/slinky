@@ -392,9 +392,9 @@ interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t
     } else {
       return point(simplify(op, std::move(c.min), std::move(t.min), std::move(f.min)));
     }
-  } else if (is_true(c.min)) {
+  } else if (is_positive(c.min) || is_negative(c.max)) {
     return t;
-  } else if (is_false(c.max)) {
+  } else if (is_zero(c.min) && is_zero(c.max)) {
     return f;
   } else if (c.is_point()) {
     return select(c.min, std::move(t), std::move(f));
