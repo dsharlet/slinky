@@ -1,0 +1,9 @@
+line-length = 120
+
+[lint]
+# On top of ruff's default rules.
+extend-select = ["E", "W", "B", "SIM", "C4", "PIE", "PERF", "RET", "ARG", "N", "TRY", "ISC", "PTH", "RUF", "PL", "ASYNC"]
+ignore = [
+    # main() and failure_reason() are straight-line drivers; splitting them to satisfy a counter wouldn't help.
+    "PLR0911", "PLR0912", "PLR0915",
+]

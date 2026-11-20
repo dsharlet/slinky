@@ -12,3 +12,5 @@ slinky_add_test(simplify
     LINK
         slinky::base_test_util slinky::builder slinky::runtime GTest::gmock
 )
+
+add_subdirectory(verifier)
