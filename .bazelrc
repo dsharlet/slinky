@@ -2,6 +2,7 @@ common --enable_bzlmod
 common --copt=-fdiagnostics-color=always
 common --copt=-g --strip=never
 common --copt=-std=c++17
+common --features=layering_check
 # Allow C++20 usage in tests.
 common --per_file_copt=.*test.*@-std=c++20
 common --copt=-fstrict-aliasing
