@@ -156,7 +156,7 @@ bool is_produced_by(var v, const stmt& body) {
 expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess, const bounds_map& expr_bounds,
     const symbol_map<modulus_remainder<index_t>>& expr_alignment) {
   scoped_trace trace("where_true_upper_bound");
-  expr result = negative_infinity();
+  expr result;
 
   // TODO: this search can be more efficient by trying to cover wider range of depth
   // using binary search or something similar.
@@ -182,7 +182,7 @@ public:
 
   struct dim_fold_info {
     // The fold factor
-    expr factor = positive_infinity();
+    expr factor;
 
     // Overlap between iteration i and i + 1.
     expr overlap;
@@ -323,10 +323,6 @@ public:
       replacements.emplace_back(buffer_fold_factor(op->sym, d), fold_info[d].factor);
     }
     std::vector<dim_expr> dims = recursive_substitute(to_vector(op->dims), replacements);
-    // Replace infinite fold factors with undefined.
-    for (dim_expr& d : dims) {
-      if (is_positive_infinity(d.fold_factor)) d.fold_factor = expr();
-    }
 
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
@@ -430,7 +426,7 @@ public:
         expr new_loop_min = where_true_upper_bound(
             new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, expr_bounds, expr_alignment);
 
-        if (!is_negative_infinity(new_loop_min)) {
+        if (new_loop_min.defined()) {
           loop.bounds.min = new_loop_min;
 
           (*bounds)[d].min = new_min;

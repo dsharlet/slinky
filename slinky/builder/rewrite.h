@@ -96,13 +96,11 @@ struct pattern_info<long> {
 };
 #endif
 
-// The rules assume that every wildcard matches a finite value, so an expression to match must not contain an infinity
-// or indeterminate (see simplify_exprs.cc).
 class pattern_expr {
 public:
   expr_ref e;
 
-  explicit pattern_expr(expr_ref x) : e(x) { assert(!contains_non_finite(x)); }
+  explicit pattern_expr(expr_ref x) : e(x) {}
 };
 
 template <>
@@ -1057,9 +1055,8 @@ public:
 
 class rewriter : public base_rewriter<expr_ref> {
 public:
-  // As for pattern_expr, x must not contain an infinity or indeterminate.
-  rewriter(const expr& x) : base_rewriter(x) { assert(!contains_non_finite(x)); }
-  rewriter(expr_ref x) : base_rewriter(x) { assert(!contains_non_finite(x)); }
+  rewriter(const expr& x) : base_rewriter(x) {}
+  rewriter(expr_ref x) : base_rewriter(x) {}
   using base_rewriter::operator();
 };
 

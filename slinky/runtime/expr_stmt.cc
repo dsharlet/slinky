@@ -87,14 +87,7 @@ std::optional<var> node_context::lookup(const std::string& name) const {
   return i != name_to_sym.end() ? std::optional<var>(i->second) : std::nullopt;
 }
 
-bool can_evaluate(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::negative_infinity:
-  case intrinsic::positive_infinity:
-  case intrinsic::indeterminate: return false;
-  default: return true;
-  }
-}
+bool can_evaluate(intrinsic fn) { return fn != intrinsic::none; }
 
 // A node's arrays are constructed in its own allocation, immediately following the node. This layout is private to
 // the nodes we make here; nothing but the `span` of each array escapes.
@@ -431,14 +424,9 @@ expr max(span<expr> x) {
 }
 
 const interval_expr& interval_expr::all() {
-  static interval_expr x = {negative_infinity(), positive_infinity()};
+  static interval_expr x = {expr(), expr()};
   return x;
 }
-const interval_expr& interval_expr::none() {
-  static interval_expr x = {positive_infinity(), negative_infinity()};
-  return x;
-}
-const interval_expr& interval_expr::union_identity() { return none(); }
 const interval_expr& interval_expr::intersection_identity() { return all(); }
 
 const expr& interval_expr::begin() const { return min; }
@@ -590,28 +578,21 @@ expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(
 
 namespace {
 
-// Returns a bound in the direction `sign` (-1 for a min, 1 for a max) of select(c, t, f). A select can't have an
-// infinite value, so if t or f is infinite, we loosen the bound instead: an infinity in the direction of the bound
-// means that side is unbounded, and an infinity in the opposite direction means that interval is empty, so we can use
-// the other value.
-expr select_bound(const expr& c, expr t, expr f, int sign) {
-  int inf_t = is_infinity(t);
-  int inf_f = is_infinity(f);
-  if (inf_t == sign || inf_f == sign) return infinity(sign);
-  if (inf_t) return f;
-  if (inf_f) return t;
+// Returns a bound of select(c, t, f). If either side is unbounded (undefined), the result is unbounded.
+expr select_bound(const expr& c, expr t, expr f) {
+  if (!t.defined() || !f.defined()) return expr();
   return select(c, std::move(t), std::move(f));
 }
 
 }  // namespace
 
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
-  if (t.is_point() && f.is_point() && !is_infinity(t.min) && !is_infinity(f.min)) {
+  if (t.is_point() && f.is_point()) {
     return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
-        select_bound(c, std::move(t.min), std::move(f.min), -1),
-        select_bound(c, std::move(t.max), std::move(f.max), 1),
+        select_bound(c, std::move(t.min), std::move(f.min)),
+        select_bound(c, std::move(t.max), std::move(f.max)),
     };
   }
 }
@@ -932,35 +913,7 @@ stmt check::make(expr condition) {
   return stmt(n);
 }
 
-namespace {
-
-// Make `e` a static expression, which avoids contention on its reference count when it is shared by many threads.
-expr make_static(expr e) {
-  e.get()->make_static();
-  return e;
-}
-
-}  // namespace
-
-const expr& positive_infinity() {
-  static expr e = make_static(call::make(intrinsic::positive_infinity, {}));
-  return e;
-}
-const expr& negative_infinity() {
-  static expr e = make_static(call::make(intrinsic::negative_infinity, {}));
-  return e;
-}
-const expr& infinity(int sign) {
-  assert(sign != 0);
-  return sign < 0 ? negative_infinity() : positive_infinity();
-}
-const expr& indeterminate() {
-  static expr e = make_static(call::make(intrinsic::indeterminate, {}));
-  return e;
-}
-
 bool is_positive(expr_ref x) {
-  if (is_positive_infinity(x)) return true;
   if (const call* c = as_intrinsic(x, intrinsic::abs)) {
     assert(c->args.size() == 1);
     return is_positive(c->args[0]);
@@ -970,20 +923,17 @@ bool is_positive(expr_ref x) {
 }
 
 bool is_non_negative(expr_ref x) {
-  if (is_positive_infinity(x)) return true;
   if (as_intrinsic(x, intrinsic::abs)) return true;
   auto c = as_constant(x);
   return c ? *c >= 0 : false;
 }
 
 bool is_negative(expr_ref x) {
-  if (is_negative_infinity(x)) return true;
   auto c = as_constant(x);
   return c ? *c < 0 : false;
 }
 
 bool is_non_positive(expr_ref x) {
-  if (is_negative_infinity(x)) return true;
   auto c = as_constant(x);
   return c ? *c <= 0 : false;
 }
@@ -1085,30 +1035,6 @@ bool is_finite(expr_ref x) {
     return c->intrinsic == intrinsic::buffer_at;
   }
   return false;
-}
-
-namespace {
-
-class non_finite_finder : public recursive_node_visitor {
-public:
-  bool found = false;
-
-  void visit(const call* op) override {
-    if (is_infinity(op) || is_indeterminate(op)) {
-      found = true;
-    } else {
-      recursive_node_visitor::visit(op);
-    }
-  }
-};
-
-}  // namespace
-
-bool contains_non_finite(expr_ref x) {
-  if (!x.defined()) return false;
-  non_finite_finder finder;
-  x.accept(&finder);
-  return finder.found;
 }
 
 expr boolean(expr x) {

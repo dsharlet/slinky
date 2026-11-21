@@ -97,11 +97,6 @@ enum class expr_node_type {
 enum class intrinsic {
   none,
 
-  // Some mathematical constants are expressed as calls to functions with no arguments.
-  negative_infinity,
-  positive_infinity,
-  indeterminate,
-
   // Common arithmetic functions.
   abs,
 
@@ -326,14 +321,11 @@ struct interval_expr {
   bool same_as(const interval_expr& r) const { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_point() const { return min.defined() && min.same_as(max); }
-  bool is_point(expr_ref x) const { return min.same_as(x) && max.same_as(x); }
+  bool is_point(expr_ref x) const { return x.defined() && min.same_as(x) && max.same_as(x); }
 
   expr_ref as_point() const { return is_point() ? expr_ref(min) : expr_ref(nullptr); }
 
   static const interval_expr& all();
-  static const interval_expr& none();
-  // An interval_expr x such that x | y == y
-  static const interval_expr& union_identity();
   // An interval_expr x such that x & y == y
   static const interval_expr& intersection_identity();
 
@@ -702,17 +694,7 @@ SLINKY_INLINE const call* as_intrinsic(expr_ref x, intrinsic fn) {
   return c && c->intrinsic == fn ? c : nullptr;
 }
 
-SLINKY_INLINE bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }
-SLINKY_INLINE bool is_negative_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::negative_infinity); }
-SLINKY_INLINE bool is_indeterminate(expr_ref x) { return as_intrinsic(x, intrinsic::indeterminate); }
-SLINKY_INLINE int is_infinity(expr_ref x) {
-  if (is_positive_infinity(x)) return 1;
-  if (is_negative_infinity(x)) return -1;
-  return 0;
-}
 bool is_finite(expr_ref x);
-// Returns true if `x` contains an infinity or indeterminate anywhere in its tree.
-bool contains_non_finite(expr_ref x);
 
 SLINKY_INLINE index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
 expr boolean(expr x);
@@ -730,12 +712,6 @@ inline constexpr bool is_boolean_node(expr_node_type t) {
   default: return false;
   }
 }
-
-// Get an expression representing non-numerical constants.
-const expr& positive_infinity();
-const expr& negative_infinity();
-const expr& infinity(int sign = 1);
-const expr& indeterminate();
 
 bool is_positive(expr_ref x);
 bool is_non_negative(expr_ref x);

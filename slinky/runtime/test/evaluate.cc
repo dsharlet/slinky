@@ -70,13 +70,22 @@ TEST(evaluate, arithmetic) {
 
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 
+  bool called = false;
+  expr fail = call::make(
+      [&called](const call*, eval_context&) -> index_t {
+        called = true;
+        return 0;
+      },
+      {x});
   ASSERT_EQ(evaluate(and_then(expr(true), expr(true))), true);
   ASSERT_EQ(evaluate(and_then(expr(true), expr(false))), false);
-  ASSERT_EQ(evaluate(and_then(expr(false), indeterminate())), false);
+  ASSERT_EQ(evaluate(and_then(expr(false), fail)), false);
+  ASSERT_FALSE(called);
   ASSERT_EQ(evaluate(or_else(expr(true), expr(true))), true);
   ASSERT_EQ(evaluate(or_else(expr(false), expr(true))), true);
   ASSERT_EQ(evaluate(or_else(expr(false), expr(false))), false);
-  ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
+  ASSERT_EQ(evaluate(or_else(expr(true), fail)), true);
+  ASSERT_FALSE(called);
 }
 
 TEST(evaluate, buffer_fields) {

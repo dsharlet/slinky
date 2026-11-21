@@ -43,11 +43,11 @@ expr strip_boolean(expr x) {
   return x;
 }
 
-bool deep_is_point(const interval_expr& x) { return x.is_point() || match(x.min, x.max); }
+bool deep_is_point(const interval_expr& x) { return x.is_point() || (x.min.defined() && match(x.min, x.max)); }
 
 // Ensure that an interval that is a point in a deep equality sense is also a point in a shallow equality sense.
 void ensure_is_point(interval_expr& x) {
-  if (!x.is_point() && match(x.min, x.max)) {
+  if (!x.is_point() && x.min.defined() && match(x.min, x.max)) {
     x.max = x.min;
   }
 }
@@ -406,7 +406,7 @@ public:
       if (vars[id]) {
         vars[id]->alignment = *alignment[id];
       } else {
-        vars[id] = {interval_expr(), *alignment[id]};
+        vars[id] = {point(variable::make(id)), *alignment[id]};
       }
     }
   }
@@ -481,7 +481,13 @@ public:
 
     void add_var_info(const variable* x, interval_expr bounds, alignment_type alignment = {}) {
       if (x->field == buffer_field::none) {
-        expr_info info = vars.lookup(x->sym).value_or(expr_info());
+        expr_info info;
+        if (vars.contains(x->sym)) {
+          info = *vars[x->sym];
+        } else {
+          if (!bounds.min.defined()) bounds.min = expr(x);
+          if (!bounds.max.defined()) bounds.max = expr(x);
+        }
         info.merge(std::move(bounds), alignment);
         vk.push_back(set_value_in_scope(vars, x->sym, std::move(info)));
       } else {
@@ -774,8 +780,6 @@ public:
           set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
           return;
         } else {
-          if (!info.bounds.min.defined()) info.bounds.min = expr(op);
-          if (!info.bounds.max.defined()) info.bounds.max = expr(op);
           set_result(op, std::move(info));
           return;
         }
@@ -815,9 +819,12 @@ public:
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
     auto less_equal = [](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
-      return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
-             (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
-             (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
+      return (a_max.defined() && b_min.defined() &&
+                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max))) ||
+             (b_min.defined() && !match(a, a_max) &&
+                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
+             (a_max.defined() && !match(b, b_min) &&
+                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
     };
     if (less_equal(a, a_info.bounds.max, b, b_info.bounds.min)) {
       if (T::static_type == expr_node_type::min) {
@@ -890,13 +897,8 @@ public:
     rewrite::pattern_constant<0> c0;
     rewrite::pattern_constant<1> c1;
 
-    // Like the rules in simplify_rules, these rules assume that every wildcard is finite. simplify() below handles
-    // infinite and indeterminate operands.
-    auto is_literal_non_finite = [](const expr& x) { return is_infinity(x) || is_indeterminate(x); };
-    const bool finite = !is_literal_non_finite(a) && !is_literal_non_finite(b);
-
     // It's really ugly to have rules here instead of simplify_rules, but plumbing bounds and alignment seems difficult.
-    if (finite && T::static_type == expr_node_type::div) {
+    if (T::static_type == expr_node_type::div) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
       // clang-format off
@@ -907,7 +909,7 @@ public:
         return;
       }
       // clang-format on
-    } else if (finite && T::static_type == expr_node_type::mod) {
+    } else if (T::static_type == expr_node_type::mod) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} % rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
       // clang-format off
@@ -1524,7 +1526,7 @@ public:
 
     std::vector<scoped_value_in_symbol_map<expr_info>> decls;
     for (var i : op->dst_x) {
-      decls.push_back(set_value_in_scope(vars, i, expr_info()));
+      decls.push_back(set_value_in_scope(vars, i, std::nullopt));
     }
 
     std::vector<expr> src_x;
@@ -2115,9 +2117,6 @@ public:
     expr buf_min = buffer.min.defined() ? buffer.min : buffer_min(buf, dim);
     expr buf_max = buffer.max.defined() ? buffer.max : buffer_max(buf, dim);
 
-    // An indeterminate bound doesn't tell us anything, so we don't crop that side (like an infinite bound).
-    if (is_indeterminate(result.min)) result.min = expr();
-    if (is_indeterminate(result.max)) result.max = expr();
     if (result.min.defined() && prove_true(result.min <= buf_min)) result.min = expr();
     if (result.max.defined() && prove_true(result.max >= buf_max)) result.max = expr();
 
@@ -2914,10 +2913,6 @@ public:
       expr equiv = max(op->args[0], -op->args[0]);
       expr result = mutate(equiv);
       if (!equiv.same_as(result)) return set_result(std::move(result));
-    }
-    if (is_indeterminate(op)) {
-      // We don't know anything about indeterminate, so its bound is an infinity.
-      return set_result(infinity(sign));
     }
     set_result(op);
   }
