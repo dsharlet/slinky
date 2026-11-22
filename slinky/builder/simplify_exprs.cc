@@ -319,20 +319,13 @@ expr simplify(const class logical_not* op, expr a) {
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  if (!c.defined()) return match(t, f) ? t : expr();
   if (is_true(c)) {
     return t;
   } else if (is_false(c)) {
     return f;
   }
-  if (!t.defined() && !f.defined()) return expr();
-  if (!t.defined() || !f.defined()) {
-    if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-      return expr(op);
-    } else {
-      return select::make(std::move(c), std::move(t), std::move(f));
-    }
-  }
+  if (!c.defined()) return match(t, f) ? t : expr();
+  if (!t.defined() || !f.defined()) return expr();
 
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
   if (apply_select_rules(r)) {

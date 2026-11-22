@@ -224,6 +224,14 @@ public:
 
 // `expr` is an owner of a reference counted pointer to a `base_expr_node`.
 // Operations that appear to mutate these objects are actually just reassigning this reference counted pointer.
+//
+// Every defined value `expr` denotes a finite `index_t`; value expression nodes never hold undefined operands.
+// An undefined `expr()` (`!defined()`) cannot be evaluated at runtime and is used in three contexts:
+//  - Optional statement/call slots (e.g. `loop::step`, `dim_expr::stride`, `buffer_at` coords), meaning "omitted".
+//  - `interval_expr` endpoints, meaning "unbounded" (-infinity for `min`, +infinity for `max`).
+//  - Expression constructors and `simplify()`, where it denotes an unknown finite `index_t`: operations whose result
+//    is invariant over all finite values (e.g. `0 * x`, `x / 0`, `false && x`, `select(c, x, x)`) fold to that
+//    result, while all other operations propagate `expr()`.
 class expr {
   ref_count<const base_expr_node> n_;
 
@@ -311,6 +319,7 @@ expr max(span<expr> x);
 SLINKY_INLINE constexpr bool should_commute(expr_node_type a, expr_node_type b) { return a > b; }
 inline bool should_commute(const expr& a, const expr& b) { return should_commute(a.type(), b.type()); }
 
+// An inclusive interval [min, max]. An undefined `min` or `max` denotes an unbounded endpoint (-infinity / +infinity).
 struct interval_expr {
   expr min, max;
 

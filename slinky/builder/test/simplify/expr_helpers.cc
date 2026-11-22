@@ -520,8 +520,10 @@ TEST(expr_helpers, undefined_propagation) {
   }
 
   // Annihilating instances inside simplify() when an operand simplifies to undefined
-  // (e.g. select(expr(y) == y, undef, 2) simplifies to undef, while y - y simplifies to 0).
-  expr undef_expr = select(expr(y) == y, undef, 2);
+  // (semaphore_wait(undef) is a defined call node that simplifies to undef, while y - y simplifies to 0).
+  expr undef_expr = semaphore_wait(undef);
+  ASSERT_TRUE(undef_expr.defined());
+  ASSERT_FALSE(simplify(undef_expr).defined());
   expr zero_expr = y - y;
   expr one_expr = y - y + 1;
   expr neg_one_expr = y - y - 1;
@@ -539,6 +541,10 @@ TEST(expr_helpers, undefined_propagation) {
   EXPECT_THAT(simplify(one_expr || undef_expr), matches(1));
   EXPECT_THAT(simplify(and_then(zero_expr, undef_expr)), matches(0));
   EXPECT_THAT(simplify(or_else(one_expr, undef_expr)), matches(1));
+  EXPECT_THAT(simplify(select(one_expr, x, undef_expr)), matches(x));
+  EXPECT_THAT(simplify(select(zero_expr, undef_expr, x)), matches(x));
+  EXPECT_FALSE(simplify(select(x, undef_expr, y)).defined());
+  EXPECT_FALSE(simplify(select(x, y, undef_expr)).defined());
   EXPECT_FALSE(simplify(abs(undef_expr)).defined());
   EXPECT_FALSE(simplify(and_then(one_expr, undef_expr)).defined());
   EXPECT_FALSE(simplify(and_then(undef_expr, zero_expr)).defined());
@@ -587,8 +593,19 @@ TEST(expr_helpers, undefined_propagation) {
     EXPECT_FALSE(or_else(undef, a).defined()) << "or_else(undef, " << a << ")";
     EXPECT_THAT(select::make(undef, a, a), matches(a)) << "select(undef, " << a << ", " << a << ")";
     EXPECT_FALSE(select::make(undef, a, a + 1).defined()) << "select(undef, " << a << ", " << a + 1 << ")";
+    EXPECT_THAT(select::make(1, a, undef), matches(a)) << "select(1, " << a << ", undef)";
+    EXPECT_THAT(select::make(0, undef, a), matches(a)) << "select(0, undef, " << a << ")";
+    EXPECT_FALSE(select::make(x, undef, a).defined()) << "select(x, undef, " << a << ")";
+    EXPECT_FALSE(select::make(x, a, undef).defined()) << "select(x, " << a << ", undef)";
   }
   EXPECT_FALSE(abs(undef).defined()) << "abs(undef)";
+  EXPECT_FALSE(call::make(intrinsic::abs, {undef}).defined()) << "call::make(abs, {undef})";
+  EXPECT_THAT(call::make(intrinsic::and_then, {expr(0), undef}), matches(0));
+  EXPECT_FALSE(call::make(intrinsic::and_then, {expr(x), undef}).defined());
+  EXPECT_THAT(call::make(intrinsic::or_else, {expr(1), undef}), matches(1));
+  EXPECT_FALSE(call::make(intrinsic::or_else, {expr(x), undef}).defined());
+  EXPECT_FALSE(let::make(x, undef, expr(x) + 1).defined()) << "let(x = undef, x + 1)";
+  EXPECT_FALSE(let::make(x, 1, undef).defined()) << "let(x = 1, undef)";
   EXPECT_FALSE(logical_not::make(undef).defined()) << "logical_not(undef)";
   EXPECT_FALSE(select::make(x, undef, undef).defined()) << "select(x, undef, undef)";
   EXPECT_FALSE(boolean(undef).defined()) << "boolean(undef)";
@@ -803,10 +820,12 @@ TEST(expr_helpers, interval_expr_algebra) {
   EXPECT_THAT(simplify(align(bounds(3, inf), 4)), matches(bounds(0, inf)));
   EXPECT_THAT(simplify(align(bounds(inf, 3), 4)), matches(bounds(inf, 3)));
 
-  // select(c, t, f) with unbounded arms widens that side to unbounded.
+  // select(c, t, f) with unbounded arms widens that side to unbounded; constant conditions pick the active arm.
   EXPECT_THAT(select(x, bounds(inf, 5), bounds(0, 10)), matches(bounds(inf, select(x, 5, 10))));
   EXPECT_THAT(select(x, bounds(0, 10), bounds(5, inf)), matches(bounds(select(x, 0, 5), inf)));
   EXPECT_THAT(select(x, interval_expr::all(), bounds(0, 10)), matches(interval_expr::all()));
+  EXPECT_THAT(select(expr(1), bounds(0, 10), interval_expr::all()), matches(bounds(0, 10)));
+  EXPECT_THAT(select(expr(0), interval_expr::all(), bounds(0, 10)), matches(bounds(0, 10)));
 
   // clamp(x, interval_expr) with half-unbounded and unbounded intervals.
   EXPECT_THAT(simplify(clamp(x, interval_expr::all())), matches(x));

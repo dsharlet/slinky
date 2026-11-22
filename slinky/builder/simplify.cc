@@ -1044,7 +1044,7 @@ public:
       }
     }
 
-    if (!t.defined() && !f.defined()) {
+    if (!t.defined() || !f.defined()) {
       set_result(expr(), expr_info());
       return;
     }

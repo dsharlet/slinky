@@ -169,8 +169,17 @@ T* make_let(Lets&& lets, Body body) {
   return n;
 }
 
-expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
-expr let::make(span<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
+template <typename Lets>
+expr make_let_expr(Lets&& lets, expr body) {
+  if (!body.defined()) return expr();
+  for (const auto& i : lets) {
+    if (!i.second.defined()) return expr();
+  }
+  return expr(make_let<let>(lets, std::move(body)));
+}
+
+expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return make_let_expr(lets, std::move(body)); }
+expr let::make(span<std::pair<var, expr>> lets, expr body) { return make_let_expr(lets, std::move(body)); }
 
 expr let::make(var sym, expr value, expr body) {
   return make({{sym, std::move(value)}}, std::move(body));
@@ -584,23 +593,13 @@ interval_expr operator-(const expr& a, const interval_expr& b) { return -b + a; 
 
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
 
-namespace {
-
-// Returns a bound of select(c, t, f). If either side is unbounded (undefined), the result is unbounded.
-expr select_bound(const expr& c, expr t, expr f) {
-  if (!t.defined() || !f.defined()) return expr();
-  return select(c, std::move(t), std::move(f));
-}
-
-}  // namespace
-
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
   if (t.is_point() && f.is_point()) {
     return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
-        select_bound(c, std::move(t.min), std::move(f.min)),
-        select_bound(c, std::move(t.max), std::move(f.max)),
+        select(c, std::move(t.min), std::move(f.min)),
+        select(c, std::move(t.max), std::move(f.max)),
     };
   }
 }
@@ -627,16 +626,13 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
-  if (!condition.defined()) return true_value.same_as(false_value) ? true_value : condition;
-  if (!true_value.defined() && !false_value.defined()) {
-    // We need both sides of a select to be undefined to unconditionally be undefined.
-    return true_value;
-  }
   if (is_true(condition)) {
     return true_value;
   } else if (is_false(condition)) {
     return false_value;
   }
+  if (!condition.defined()) return true_value.same_as(false_value) ? true_value : expr();
+  if (!true_value.defined() || !false_value.defined()) return expr();
 
   auto n = new select();
   n->condition = std::move(condition);
@@ -646,6 +642,21 @@ expr select::make(expr condition, expr true_value, expr false_value) {
 }
 
 expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
+  if (i == intrinsic::abs) {
+    assert(args.size() == 1);
+    if (!args[0].defined()) return expr();
+  } else if (i == intrinsic::and_then) {
+    assert(args.size() == 2);
+    if (!args[0].defined() || !args[1].defined()) {
+      return is_false(args[0]) ? expr(0) : expr();
+    }
+  } else if (i == intrinsic::or_else) {
+    assert(args.size() == 2);
+    if (!args[0].defined() || !args[1].defined()) {
+      return is_true(args[0]) ? expr(1) : expr();
+    }
+  }
+
   auto n = make_node<call>(size_of(args));
   n->intrinsic = i;
   n->target = std::move(target);
@@ -955,10 +966,7 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
   }
 }
 
-expr abs(expr x) {
-  if (!x.defined()) return x;
-  return call::make(intrinsic::abs, {std::move(x)});
-}
+expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, const expr& a) { return is_one(a) ? x : (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return is_one(a) ? x : ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {
@@ -971,12 +979,10 @@ interval_expr align(interval_expr x, const expr& a) {
 
 expr and_then(expr a, expr b) {
   if (is_false(a)) return expr(0);
-  if (!a.defined() || !b.defined()) return expr();
   return call::make(intrinsic::and_then, {std::move(a), std::move(b)});
 }
 expr or_else(expr a, expr b) {
   if (is_true(a)) return expr(1);
-  if (!a.defined() || !b.defined()) return expr();
   return call::make(intrinsic::or_else, {std::move(a), std::move(b)});
 }
 
