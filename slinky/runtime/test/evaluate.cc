@@ -543,4 +543,71 @@ TEST(evaluate, init_context_async) {
   ASSERT_EQ(contexts, 2);
 }
 
+TEST(evaluate, box_intersection) {
+  auto expect_bounds = [](const interval_expr& actual, index_t min, index_t max) {
+    ASSERT_TRUE(actual.min.defined());
+    ASSERT_TRUE(actual.max.defined());
+    EXPECT_EQ(evaluate(actual.min), min);
+    EXPECT_EQ(evaluate(actual.max), max);
+  };
+
+  // Equal sizes.
+  {
+    box_expr a = {bounds(0, 10), bounds(5, 15)};
+    box_expr b = {bounds(2, 8), bounds(3, 20)};
+    box_expr c = a & b;
+    ASSERT_EQ(c.size(), 2u);
+    expect_bounds(c[0], 2, 8);
+    expect_bounds(c[1], 5, 15);
+  }
+
+  // a.size() > b.size(): trailing dimensions of a are preserved without reading past b.
+  {
+    box_expr a = {bounds(0, 10), bounds(5, 15), bounds(20, 30)};
+    box_expr b = {bounds(2, 8)};
+    box_expr c = a & b;
+    ASSERT_EQ(c.size(), 3u);
+    expect_bounds(c[0], 2, 8);
+    expect_bounds(c[1], 5, 15);
+    expect_bounds(c[2], 20, 30);
+
+    box_expr d = a & box_expr{};
+    ASSERT_EQ(d.size(), 3u);
+    expect_bounds(d[0], 0, 10);
+    expect_bounds(d[1], 5, 15);
+    expect_bounds(d[2], 20, 30);
+  }
+
+  // a.size() < b.size(): trailing dimensions of b are preserved.
+  {
+    box_expr a = {bounds(2, 8)};
+    box_expr b = {bounds(0, 10), bounds(5, 15), bounds(20, 30)};
+    box_expr c = a & b;
+    ASSERT_EQ(c.size(), 3u);
+    expect_bounds(c[0], 2, 8);
+    expect_bounds(c[1], 5, 15);
+    expect_bounds(c[2], 20, 30);
+
+    box_expr d = box_expr{} & b;
+    ASSERT_EQ(d.size(), 3u);
+    expect_bounds(d[0], 0, 10);
+    expect_bounds(d[1], 5, 15);
+    expect_bounds(d[2], 20, 30);
+  }
+
+  // Partially defined intervals with mismatched sizes.
+  {
+    box_expr a = {interval_expr{expr(), 10}, interval_expr{5, expr()}};
+    box_expr b = {interval_expr{2, expr()}};
+
+    for (const box_expr& c : {a & b, b & a}) {
+      ASSERT_EQ(c.size(), 2u);
+      expect_bounds(c[0], 2, 10);
+      ASSERT_TRUE(c[1].min.defined());
+      EXPECT_EQ(evaluate(c[1].min), 5);
+      EXPECT_FALSE(c[1].max.defined());
+    }
+  }
+}
+
 }  // namespace slinky
