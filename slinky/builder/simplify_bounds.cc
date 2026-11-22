@@ -200,7 +200,7 @@ expr mul_or_unbounded(const mul* op, const expr& a, const expr& b) {
   return simplify(op_simplified(), op, a, b);
 }
 
-expr negate(expr a) { return a.defined() ? simplify(static_cast<const sub*>(nullptr), 0, std::move(a)) : expr(); }
+expr negate(expr a) { return a.defined() ? simplify(static_cast<const sub*>(nullptr), 0, std::move(a)) : a; }
 interval_expr negate(interval_expr x) {
   if (x.is_point()) {
     return point(negate(x.min));

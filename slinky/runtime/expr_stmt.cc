@@ -347,6 +347,7 @@ expr logical_or::make(expr a, expr b) {
   return make_bin_op<logical_or>(std::move(a), std::move(b));
 }
 expr logical_not::make(expr a) {
+  if (!a.defined()) return a;
   if (const constant* c = a.as<constant>()) {
     return expr(make_constant(c->value == 0 ? 1 : 0));
   }
@@ -617,7 +618,7 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
-  if (!condition.defined()) return condition;
+  if (!condition.defined()) return true_value.same_as(false_value) ? true_value : condition;
   if (!true_value.defined() && !false_value.defined()) {
     // We need both sides of a select to be undefined to unconditionally be undefined.
     return true_value;

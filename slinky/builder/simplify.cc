@@ -819,12 +819,9 @@ public:
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
     auto less_equal = [](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
-      return (a_max.defined() && b_min.defined() &&
-                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max))) ||
-             (b_min.defined() && !match(a, a_max) &&
-                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
-             (a_max.defined() && !match(b, b_min) &&
-                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
+      return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
+             (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
+             (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
     };
     if (less_equal(a, a_info.bounds.max, b, b_info.bounds.min)) {
       if (T::static_type == expr_node_type::min) {
@@ -864,10 +861,17 @@ public:
   void visit_binary(const T* op) {
     expr_info a_info;
     expr a = mutate(op->a, &a_info);
-    if (!a.defined()) return set_result(expr(), expr_info());
     expr_info b_info;
     expr b = mutate(op->b, &b_info);
-    if (!b.defined()) return set_result(expr(), expr_info());
+    if (!a.defined() || !b.defined()) {
+      expr result = simplify(op, std::move(a), std::move(b));
+      if (result.defined()) {
+        mutate_and_set_result(result);
+      } else {
+        set_result(expr(), expr_info());
+      }
+      return;
+    }
 
     if (T::static_type == expr_node_type::mul) {
       // TODO: This is really ugly, we should have a better way of expressing such simplifications.
@@ -953,13 +957,15 @@ public:
   void visit_logical(const T* op, bool coerce_boolean = false) {
     expr_info a_info;
     expr a = coerce_boolean ? mutate_boolean(op->a, &a_info) : mutate(op->a, &a_info);
-    if (!a.defined()) return set_result(expr(), expr_info());
+    if (!coerce_boolean && !a.defined()) return set_result(expr(), expr_info());
     expr_info b_info;
     expr b = coerce_boolean ? mutate_boolean(op->b, &b_info) : mutate(op->b, &b_info);
-    if (!b.defined()) return set_result(expr(), expr_info());
+    if (!coerce_boolean && !b.defined()) return set_result(expr(), expr_info());
 
     expr result = simplify(op, a, b);
-    if (!result.same_as(op)) {
+    if (!result.defined()) {
+      set_result(expr(), expr_info());
+    } else if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
       // Similar to the way we handle min/max, we need to check the bounds against the expression itself.
@@ -1005,7 +1011,14 @@ public:
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
     expr c = mutate_boolean(op->condition, &c_info);
     if (!c.defined()) {
-      set_result(expr(), expr_info());
+      expr_info t_info, f_info;
+      expr t = mutate(op->true_value, &t_info);
+      expr f = mutate(op->false_value, &f_info);
+      if (t.defined() && match(t, f)) {
+        set_result(std::move(t), std::move(t_info));
+      } else {
+        set_result(expr(), expr_info());
+      }
       return;
     } else if (auto proven = attempt_to_prove(c_info.bounds)) {
       mutate_and_set_result(*proven ? op->true_value : op->false_value);
