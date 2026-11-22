@@ -1106,7 +1106,10 @@ public:
     } else if (op->intrinsic == intrinsic::abs) {
       assert(args.size() == 1);
       assert(args_bounds.size() == 1);
-      if (prove_constant_true(args_bounds[0].min >= 0)) {
+      if (!args[0].defined()) {
+        set_result(expr(), expr_info());
+        return;
+      } else if (prove_constant_true(args_bounds[0].min >= 0)) {
         set_result(std::move(args[0]), {std::move(args_bounds[0]), alignment_type()});
         return;
       } else if (prove_constant_true(args_bounds[0].max <= 0)) {
@@ -1116,7 +1119,9 @@ public:
     }
 
     expr e = simplify(op, op->intrinsic, op->target, std::move(args));
-    if (e.same_as(op)) {
+    if (!e.defined()) {
+      set_result(expr(), expr_info());
+    } else if (e.same_as(op)) {
       set_result(std::move(e), {bounds_of(op, std::move(args_bounds)), alignment_type()});
     } else {
       mutate_and_set_result(e);

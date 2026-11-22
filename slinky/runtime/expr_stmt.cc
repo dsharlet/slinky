@@ -326,8 +326,8 @@ expr div::make(expr a, expr b) {
   return make_bin_op<div>(std::move(a), std::move(b));
 }
 expr mod::make(expr a, expr b) {
-  // `0%x`, `x%0` and `x%1` are all zero.
-  if (is_zero(a) || is_zero(b) || is_one(b)) return expr(0);
+  // `0%x`, `x%0`, `x%1` and `x%-1` are all zero.
+  if (is_zero(a) || is_zero(b) || is_one(b) || is_constant(b, -1)) return expr(0);
   return make_bin_op<mod>(std::move(a), std::move(b));
 }
 expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)); }
@@ -433,7 +433,10 @@ const interval_expr& interval_expr::intersection_identity() { return all(); }
 const expr& interval_expr::begin() const { return min; }
 expr interval_expr::end() const { return max + 1; }
 expr interval_expr::extent() const { return max - min + 1; }
-expr interval_expr::empty() const { return min > max; }
+expr interval_expr::empty() const {
+  if (!min.defined() || !max.defined()) return expr(0);
+  return min > max;
+}
 
 expr interval_expr::contains(expr_ref x) const {
   if (min.defined() && max.defined()) {
@@ -451,6 +454,8 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_one(scale)) {
   } else if (is_point()) {
     min = max = mul::make(min, scale);
+  } else if (is_zero(scale)) {
+    min = max = expr(0);
   } else if (is_non_negative(scale)) {
     if (min.defined()) min = mul::make(min, scale);
     if (max.defined()) max = mul::make(max, scale);
@@ -470,6 +475,8 @@ interval_expr& interval_expr::operator/=(const expr& scale) {
   if (is_one(scale)) {
   } else if (is_point()) {
     min = max = div::make(min, scale);
+  } else if (is_zero(scale)) {
+    min = max = expr(0);
   } else if (is_non_negative(scale)) {
     if (min.defined()) min = div::make(min, scale);
     if (max.defined()) max = div::make(max, scale);
@@ -599,20 +606,22 @@ interval_expr select(const expr& c, interval_expr t, interval_expr f) {
 }
 
 box_expr operator|(box_expr a, const box_expr& b) {
-  a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < b.size(); ++i) {
+  const std::size_t old_a = a.size();
+  const std::size_t n = std::min(old_a, b.size());
+  a.resize(std::max(old_a, b.size()));
+  for (std::size_t i = 0; i < n; ++i) {
     a[i] |= b[i];
+  }
+  for (std::size_t i = n; i < old_a; ++i) {
+    a[i] = interval_expr();
   }
   return a;
 }
 
 box_expr operator&(box_expr a, const box_expr& b) {
   a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
+  for (std::size_t i = 0; i < b.size(); ++i) {
     a[i] &= b[i];
-  }
-  for (std::size_t i = b.size(); i < a.size(); ++i) {
-    a[i] = b[i];
   }
   return a;
 }
@@ -915,16 +924,15 @@ stmt check::make(expr condition) {
 }
 
 bool is_positive(expr_ref x) {
-  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
-    assert(c->args.size() == 1);
-    return is_positive(c->args[0]);
-  }
   auto c = as_constant(x);
   return c ? *c > 0 : false;
 }
 
 bool is_non_negative(expr_ref x) {
-  if (as_intrinsic(x, intrinsic::abs)) return true;
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return c->args[0].defined();
+  }
   auto c = as_constant(x);
   return c ? *c >= 0 : false;
 }
@@ -947,7 +955,10 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
   }
 }
 
-expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
+expr abs(expr x) {
+  if (!x.defined()) return x;
+  return call::make(intrinsic::abs, {std::move(x)});
+}
 expr align_down(expr x, const expr& a) { return is_one(a) ? x : (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return is_one(a) ? x : ((std::move(x) + (a - 1)) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) {
@@ -958,8 +969,16 @@ interval_expr align(interval_expr x, const expr& a) {
   }
 }
 
-expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
-expr or_else(expr a, expr b) { return call::make(intrinsic::or_else, {std::move(a), std::move(b)}); }
+expr and_then(expr a, expr b) {
+  if (is_false(a)) return expr(0);
+  if (!a.defined() || !b.defined()) return expr();
+  return call::make(intrinsic::and_then, {std::move(a), std::move(b)});
+}
+expr or_else(expr a, expr b) {
+  if (is_true(a)) return expr(1);
+  if (!a.defined() || !b.defined()) return expr();
+  return call::make(intrinsic::or_else, {std::move(a), std::move(b)});
+}
 
 expr buffer_rank(var buf) { return variable::make(buf, buffer_field::rank); }
 expr buffer_elem_size(var buf) { return variable::make(buf, buffer_field::elem_size); }
