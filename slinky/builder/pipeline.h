@@ -180,6 +180,12 @@ public:
 
     std::vector<var> dims;
 
+    // Optional per-dimension bounds (internal outputs only) expressed in terms
+    // of earlier sibling outputs' `dims` (mirroring `func::input::bounds`),
+    // intersected with this output's buffer bounds during lowering. An undefined
+    // `min` or `max` leaves that side of the buffer's bounds unchanged.
+    box_expr bounds;
+
     var sym() const { return buffer->sym(); }
   };
 

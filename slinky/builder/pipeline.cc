@@ -569,6 +569,31 @@ void find_dependent_dims(
   }
 }
 
+// Collects all other buffer symbols whose `buffer_min`/`buffer_max` appear in
+// `bounds` so `bounds_deps_` tracks cross-buffer dependencies introduced by
+// `func::output::bounds` (e.g. a reduction buffer depending on a sibling output).
+class buffer_bounds_deps_finder : public recursive_node_visitor {
+  var self_;
+  std::set<var>& deps_;
+
+public:
+  buffer_bounds_deps_finder(var self, std::set<var>& deps) : self_(self), deps_(deps) {}
+
+  void visit(const variable* v) override {
+    if ((v->field == buffer_field::min || v->field == buffer_field::max) && v->sym != self_) {
+      deps_.insert(v->sym);
+    }
+  }
+};
+
+void find_buffer_bounds_deps(var sym, const std::vector<interval_expr>& bounds, std::set<var>& deps) {
+  buffer_bounds_deps_finder finder(sym, deps);
+  for (const interval_expr& b : bounds) {
+    if (b.min.defined()) b.min.accept(&finder);
+    if (b.max.defined()) b.max.accept(&finder);
+  }
+}
+
 // Lowers a DAG of `func`s and a `loop_nest` schedule into a single Slinky IR
 // `stmt` prior to storage folding, copy aliasing, and simplification passes.
 //
@@ -690,9 +715,29 @@ class pipeline_builder {
   void substitute_buffer_dims() {
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
+
+      // Track earlier sibling outputs' `dim -> buffer_bounds` mappings so later
+      // outputs can evaluate `o.bounds` against them (including pipeline outputs).
+      const bool has_output_bounds = std::any_of(
+          f->outputs().begin(), f->outputs().end(),
+          [](const func::output& o) { return !o.bounds.empty(); });
+      bounds_map sibling_bounds;
+      auto record_output_bounds = [&](const func::output& o) {
+        if (!has_output_bounds) return;
+        for (index_t d = 0; d < static_cast<index_t>(o.dims.size()); ++d) {
+          std::optional<interval_expr>& bd = sibling_bounds[o.dims[d]];
+          bd = bd ? (*bd | buffer_bounds(o.sym(), d))
+                  : buffer_bounds(o.sym(), d);
+        }
+      };
+
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
-        if (output_syms_.count(b->sym())) continue;
+        if (output_syms_.count(b->sym())) {
+          assert(o.bounds.empty());
+          record_output_bounds(o);
+          continue;
+        }
 
         // First substitute the bounds.
         std::vector<std::pair<expr, expr>> substitutions;
@@ -704,6 +749,16 @@ class pipeline_builder {
           substitutions.emplace_back(buffer_max(b->sym(), d), bounds_d.max);
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
+
+        // Narrow this output's bounds by any sibling-dependent `o.bounds`.
+        // `bounds_of` turns an undefined side into +/-infinity; restore those to
+        // undefined `expr()` so `&= ob` leaves unconstrained sides untouched.
+        for (index_t d = 0; d < static_cast<index_t>(std::min(dims.size(), o.bounds.size())); ++d) {
+          interval_expr ob = bounds_of(sanitizer_.mutate(o.bounds[d]), sibling_bounds);
+          if (is_negative_infinity(ob.min)) ob.min = expr();
+          if (is_positive_infinity(ob.max)) ob.max = expr();
+          dims[d].bounds &= ob;
+        }
 
         const bool can_fold_buffer =
             store_at_.at(b->sym()) != compute_at_.at(f);
@@ -735,10 +790,16 @@ class pipeline_builder {
           tmp.push_back({d.bounds});
         }
 
+
+        // Record any sibling-buffer dependencies introduced by `o.bounds` so loop
+        // cropping propagates crops from earlier sibling outputs into this buffer.
+        find_buffer_bounds_deps(b->sym(), tmp, bounds_deps_[b->sym()]);
+
         // Record the inferred dims.
         inferred_dims_[b->sym()] = dims;
         inferred_shapes_[b->sym()] = shape;
         inferred_bounds_[b->sym()] = tmp;
+        record_output_bounds(o);
       }
     }
 
@@ -836,10 +897,13 @@ class pipeline_builder {
     const box_expr& bounds = *allocation_bounds_[b->sym()];
     s.body = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, s.body);
 
+    // Skip the bounds check when the demanded region is empty (which can happen
+    // when `func::output::bounds` narrows a reduction domain to empty on an edge
+    // tile).
     std::vector<stmt> checks;
     for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-      checks.push_back(check::make(dims[d].is_broadcast() || dims[d].min() <= bounds[d].min));
-      checks.push_back(check::make(dims[d].is_broadcast() || dims[d].max() >= bounds[d].max));
+      checks.push_back(check::make(bounds[d].empty() || dims[d].is_broadcast() || dims[d].min() <= bounds[d].min));
+      checks.push_back(check::make(bounds[d].empty() || dims[d].is_broadcast() || dims[d].max() >= bounds[d].max));
     }
 
     s.body = block::make(std::move(checks), s.body);
@@ -1640,12 +1704,14 @@ class pipeline_builder {
       body = add_crop(body, sym, *allocation_bounds_[sym], dependent_dims[sym]);
     }
 
-    // Followed by intermediate buffers in the reverse topological order
-    // (i.e. the outermost buffers are closer to the outputs of the pipeline).
+    // Followed by intermediate buffers in reverse topological order (i.e. the
+    // outermost buffers are closer to the outputs of the pipeline). Outputs of
+    // each func are also wrapped in reverse so later outputs (whose `o.bounds`
+    // may reference earlier siblings' bounds) sit inside earlier siblings' crops.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
-      for (const func::output& o : f->outputs()) {
-        const buffer_expr_ptr& b = o.buffer;
+      for (auto oi = f->outputs().rbegin(); oi != f->outputs().rend(); ++oi) {
+        const buffer_expr_ptr& b = oi->buffer;
         if (!inferred_bounds_[b->sym()]) continue;
         if (all_deps.count(b->sym()) == 0) continue;
         if (allocations.count(b->sym()) > 0) {
@@ -1725,10 +1791,12 @@ class pipeline_builder {
     for (std::pair<var, buffer_expr_ptr> i : constants_) {
       body = let_stmt::make(i.first, constant_buffer::make(i.second->constant()), std::move(body));
     }
+    // Wrap outputs of each func in reverse so earlier siblings are declared
+    // outside later siblings whose `inferred_shapes_` may reference their bounds.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
-      for (const func::output& o : f->outputs()) {
-        const buffer_expr_ptr& b = o.buffer;
+      for (auto oi = f->outputs().rbegin(); oi != f->outputs().rend(); ++oi) {
+        const buffer_expr_ptr& b = oi->buffer;
         const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
         if (!maybe_dims) continue;
         body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, std::move(body));

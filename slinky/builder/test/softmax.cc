@@ -262,4 +262,118 @@ TEST_P(softmax, pipeline) {
   }
 }
 
+// Verifies that `func::output::bounds` on a 0-elem-size reduction-domain sibling
+// output narrows both the reduction's active range and the upstream `scores`
+// producer's per-tile work, for both external and internal primary outputs.
+TEST(softmax, dependent_reduction_output_bounds) {
+  for (bool internal_output : {false, true}) {
+    for (int window : {0, 8}) {  // 0 = full causal, 8 = sliding window of 8
+      node_context ctx;
+      constexpr int S = 32;
+      constexpr int B = 32;
+      constexpr int tile_q = 4;
+
+      auto in = buffer_expr::make(ctx, "in", 2, sizeof(float));
+      auto out = buffer_expr::make(ctx, "out", 1, sizeof(float));
+      auto scores = buffer_expr::make(ctx, "scores", 2, sizeof(float));
+      auto red_out =
+          internal_output ? buffer_expr::make(ctx, "red_out", 1, sizeof(float)) : out;
+      auto red_bounds = buffer_expr::make(ctx, "red_bounds", 1, 0);
+
+      var k(ctx, "k");
+      var q(ctx, "q");
+      var r_k(ctx, "r_k");
+
+      red_bounds->dim(0).bounds = min_extent(0, S);
+      red_bounds->dim(0).stride = 0;
+      red_bounds->dim(0).fold_factor = dim::unfolded;
+
+      index_t producer_elements = 0;
+      auto produce_scores = [&](const buffer<const float>& src, const buffer<float>& dst) -> index_t {
+        for (index_t qi = dst.dim(1).begin(); qi < dst.dim(1).end(); ++qi) {
+          for (index_t ki = dst.dim(0).begin(); ki < dst.dim(0).end(); ++ki) {
+            dst(ki, qi) = src(ki, qi) + 1.0f;
+            ++producer_elements;
+          }
+        }
+        return 0;
+      };
+
+      auto masked_sum = [window](const buffer<const float>& src, const buffer<float>& dst,
+                            const raw_buffer& rbuf) -> index_t {
+        const dim& rk = rbuf.dim(0);
+        for (index_t qi = dst.dim(0).begin(); qi < dst.dim(0).end(); ++qi) {
+          float acc = 0.0f;
+          for (index_t ki = rk.begin(); ki < rk.end(); ++ki) {
+            if (ki <= qi && (window == 0 || ki > qi - window)) {
+              acc += src(ki, qi);
+            }
+          }
+          dst(qi) = acc;
+        }
+        return 0;
+      };
+
+      interval_expr rk_bounds = {window > 0 ? max(0, q - (window - 1)) : expr(), q};
+
+      func f_scores = func::make(std::move(produce_scores), {{in, {point(k), point(q)}}}, {{scores, {k, q}}},
+          call_stmt::attributes{.name = "scores"});
+      func f_reduce = func::make(std::move(masked_sum), {{scores, {point(r_k), point(q)}}},
+          {{red_out, {q}}, {red_bounds, {r_k}, {rk_bounds}}},
+          call_stmt::attributes{.name = "masked_sum"});
+      std::optional<func> f_scale;
+      if (internal_output) {
+        f_scale = func::make(multiply_2<float>, {{red_out, {point(q)}}}, {{out, {q}}},
+            call_stmt::attributes{.name = "scale"});
+      }
+
+      loop_nest loops;
+      loop_ref l_q = loops.add_loop(loops.root(), {out, q}, tile_q);
+      loops.place(scores, l_q);
+      loops.store(scores, l_q);
+      if (internal_output) {
+        loops.place(red_out, l_q);
+        loops.store(red_out, l_q);
+      }
+
+      pipeline p = build_pipeline(ctx, {in}, {out}, loops);
+
+      buffer<float, 2> in_buf({S, B});
+      buffer<float, 1> out_buf({B});
+      in_buf.allocate();
+      out_buf.allocate();
+      for (index_t qi = 0; qi < B; ++qi) {
+        for (index_t ki = 0; ki < S; ++ki) {
+          in_buf(ki, qi) = static_cast<float>((qi * 7 + ki * 13) % 19) * 0.1f;
+        }
+      }
+
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      test_context eval_ctx;
+      p.evaluate(inputs, outputs, eval_ctx);
+
+      const float mult = internal_output ? 2.0f : 1.0f;
+      for (index_t qi = 0; qi < B; ++qi) {
+        float expected = 0.0f;
+        for (index_t ki = 0; ki < S; ++ki) {
+          if (ki <= qi && (window == 0 || ki > qi - window)) {
+            expected += in_buf(ki, qi) + 1.0f;
+          }
+        }
+        ASSERT_NEAR(out_buf(qi), expected * mult, 1e-4f)
+            << "internal=" << internal_output << " window=" << window << " qi=" << qi;
+      }
+
+      // Over 8 tiles of `tile_q = 4`:
+      // - causal: tile t produces 4 * (4*t + 4) elements -> sum = 576 (vs 1024).
+      // - window=8: tiles 0..1 produce 4*4 + 4*8 = 48, tiles 2..7 produce
+      //   6 * 4 * (4 + 8 - 1) = 264 -> total = 312.
+      const index_t expected_elements = window == 0 ? 576 : 312;
+      EXPECT_EQ(producer_elements, expected_elements)
+          << "internal=" << internal_output << " window=" << window;
+    }
+  }
+}
+
 }  // namespace slinky
