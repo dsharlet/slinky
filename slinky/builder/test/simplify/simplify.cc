@@ -209,11 +209,11 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
   ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
 
-  ASSERT_THAT(simplify(select(x, expr(), 2) == 1), matches(select(x, expr(), false)));
-  ASSERT_THAT(simplify(!select(x, expr(), true)), matches(select(x, expr(), false)));
+  ASSERT_THAT(simplify(select(x, z, 2) == 1), matches(x && z == 1));
+  ASSERT_THAT(simplify(!select(x, z, true)), matches(x && !z));
 
-  ASSERT_THAT(simplify(min(select(x, 0, y) + 4, select(x, expr(), min(y, 113) + 4))),
-      matches(select(x, expr(), min(y, 113) + 4)));
+  ASSERT_THAT(simplify(min(select(x, 0, y) + 4, select(x, z, min(y, 113) + 4))),
+      matches(select(x, min(z, 4), min(y, 113) + 4)));
 
   ASSERT_THAT(simplify(min(x + 64, max(min(x, 113) + 5, min(y, 128)))),
       matches(min(min(x + 64, max(y, min(x, 113) + 5)), 128)));
@@ -578,6 +578,23 @@ TEST(simplify, licm) {
               make_crop_x(b0, b4, 0, make_call(b3, b0)),
           })),
       })));
+
+  // Lifting a crop whose bound is a select depending on the loop var must widen that bound to unbounded, not prune to
+  // the other select arm.
+  ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
+                  make_loop_x(block::make({
+                      crop_dim::make(b2, b1, 0, bounds(select(y, x, 5), 10), make_call(b0, b2)),
+                      make_call(b1, b3),
+                      make_crop_x(b1, b4, 0, make_call(b0, b1)),
+                  })))),
+      matches(block::make({
+          allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
+              block::make({
+                  make_call(b0, b1),
+                  make_call(b1, b3),
+              })),
+          make_loop_x(make_crop_x(b1, b4, 0, make_call(b0, b1))),
+      })));
 }
 
 TEST(simplify, bounds) {
@@ -688,9 +705,9 @@ TEST(simplify, buffer_bounds) {
               crop_dim::make(b1, b0, 0, {x, (((x + y) + 15) / 16) * 16}, use_buffer(b1))))));
 
   ASSERT_THAT(simplify(loop::make(x, loop::serial, {0, y}, z,
-                  crop_dim::make(b1, b0, 0, {select(x <= 0, x, expr()), y}, use_buffer(b1)))),
+                  crop_dim::make(b1, b0, 0, {select(x <= 0, x, w), y}, use_buffer(b1)))),
       matches(loop::make(
-          x, loop::serial, {0, y}, z, crop_dim::make(b1, b0, 0, {select(x <= 0, 0, expr()), y}, use_buffer(b1)))));
+          x, loop::serial, {0, y}, z, crop_dim::make(b1, b0, 0, {select(x <= 0, 0, w), y}, use_buffer(b1)))));
 
   ASSERT_THAT(
       simplify(decl_bounds(b0, {{-10, 10}},

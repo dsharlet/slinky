@@ -819,12 +819,9 @@ public:
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
     auto less_equal = [](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
-      return (a_max.defined() && b_min.defined() &&
-                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max))) ||
-             (b_min.defined() && !match(a, a_max) &&
-                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
-             (a_max.defined() && !match(b, b_min) &&
-                 prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
+      return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
+             (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
+             (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
     };
     if (less_equal(a, a_info.bounds.max, b, b_info.bounds.min)) {
       if (T::static_type == expr_node_type::min) {
@@ -1093,7 +1090,10 @@ public:
     } else if (op->intrinsic == intrinsic::abs) {
       assert(args.size() == 1);
       assert(args_bounds.size() == 1);
-      if (prove_constant_true(args_bounds[0].min >= 0)) {
+      if (!args[0].defined()) {
+        set_result(expr(), expr_info());
+        return;
+      } else if (prove_constant_true(args_bounds[0].min >= 0)) {
         set_result(std::move(args[0]), {std::move(args_bounds[0]), alignment_type()});
         return;
       } else if (prove_constant_true(args_bounds[0].max <= 0)) {
@@ -1103,7 +1103,9 @@ public:
     }
 
     expr e = simplify(op, op->intrinsic, op->target, std::move(args));
-    if (e.same_as(op)) {
+    if (!e.defined()) {
+      set_result(expr(), expr_info());
+    } else if (e.same_as(op)) {
       set_result(std::move(e), {bounds_of(op, std::move(args_bounds)), alignment_type()});
     } else {
       mutate_and_set_result(e);
@@ -1253,8 +1255,7 @@ public:
     }
   }
 
-  // Substitute expr() in for loop_var only in crop bounds within s, and only if those crop bounds do not crop a folded
-  // dimension.
+  // Drop crop bounds that depend on loop_var within s, and only if those crop bounds do not crop a folded dimension.
   stmt remove_loop_var_in_crop_bounds(const stmt& s, var loop_var) {
     class m : public node_mutator {
       symbol_map<buffer_info>& buffers;
@@ -1274,7 +1275,10 @@ public:
           // This dimension is folded, don't drop crops.
           return bounds;
         }
-        return substitute(bounds, loop_var, expr());
+        interval_expr result = bounds;
+        if (depends_on(result.min, loop_var).var) result.min = expr();
+        if (depends_on(result.max, loop_var).var) result.max = expr();
+        return result;
       }
 
       void visit(const crop_dim* op) override {

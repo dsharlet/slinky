@@ -311,6 +311,7 @@ expr max(span<expr> x);
 SLINKY_INLINE constexpr bool should_commute(expr_node_type a, expr_node_type b) { return a > b; }
 inline bool should_commute(const expr& a, const expr& b) { return should_commute(a.type(), b.type()); }
 
+// An inclusive interval [min, max]. An undefined `min` or `max` denotes an unbounded endpoint (-infinity / +infinity).
 struct interval_expr {
   expr min, max;
 

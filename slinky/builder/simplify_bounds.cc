@@ -200,7 +200,7 @@ expr mul_or_unbounded(const mul* op, const expr& a, const expr& b) {
   return simplify(op_simplified(), op, a, b);
 }
 
-expr negate(expr a) { return a.defined() ? simplify(static_cast<const sub*>(nullptr), 0, std::move(a)) : expr(); }
+expr negate(expr a) { return a.defined() ? simplify(static_cast<const sub*>(nullptr), 0, std::move(a)) : a; }
 interval_expr negate(interval_expr x) {
   if (x.is_point()) {
     return point(negate(x.min));
@@ -422,19 +422,38 @@ interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
   }
 }
 
+namespace {
+
+// Coerce an arbitrary integer interval to a [0, 1] truthiness interval.
+// If the interval is already a point or has boolean endpoints, returns it unchanged.
+interval_expr bounds_of_boolean(interval_expr a) {
+  if (a.is_point() || (is_boolean(a.min) && is_boolean(a.max))) {
+    return a;
+  }
+  expr neg = a.max.defined() ? simplify(static_cast<const less*>(nullptr), a.max, 0) : expr(0);
+  expr pos = a.min.defined() ? simplify(static_cast<const less*>(nullptr), 0, a.min) : expr(0);
+  expr min_bool = simplify(static_cast<const logical_or*>(nullptr), std::move(neg), std::move(pos));
+  expr max_bool = (a.min.defined() && a.max.defined())
+                      ? simplify(static_cast<const logical_or*>(nullptr),
+                            simplify(static_cast<const not_equal*>(nullptr), a.min, 0),
+                            simplify(static_cast<const not_equal*>(nullptr), a.max, 0))
+                      : expr(1);
+  return {std::move(min_bool), std::move(max_bool)};
+}
+
+}  // namespace
+
 interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b) {
-  if (!a.min.defined()) a.min = 0;
-  if (!a.max.defined()) a.max = 1;
-  if (!b.min.defined()) b.min = 0;
-  if (!b.max.defined()) b.max = 1;
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  }
+  return bounds_of_linear(op, bounds_of_boolean(std::move(a)), bounds_of_boolean(std::move(b)));
 }
 interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b) {
-  if (!a.min.defined()) a.min = 0;
-  if (!a.max.defined()) a.max = 1;
-  if (!b.min.defined()) b.min = 0;
-  if (!b.max.defined()) b.max = 1;
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  }
+  return bounds_of_linear(op, bounds_of_boolean(std::move(a)), bounds_of_boolean(std::move(b)));
 }
 interval_expr bounds_of(const logical_not* op, interval_expr a) {
   if (a.is_point(op)) {
@@ -442,10 +461,8 @@ interval_expr bounds_of(const logical_not* op, interval_expr a) {
   } else if (a.is_point()) {
     return point(simplify(op, std::move(a.min)));
   } else {
-    return {
-        a.max.defined() ? simplify(op, std::move(a.max)) : expr(0),
-        a.min.defined() ? simplify(op, std::move(a.min)) : expr(1),
-    };
+    a = bounds_of_boolean(std::move(a));
+    return {simplify(op, std::move(a.max)), simplify(op, std::move(a.min))};
   }
 }
 
@@ -456,9 +473,9 @@ interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t
     } else {
       return point(simplify(op, std::move(c.min), std::move(t.min), std::move(f.min)));
     }
-  } else if (is_true(c.min)) {
+  } else if (is_positive(c.min) || is_negative(c.max)) {
     return t;
-  } else if (is_false(c.max)) {
+  } else if (is_zero(c.min) && is_zero(c.max)) {
     return f;
   } else if (c.is_point()) {
     return select(c.min, std::move(t), std::move(f));

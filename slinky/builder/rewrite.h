@@ -96,11 +96,12 @@ struct pattern_info<long> {
 };
 #endif
 
+// The rules assume that every wildcard matches a defined (finite) expression.
 class pattern_expr {
 public:
   expr_ref e;
 
-  explicit pattern_expr(expr_ref x) : e(x) {}
+  explicit pattern_expr(expr_ref x) : e(x) { assert(x.defined()); }
 };
 
 template <>
@@ -129,6 +130,7 @@ public:
 
 template <int matched, int N>
 SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, expr_ref x, match_context& ctx) {
+  assert(x.defined());
   if (matched & (1 << N)) {
     return slinky::match(x.get(), ctx.vars[N]);
   } else {
@@ -330,7 +332,7 @@ SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, con
 }
 SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const mod*) {
   if (is_zero(a)) return a;
-  if (is_one(b)) return 0;
+  if (is_zero(b) || is_one(b) || is_constant(b, -1)) return 0;
   return make_binary<mod>(std::move(a), std::move(b));
 }
 SLINKY_UNIQUE SLINKY_NO_INLINE expr substitute_binary(expr a, expr b, bool&, const logical_and*) {
@@ -1055,8 +1057,8 @@ public:
 
 class rewriter : public base_rewriter<expr_ref> {
 public:
-  rewriter(const expr& x) : base_rewriter(x) {}
-  rewriter(expr_ref x) : base_rewriter(x) {}
+  rewriter(const expr& x) : base_rewriter(x) { assert(x.defined()); }
+  rewriter(expr_ref x) : base_rewriter(x) { assert(x.defined()); }
   using base_rewriter::operator();
 };
 
