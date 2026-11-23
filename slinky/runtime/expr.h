@@ -224,6 +224,16 @@ public:
 
 // `expr` is an owner of a reference counted pointer to a `base_expr_node`.
 // Operations that appear to mutate these objects are actually just reassigning this reference counted pointer.
+//
+// Every defined value `expr` denotes a finite `index_t`; value expression nodes never hold undefined operands.
+// An undefined `expr()` (`!defined()`) cannot be evaluated at runtime and is used in three contexts:
+//  - Optional statement/call slots (e.g. `loop::step`, `dim_expr::stride`, `buffer_at` coords), meaning "omitted".
+//  - `interval_expr` endpoints, meaning "unbounded" (-infinity for `min`, +infinity for `max`).
+//  - Expression constructors and `simplify()`, where it denotes bottom / unreachable: strict operations propagate
+//    `expr()` over all operands (including absorbing constants like `0 * x` or `false && x`), while non-strict
+//    operations (`select`, `and_then`, `or_else`) evaluate the condition/first operand first and prune unreachable
+//    arms (e.g. `select(c, expr(), f)` folds to `f`, `and_then(x, expr())` folds to `0`, `or_else(x, expr())` folds
+//    to `1`).
 class expr {
   ref_count<const base_expr_node> n_;
 

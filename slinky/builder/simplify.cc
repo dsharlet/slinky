@@ -1031,6 +1031,12 @@ public:
     if (!t.defined() && !f.defined()) {
       set_result(expr(), expr_info());
       return;
+    } else if (!t.defined()) {
+      set_result(std::move(f), std::move(f_info));
+      return;
+    } else if (!f.defined()) {
+      set_result(std::move(t), std::move(t_info));
+      return;
     }
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
@@ -1128,10 +1134,17 @@ public:
     std::map<expr, var, node_less> reverse_lets;
 
     bool values_changed = false;
+    bool has_undefined = false;
     auto add_lets = [&](const auto& op_lets) {
       for (const auto& s : op_lets) {
         expr_info value_info;
         expr value = mutate(s.second, &value_info);
+        if constexpr (std::is_same_v<T, let>) {
+          if (!value.defined()) {
+            has_undefined = true;
+            return;
+          }
+        }
 
         var& name = reverse_lets[value];
         if (name.defined()) {
@@ -1161,14 +1174,29 @@ public:
 
     add_lets(op->lets);
     auto body_node = op->body;
-    while (const T* let_body = body_node.template as<T>()) {
+    while (!has_undefined) {
+      const T* let_body = body_node.template as<T>();
+      if (!let_body) break;
       add_lets(let_body->lets);
       body_node = let_body->body;
       values_changed = true;
     }
 
+    if constexpr (std::is_same_v<T, let>) {
+      if (has_undefined) {
+        set_result(expr(), expr_info());
+        return;
+      }
+    }
+
     expr_info body_info;
     auto body = mutate(body_node, &body_info);
+    if constexpr (std::is_same_v<T, let>) {
+      if (!body.defined()) {
+        set_result(expr(), expr_info());
+        return;
+      }
+    }
 
     scoped_buffers.clear();
     scoped_values.clear();

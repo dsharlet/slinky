@@ -495,6 +495,131 @@ TEST(expr_helpers, constructors_agree_with_simplify) {
   }
 }
 
+// Under bottom/unreachable semantics, strict operations propagate undefined over all operands (including absorbing
+// constants), while non-strict operations (select, and_then, or_else) evaluate the condition/first operand first and
+// prune unreachable arms in both constructors and simplify().
+TEST(expr_helpers, undefined_propagation) {
+  const expr undef;
+
+  // Strict ops propagate undefined even with absorbing constants in constructors.
+  EXPECT_FALSE(mul::make(undef, 0).defined());
+  EXPECT_FALSE(mul::make(0, undef).defined());
+  EXPECT_FALSE(div::make(undef, 0).defined());
+  EXPECT_FALSE(div::make(0, undef).defined());
+  EXPECT_FALSE(mod::make(undef, 0).defined());
+  EXPECT_FALSE(mod::make(0, undef).defined());
+  EXPECT_FALSE(mod::make(undef, 1).defined());
+  EXPECT_FALSE(mod::make(undef, -1).defined());
+  EXPECT_FALSE(logical_and::make(undef, 0).defined());
+  EXPECT_FALSE(logical_and::make(0, undef).defined());
+  EXPECT_THAT(and_then(0, undef), matches(0));
+  for (const expr& truthy : {expr(1), expr(-1), expr(2)}) {
+    EXPECT_FALSE(logical_or::make(undef, truthy).defined()) << "undef || " << truthy;
+    EXPECT_FALSE(logical_or::make(truthy, undef).defined()) << truthy << " || undef";
+    EXPECT_THAT(or_else(truthy, undef), matches(1)) << "or_else(" << truthy << ", undef)";
+  }
+
+  // Inside simplify() when an operand simplifies to undefined
+  // (semaphore_wait(undef) is a defined call node that simplifies to undef, while y - y simplifies to 0).
+  expr undef_expr = semaphore_wait(undef);
+  ASSERT_TRUE(undef_expr.defined());
+  ASSERT_FALSE(simplify(undef_expr).defined());
+  expr zero_expr = y - y;
+  expr one_expr = y - y + 1;
+  expr neg_one_expr = y - y - 1;
+  EXPECT_FALSE(simplify(undef_expr * zero_expr).defined());
+  EXPECT_FALSE(simplify(zero_expr * undef_expr).defined());
+  EXPECT_FALSE(simplify(undef_expr / zero_expr).defined());
+  EXPECT_FALSE(simplify(zero_expr / undef_expr).defined());
+  EXPECT_FALSE(simplify(undef_expr % zero_expr).defined());
+  EXPECT_FALSE(simplify(zero_expr % undef_expr).defined());
+  EXPECT_FALSE(simplify(undef_expr % one_expr).defined());
+  EXPECT_FALSE(simplify(undef_expr % neg_one_expr).defined());
+  EXPECT_FALSE(simplify(undef_expr && zero_expr).defined());
+  EXPECT_FALSE(simplify(zero_expr && undef_expr).defined());
+  EXPECT_FALSE(simplify(undef_expr || one_expr).defined());
+  EXPECT_FALSE(simplify(one_expr || undef_expr).defined());
+  EXPECT_THAT(simplify(and_then(zero_expr, undef_expr)), matches(0));
+  EXPECT_THAT(simplify(or_else(one_expr, undef_expr)), matches(1));
+  EXPECT_THAT(simplify(and_then(x, undef_expr)), matches(0));
+  EXPECT_THAT(simplify(or_else(x, undef_expr)), matches(1));
+  EXPECT_THAT(simplify(select(one_expr, x, undef_expr)), matches(x));
+  EXPECT_THAT(simplify(select(zero_expr, undef_expr, x)), matches(x));
+  EXPECT_THAT(simplify(select(x, undef_expr, y)), matches(y));
+  EXPECT_THAT(simplify(select(x, y, undef_expr)), matches(y));
+  EXPECT_FALSE(simplify(select(one_expr, undef_expr, y)).defined());
+  EXPECT_FALSE(simplify(select(zero_expr, y, undef_expr)).defined());
+  EXPECT_FALSE(simplify(select(x, undef_expr, undef_expr)).defined());
+  EXPECT_FALSE(simplify(abs(undef_expr)).defined());
+  EXPECT_FALSE(simplify(and_then(one_expr, undef_expr)).defined());
+  EXPECT_FALSE(simplify(and_then(undef_expr, zero_expr)).defined());
+  EXPECT_FALSE(simplify(or_else(zero_expr, undef_expr)).defined());
+  EXPECT_FALSE(simplify(or_else(undef_expr, one_expr)).defined());
+  EXPECT_FALSE(simplify(let::make(z, undef_expr, 5)).defined());
+  EXPECT_FALSE(simplify(let::make(z, 1, undef_expr)).defined());
+
+  // Constructors across operand classes.
+  for (const expr& a : {expr(0), expr(1), expr(-1), expr(2), expr(x)}) {
+    EXPECT_FALSE(add::make(undef, a).defined()) << "add(undef, " << a << ")";
+    EXPECT_FALSE(add::make(a, undef).defined()) << "add(" << a << ", undef)";
+    EXPECT_FALSE(sub::make(undef, a).defined()) << "sub(undef, " << a << ")";
+    EXPECT_FALSE(sub::make(a, undef).defined()) << "sub(" << a << ", undef)";
+    EXPECT_FALSE(mul::make(undef, a).defined()) << "mul(undef, " << a << ")";
+    EXPECT_FALSE(mul::make(a, undef).defined()) << "mul(" << a << ", undef)";
+    EXPECT_FALSE(div::make(undef, a).defined()) << "div(undef, " << a << ")";
+    EXPECT_FALSE(div::make(a, undef).defined()) << "div(" << a << ", undef)";
+    EXPECT_FALSE(mod::make(a, undef).defined()) << "mod(" << a << ", undef)";
+    EXPECT_FALSE(mod::make(undef, a).defined()) << "mod(undef, " << a << ")";
+    EXPECT_FALSE(min::make(undef, a).defined()) << "min(undef, " << a << ")";
+    EXPECT_FALSE(min::make(a, undef).defined()) << "min(" << a << ", undef)";
+    EXPECT_FALSE(max::make(undef, a).defined()) << "max(undef, " << a << ")";
+    EXPECT_FALSE(max::make(a, undef).defined()) << "max(" << a << ", undef)";
+    EXPECT_FALSE(equal::make(undef, a).defined()) << "equal(undef, " << a << ")";
+    EXPECT_FALSE(equal::make(a, undef).defined()) << "equal(" << a << ", undef)";
+    EXPECT_FALSE(not_equal::make(undef, a).defined()) << "not_equal(undef, " << a << ")";
+    EXPECT_FALSE(not_equal::make(a, undef).defined()) << "not_equal(" << a << ", undef)";
+    EXPECT_FALSE(less::make(undef, a).defined()) << "less(undef, " << a << ")";
+    EXPECT_FALSE(less::make(a, undef).defined()) << "less(" << a << ", undef)";
+    EXPECT_FALSE(less_equal::make(undef, a).defined()) << "less_equal(undef, " << a << ")";
+    EXPECT_FALSE(less_equal::make(a, undef).defined()) << "less_equal(" << a << ", undef)";
+    EXPECT_FALSE(logical_and::make(undef, a).defined()) << "logical_and(undef, " << a << ")";
+    EXPECT_FALSE(logical_and::make(a, undef).defined()) << "logical_and(" << a << ", undef)";
+    EXPECT_FALSE(logical_or::make(undef, a).defined()) << "logical_or(undef, " << a << ")";
+    EXPECT_FALSE(logical_or::make(a, undef).defined()) << "logical_or(" << a << ", undef)";
+    EXPECT_FALSE(and_then(undef, a).defined()) << "and_then(undef, " << a << ")";
+    if (is_true(a)) {
+      EXPECT_FALSE(and_then(a, undef).defined()) << "and_then(" << a << ", undef)";
+    } else {
+      EXPECT_THAT(and_then(a, undef), matches(0)) << "and_then(" << a << ", undef)";
+    }
+    EXPECT_FALSE(or_else(undef, a).defined()) << "or_else(undef, " << a << ")";
+    if (is_false(a)) {
+      EXPECT_FALSE(or_else(a, undef).defined()) << "or_else(" << a << ", undef)";
+    } else {
+      EXPECT_THAT(or_else(a, undef), matches(1)) << "or_else(" << a << ", undef)";
+    }
+    EXPECT_FALSE(select::make(undef, a, a).defined()) << "select(undef, " << a << ", " << a << ")";
+    EXPECT_FALSE(select::make(undef, a, a + 1).defined()) << "select(undef, " << a << ", " << a + 1 << ")";
+    EXPECT_THAT(select::make(1, a, undef), matches(a)) << "select(1, " << a << ", undef)";
+    EXPECT_THAT(select::make(0, undef, a), matches(a)) << "select(0, undef, " << a << ")";
+    EXPECT_THAT(select::make(x, undef, a), matches(a)) << "select(x, undef, " << a << ")";
+    EXPECT_THAT(select::make(x, a, undef), matches(a)) << "select(x, " << a << ", undef)";
+  }
+  EXPECT_FALSE(abs(undef).defined()) << "abs(undef)";
+  EXPECT_FALSE(call::make(intrinsic::abs, {undef}).defined()) << "call::make(abs, {undef})";
+  EXPECT_THAT(call::make(intrinsic::and_then, {expr(0), undef}), matches(0));
+  EXPECT_FALSE(call::make(intrinsic::and_then, {expr(1), undef}).defined());
+  EXPECT_THAT(call::make(intrinsic::and_then, {expr(x), undef}), matches(0));
+  EXPECT_THAT(call::make(intrinsic::or_else, {expr(1), undef}), matches(1));
+  EXPECT_FALSE(call::make(intrinsic::or_else, {expr(0), undef}).defined());
+  EXPECT_THAT(call::make(intrinsic::or_else, {expr(x), undef}), matches(1));
+  EXPECT_FALSE(let::make(x, undef, expr(x) + 1).defined()) << "let(x = undef, x + 1)";
+  EXPECT_FALSE(let::make(x, 1, undef).defined()) << "let(x = 1, undef)";
+  EXPECT_FALSE(logical_not::make(undef).defined()) << "logical_not(undef)";
+  EXPECT_FALSE(select::make(x, undef, undef).defined()) << "select(x, undef, undef)";
+  EXPECT_FALSE(boolean(undef).defined()) << "boolean(undef)";
+}
+
 // bounds_of(const select*, c, t, f) must handle arbitrary integer intervals for c (not just [0, 1]),
 // consistent with evaluate() and is_true()'s truthiness semantics.
 TEST(expr_helpers, bounds_of_select) {

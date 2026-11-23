@@ -320,14 +320,8 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   } else if (is_false(c)) {
     return f;
   }
-  if (!t.defined() && !f.defined()) return expr();
-  if (!t.defined() || !f.defined()) {
-    if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-      return expr(op);
-    } else {
-      return select::make(std::move(c), std::move(t), std::move(f));
-    }
-  }
+  if (!t.defined()) return f;
+  if (!f.defined()) return t;
 
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
   if (apply_select_rules(r)) {
@@ -343,10 +337,14 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
   if (fn == intrinsic::and_then || fn == intrinsic::or_else) {
     assert(args.size() == 2);
     const bool is_and = fn == intrinsic::and_then;
+    if (!args[0].defined()) return expr();
     if (auto ca = as_constant(args[0])) {
       // If a is false (for and_then) or true (for or_else), b isn't evaluated. Otherwise, the result is boolean(b).
       if ((*ca != 0) != is_and) return !is_and;
       return boolean(args[1]);
+    }
+    if (!args[1].defined()) {
+      return !is_and;
     }
   }
 
