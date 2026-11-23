@@ -299,12 +299,15 @@ expr constant_buffer::make(const_raw_buffer_ptr value) {
 }
 
 expr add::make(expr a, expr b) {
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   if (is_zero(a)) return b;
   if (is_zero(b)) return a;
   return make_bin_op<add>(std::move(a), std::move(b));
 }
 expr sub::make(expr a, expr b) {
-  if (is_zero(b)) return a;
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   if (auto cb = as_constant(b)) {
     if (*cb == 0) return a;
     if (!sub_overflows<index_t>(0, *cb)) {
@@ -315,17 +318,23 @@ expr sub::make(expr a, expr b) {
   return make_bin_op<sub>(std::move(a), std::move(b));
 }
 expr mul::make(expr a, expr b) {
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   if (is_zero(a) || is_one(b)) return a;
   if (is_zero(b) || is_one(a)) return b;
   return make_bin_op<mul>(std::move(a), std::move(b));
 }
 expr div::make(expr a, expr b) {
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   // Division by zero is defined to be zero.
   if (is_zero(a) || is_one(b)) return a;
   if (is_zero(b)) return b;
   return make_bin_op<div>(std::move(a), std::move(b));
 }
 expr mod::make(expr a, expr b) {
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   // `0%x`, `x%0` and `x%1` are all zero.
   if (is_zero(a) || is_zero(b) || is_one(b)) return expr(0);
   return make_bin_op<mod>(std::move(a), std::move(b));
@@ -337,11 +346,15 @@ expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a
 expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
 expr logical_and::make(expr a, expr b) {
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   if (is_true(a) || is_false(b)) return boolean(std::move(b));
   if (is_true(b) || is_false(a)) return boolean(std::move(a));
   return make_bin_op<logical_and>(std::move(a), std::move(b));
 }
 expr logical_or::make(expr a, expr b) {
+  if (!a.defined()) return a;
+  if (!b.defined()) return b;
   if (is_true(a) || is_false(b)) return boolean(std::move(a));
   if (is_true(b) || is_false(a)) return boolean(std::move(b));
   return make_bin_op<logical_or>(std::move(a), std::move(b));
@@ -618,7 +631,7 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
-  if (!condition.defined()) return true_value.same_as(false_value) ? true_value : condition;
+  if (!condition.defined()) return condition;
   if (!true_value.defined() && !false_value.defined()) {
     // We need both sides of a select to be undefined to unconditionally be undefined.
     return true_value;
