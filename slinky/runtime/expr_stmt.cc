@@ -593,26 +593,13 @@ interval_expr operator-(const expr& a, const interval_expr& b) { return -b + a; 
 
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
 
-namespace {
-
-// Returns a bound of select(c, t, f). A constant condition selects the active arm; otherwise, if either side is
-// unbounded (undefined), the result is unbounded.
-expr select_bound(const expr& c, expr t, expr f) {
-  if (is_true(c)) return t;
-  if (is_false(c)) return f;
-  if (!c.defined() || !t.defined() || !f.defined()) return expr();
-  return select(c, std::move(t), std::move(f));
-}
-
-}  // namespace
-
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
   if (t.is_point() && f.is_point()) {
     return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
-        select_bound(c, std::move(t.min), std::move(f.min)),
-        select_bound(c, std::move(t.max), std::move(f.max)),
+        select(c, std::move(t.min), std::move(f.min)),
+        select(c, std::move(t.max), std::move(f.max)),
     };
   }
 }
@@ -639,16 +626,13 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
-  if (!condition.defined()) return condition;
-  if (!true_value.defined() && !false_value.defined()) {
-    // We need both sides of a select to be undefined to unconditionally be undefined.
-    return true_value;
-  }
   if (is_true(condition)) {
     return true_value;
   } else if (is_false(condition)) {
     return false_value;
   }
+  if (!condition.defined()) return true_value.same_as(false_value) ? true_value : expr();
+  if (!true_value.defined() || !false_value.defined()) return expr();
 
   auto n = new select();
   n->condition = std::move(condition);
@@ -661,6 +645,16 @@ expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
   if (i == intrinsic::abs) {
     assert(args.size() == 1);
     if (!args[0].defined()) return expr();
+  } else if (i == intrinsic::and_then) {
+    assert(args.size() == 2);
+    if (!args[0].defined() || !args[1].defined()) {
+      return is_false(args[0]) ? expr(0) : expr();
+    }
+  } else if (i == intrinsic::or_else) {
+    assert(args.size() == 2);
+    if (!args[0].defined() || !args[1].defined()) {
+      return is_true(args[0]) ? expr(1) : expr();
+    }
   }
 
   auto n = make_node<call>(size_of(args));

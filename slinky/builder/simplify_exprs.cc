@@ -107,6 +107,7 @@ expr simplify(const sub* op, expr a, expr b) {
 }
 
 expr simplify(const mul* op, expr a, expr b) {
+  if (is_zero(a) || is_zero(b)) return 0;
   if (!a.defined() || !b.defined()) return expr();
   if (should_commute(a, b)) {
     std::swap(a, b);
@@ -129,6 +130,7 @@ expr simplify(const mul* op, expr a, expr b) {
 }
 
 expr simplify(const div* op, expr a, expr b) {
+  if (is_zero(a) || is_zero(b)) return 0;
   if (!a.defined() || !b.defined()) return expr();
   auto ca = as_constant(a);
   auto cb = as_constant(b);
@@ -147,6 +149,7 @@ expr simplify(const div* op, expr a, expr b) {
 }
 
 expr simplify(const mod* op, expr a, expr b) {
+  if (is_zero(a) || is_zero(b) || is_one(b) || is_constant(b, -1)) return 0;
   if (!a.defined() || !b.defined()) return expr();
   auto ca = as_constant(a);
   auto cb = as_constant(b);
@@ -245,7 +248,6 @@ expr simplify(const not_equal* op, expr a, expr b) {
 }
 
 expr simplify(const logical_and* op, expr a, expr b) {
-  if (!a.defined() || !b.defined()) return expr();
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
@@ -256,6 +258,8 @@ expr simplify(const logical_and* op, expr a, expr b) {
     return *ca != 0 && *cb != 0;
   } else if (cb && *cb == 0) {
     return false;
+  } else if (!a.defined() || !b.defined()) {
+    return expr();
   } else if (cb) {
     return boolean(std::move(a));
   }
@@ -271,7 +275,6 @@ expr simplify(const logical_and* op, expr a, expr b) {
 }
 
 expr simplify(const logical_or* op, expr a, expr b) {
-  if (!a.defined() || !b.defined()) return expr();
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
@@ -282,6 +285,8 @@ expr simplify(const logical_or* op, expr a, expr b) {
     return *ca != 0 || *cb != 0;
   } else if (cb && *cb != 0) {
     return true;
+  } else if (!a.defined() || !b.defined()) {
+    return expr();
   } else if (cb) {
     return boolean(std::move(a));
   }
@@ -314,20 +319,13 @@ expr simplify(const class logical_not* op, expr a) {
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  if (!c.defined()) return expr();
   if (is_true(c)) {
     return t;
   } else if (is_false(c)) {
     return f;
   }
-  if (!t.defined() && !f.defined()) return expr();
-  if (!t.defined() || !f.defined()) {
-    if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-      return expr(op);
-    } else {
-      return select::make(std::move(c), std::move(t), std::move(f));
-    }
-  }
+  if (!c.defined()) return match(t, f) ? t : expr();
+  if (!t.defined() || !f.defined()) return expr();
 
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
   if (apply_select_rules(r)) {
@@ -347,6 +345,9 @@ expr simplify(const call* op, intrinsic fn, const call::callable& target, std::v
       // If a is false (for and_then) or true (for or_else), b isn't evaluated. Otherwise, the result is boolean(b).
       if ((*ca != 0) != is_and) return !is_and;
       return boolean(args[1]);
+    }
+    if (!args[0].defined() || !args[1].defined()) {
+      return expr();
     }
   }
 

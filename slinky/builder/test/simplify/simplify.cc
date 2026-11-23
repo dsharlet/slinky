@@ -294,6 +294,84 @@ TEST(simplify, bounds_of_unbounded) {
   ASSERT_THAT(simplify(or_else(false, x < y)), matches(x < y));
 }
 
+TEST(simplify, undefined_short_circuit) {
+  // Absorbing constants short-circuit undefined operands consistently across ::make, simplify(Op*, ...), and simplify().
+  ASSERT_THAT(simplify(static_cast<const logical_and*>(nullptr), false, expr()), matches(false));
+  ASSERT_THAT(simplify(static_cast<const logical_and*>(nullptr), expr(), false), matches(false));
+  ASSERT_FALSE(simplify(static_cast<const logical_and*>(nullptr), true, expr()).defined());
+  ASSERT_FALSE(simplify(static_cast<const logical_and*>(nullptr), expr(), true).defined());
+  ASSERT_FALSE(simplify(static_cast<const logical_and*>(nullptr), x, expr()).defined());
+
+  ASSERT_THAT(simplify(static_cast<const logical_or*>(nullptr), true, expr()), matches(true));
+  ASSERT_THAT(simplify(static_cast<const logical_or*>(nullptr), expr(), true), matches(true));
+  ASSERT_FALSE(simplify(static_cast<const logical_or*>(nullptr), false, expr()).defined());
+  ASSERT_FALSE(simplify(static_cast<const logical_or*>(nullptr), expr(), false).defined());
+  ASSERT_FALSE(simplify(static_cast<const logical_or*>(nullptr), x, expr()).defined());
+
+  ASSERT_FALSE((!expr()).defined());
+  ASSERT_FALSE(simplify(static_cast<const logical_not*>(nullptr), expr()).defined());
+
+  // select with an undefined condition returns the shared value when both arms match, and undefined otherwise.
+  // select with a non-constant condition and any undefined arm returns undefined (no defined expr holds undefined).
+  expr ex(x);
+  ASSERT_THAT(select(expr(), false, false), matches(false));
+  ASSERT_THAT(select(expr(), ex, ex), matches(ex));
+  ASSERT_FALSE(select(expr(), x, y).defined());
+  ASSERT_FALSE(select(x, expr(), y).defined());
+  ASSERT_FALSE(select(x, y, expr()).defined());
+  ASSERT_THAT(select(true, y, expr()), matches(y));
+  ASSERT_THAT(select(false, expr(), y), matches(y));
+  ASSERT_THAT(simplify(static_cast<const class select*>(nullptr), expr(), false, false), matches(false));
+  ASSERT_THAT(simplify(static_cast<const class select*>(nullptr), expr(), x, x), matches(x));
+  ASSERT_THAT(simplify(static_cast<const class select*>(nullptr), expr(), x + 1, x + 1), matches(x + 1));
+  ASSERT_FALSE(simplify(static_cast<const class select*>(nullptr), expr(), x, y).defined());
+  ASSERT_FALSE(simplify(static_cast<const class select*>(nullptr), x, expr(), y).defined());
+  ASSERT_FALSE(simplify(static_cast<const class select*>(nullptr), x, y, expr()).defined());
+  ASSERT_THAT(simplify(static_cast<const class select*>(nullptr), false, expr(), false), matches(false));
+  ASSERT_THAT(simplify(static_cast<const class select*>(nullptr), true, true, expr()), matches(true));
+  ASSERT_FALSE(simplify(static_cast<const class select*>(nullptr), true, expr(), false).defined());
+  ASSERT_FALSE(simplify(static_cast<const class select*>(nullptr), false, true, expr()).defined());
+
+  // Full simplifier pass when subexpressions mutate to undefined / absorbing constants during simplify().
+  // semaphore_wait(expr()) is a defined call node that simplifies to expr().
+  expr undef_on_simplify = semaphore_wait(expr());
+  ASSERT_TRUE(undef_on_simplify.defined());
+  ASSERT_FALSE(simplify(undef_on_simplify).defined());
+  ASSERT_THAT(simplify(undef_on_simplify && (expr(y) < expr(y))), matches(false));
+  ASSERT_THAT(simplify((expr(y) < expr(y)) && undef_on_simplify), matches(false));
+  ASSERT_THAT(simplify(undef_on_simplify || (expr(y) <= expr(y))), matches(true));
+  ASSERT_THAT(simplify((expr(y) <= expr(y)) || undef_on_simplify), matches(true));
+  ASSERT_THAT(simplify(select(undef_on_simplify, x + 1, 1 + x)), matches(x + 1));
+  ASSERT_FALSE(simplify(select(undef_on_simplify, y, z)).defined());
+  ASSERT_FALSE(simplify(select(x, undef_on_simplify, y)).defined());
+  ASSERT_FALSE(simplify(select(x, y, undef_on_simplify)).defined());
+  ASSERT_THAT(simplify(select(expr(x) == expr(x), y, undef_on_simplify)), matches(y));
+  ASSERT_THAT(simplify(select(expr(x) != expr(x), undef_on_simplify, y)), matches(y));
+  ASSERT_THAT(simplify(undef_on_simplify * (expr(y) - expr(y))), matches(0));
+  ASSERT_THAT(simplify((expr(y) - expr(y)) / undef_on_simplify), matches(0));
+  ASSERT_THAT(simplify(undef_on_simplify % (expr(y) - expr(y))), matches(0));
+
+  // and_then / or_else with undefined operands.
+  ASSERT_THAT(simplify(and_then(false, expr())), matches(false));
+  ASSERT_THAT(simplify(or_else(true, expr())), matches(true));
+  ASSERT_FALSE(simplify(and_then(true, expr())).defined());
+  ASSERT_FALSE(simplify(or_else(false, expr())).defined());
+  ASSERT_FALSE(simplify(and_then(expr(), x)).defined());
+  ASSERT_FALSE(simplify(and_then(x, expr())).defined());
+  ASSERT_FALSE(simplify(or_else(expr(), x)).defined());
+  ASSERT_FALSE(simplify(or_else(x, expr())).defined());
+
+  // Arithmetic absorbing constants match ::make.
+  ASSERT_THAT(simplify(static_cast<const mul*>(nullptr), 0, expr()), matches(0));
+  ASSERT_THAT(simplify(static_cast<const mul*>(nullptr), expr(), 0), matches(0));
+  ASSERT_THAT(simplify(static_cast<const div*>(nullptr), 0, expr()), matches(0));
+  ASSERT_THAT(simplify(static_cast<const div*>(nullptr), expr(), 0), matches(0));
+  ASSERT_THAT(simplify(static_cast<const mod*>(nullptr), 0, expr()), matches(0));
+  ASSERT_THAT(simplify(static_cast<const mod*>(nullptr), expr(), 0), matches(0));
+  ASSERT_THAT(simplify(static_cast<const mod*>(nullptr), expr(), 1), matches(0));
+  ASSERT_THAT(simplify(static_cast<const mod*>(nullptr), expr(), -1), matches(0));
+}
+
 TEST(simplify, staircase) {
   ASSERT_THAT(simplify(min(((x + 7) / 8) * 8, x)), matches(x));
   ASSERT_THAT(simplify(max(((x + 7) / 8) * 8, x)), matches(((x + 7) / 8) * 8));
