@@ -400,10 +400,10 @@ function pipeline(__in, out) {
                   produce(_h);
                   __event_t++;
                 }}
-                { let ___f = crop_dim(_f, 0, [_j, (_j + 3)]); {
-                  let _f = ___f;
-                  { let ___g = crop_dim(_g, 1, [_j, (_j + 3)]); {
-                    let _g = ___g;
+                { let ___g = crop_dim(_g, 1, [_j, (_j + 3)]); {
+                  let _g = ___g;
+                  { let ___f = crop_dim(_f, 0, [_j, (_j + 3)]); {
+                    let _f = ___f;
                     consume(__in);
                     consume(_h);
                     produce(_g);
