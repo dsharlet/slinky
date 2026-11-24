@@ -407,10 +407,6 @@ SLINKY_INLINE index_t eval(const call* op, eval_context& ctx) {
   switch (op->intrinsic) {
   case intrinsic::none: return eval_call(op, ctx);
 
-  case intrinsic::positive_infinity: SLINKY_UNREACHABLE << "cannot evaluate positive_infinity";
-  case intrinsic::negative_infinity: SLINKY_UNREACHABLE << "cannot evaluate negative_infinity";
-  case intrinsic::indeterminate: SLINKY_UNREACHABLE << "cannot evaluate indeterminate";
-
   case intrinsic::abs: assert(op->args.size() == 1); return std::abs(eval(op->args[0], ctx));
 
   case intrinsic::and_then:

@@ -8,10 +8,8 @@
 // predicates and replacements (e.g. c0 + c1) in C++, and doesn't apply the rule if that
 // overflows, so the query assumes that those fit in int64 too.
 //
-// Wildcards are finite. The only values in slinky that aren't are the literals
-// positive_infinity(), negative_infinity() and indeterminate(), and simplify() (in
-// simplify_exprs.cc) eliminates them before it applies the rules, so a wildcard never
-// matches one. No rule mentions them either.
+// Every defined expression in slinky denotes a finite value (unbounded interval endpoints
+// are represented by an undefined expr()), so wildcards are always finite.
 //
 // Each operation in a rule that depends on a wildcard becomes a named term
 // (define-fun nK () Int ...). An operation on constants only is written inline.

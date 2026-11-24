@@ -715,11 +715,7 @@ class pipeline_builder {
           }
         }
         dims = substitute_from_map(dims, substitutions);
-        if (!can_fold_buffer) {
-          for (dim_expr& d : dims) {
-            if (is_positive_infinity(d.fold_factor)) d.fold_factor = expr();
-          }
-        } else {
+        if (can_fold_buffer) {
           for (const dim_expr& d : dims) {
             if (!is_finite(d.fold_factor)) {
               may_slide_or_fold_ = true;
@@ -1691,13 +1687,14 @@ class pipeline_builder {
     expr step = sanitizer_.mutate(l.step);
     interval_expr tile =
         slinky::bounds(loop_var, simplify(loop_var + step - 1));
-    interval_expr loop_bounds = interval_expr::union_identity();
+    std::optional<interval_expr> loop_bounds;
     for (const auto& [buf, dim] : crops) {
       body = crop_dim::make(buf, buf, dim, tile, body);
-      loop_bounds |= buffer_bounds(buf, dim);
+      interval_expr b = buffer_bounds(buf, dim);
+      loop_bounds = loop_bounds ? (*loop_bounds | std::move(b)) : std::move(b);
     }
     return loop::make(loop_var, sanitizer_.mutate(l.max_workers),
-                      simplify(loop_bounds), step, body);
+                      simplify(*loop_bounds), step, body);
   }
 
   stmt define_sanitized_replacements(const stmt& body) { return sanitizer_.define_replacements(body); }

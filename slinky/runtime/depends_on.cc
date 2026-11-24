@@ -446,9 +446,6 @@ public:
     case intrinsic::trace_end:
     case intrinsic::free: has_side_effects = true; return;
     case intrinsic::abs:
-    case intrinsic::negative_infinity:
-    case intrinsic::positive_infinity:
-    case intrinsic::indeterminate:
     case intrinsic::and_then:
     case intrinsic::or_else:
     case intrinsic::buffer_at:

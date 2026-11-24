@@ -87,14 +87,7 @@ std::optional<var> node_context::lookup(const std::string& name) const {
   return i != name_to_sym.end() ? std::optional<var>(i->second) : std::nullopt;
 }
 
-bool can_evaluate(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::negative_infinity:
-  case intrinsic::positive_infinity:
-  case intrinsic::indeterminate: return false;
-  default: return true;
-  }
-}
+bool can_evaluate(intrinsic fn) { return fn != intrinsic::none; }
 
 // A node's arrays are constructed in its own allocation, immediately following the node. This layout is private to
 // the nodes we make here; nothing but the `span` of each array escapes.
@@ -176,8 +169,17 @@ T* make_let(Lets&& lets, Body body) {
   return n;
 }
 
-expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
-expr let::make(span<std::pair<var, expr>> lets, expr body) { return expr(make_let<let>(lets, std::move(body))); }
+template <typename Lets>
+expr make_let_expr(Lets&& lets, expr body) {
+  if (!body.defined()) return expr();
+  for (const auto& i : lets) {
+    if (!i.second.defined()) return expr();
+  }
+  return expr(make_let<let>(lets, std::move(body)));
+}
+
+expr let::make(std::vector<std::pair<var, expr>> lets, expr body) { return make_let_expr(lets, std::move(body)); }
+expr let::make(span<std::pair<var, expr>> lets, expr body) { return make_let_expr(lets, std::move(body)); }
 
 expr let::make(var sym, expr value, expr body) {
   return make({{sym, std::move(value)}}, std::move(body));
@@ -333,8 +335,8 @@ expr div::make(expr a, expr b) {
   return make_bin_op<div>(std::move(a), std::move(b));
 }
 expr mod::make(expr a, expr b) {
-  // `0%x`, `x%0` and `x%1` are all zero.
-  if (is_zero(a) || is_zero(b) || is_one(b)) return expr(0);
+  // `0%x`, `x%0`, `x%1` and `x%-1` are all zero.
+  if (is_zero(a) || is_zero(b) || is_one(b) || is_constant(b, -1)) return expr(0);
   return make_bin_op<mod>(std::move(a), std::move(b));
 }
 expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)); }
@@ -354,6 +356,7 @@ expr logical_or::make(expr a, expr b) {
   return make_bin_op<logical_or>(std::move(a), std::move(b));
 }
 expr logical_not::make(expr a) {
+  if (!a.defined()) return a;
   if (const constant* c = a.as<constant>()) {
     return expr(make_constant(c->value == 0 ? 1 : 0));
   }
@@ -431,20 +434,18 @@ expr max(span<expr> x) {
 }
 
 const interval_expr& interval_expr::all() {
-  static interval_expr x = {negative_infinity(), positive_infinity()};
+  static interval_expr x = {expr(), expr()};
   return x;
 }
-const interval_expr& interval_expr::none() {
-  static interval_expr x = {positive_infinity(), negative_infinity()};
-  return x;
-}
-const interval_expr& interval_expr::union_identity() { return none(); }
 const interval_expr& interval_expr::intersection_identity() { return all(); }
 
 const expr& interval_expr::begin() const { return min; }
 expr interval_expr::end() const { return max + 1; }
 expr interval_expr::extent() const { return max - min + 1; }
-expr interval_expr::empty() const { return min > max; }
+expr interval_expr::empty() const {
+  if (!min.defined() || !max.defined()) return expr(0);
+  return min > max;
+}
 
 expr interval_expr::contains(expr_ref x) const {
   if (min.defined() && max.defined()) {
@@ -462,6 +463,8 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_one(scale)) {
   } else if (is_point()) {
     min = max = mul::make(min, scale);
+  } else if (is_zero(scale)) {
+    min = max = expr(0);
   } else if (is_non_negative(scale)) {
     if (min.defined()) min = mul::make(min, scale);
     if (max.defined()) max = mul::make(max, scale);
@@ -481,6 +484,8 @@ interval_expr& interval_expr::operator/=(const expr& scale) {
   if (is_one(scale)) {
   } else if (is_point()) {
     min = max = div::make(min, scale);
+  } else if (is_zero(scale)) {
+    min = max = expr(0);
   } else if (is_non_negative(scale)) {
     if (min.defined()) min = div::make(min, scale);
     if (max.defined()) max = div::make(max, scale);
@@ -590,47 +595,45 @@ expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(
 
 namespace {
 
-// Returns a bound in the direction `sign` (-1 for a min, 1 for a max) of select(c, t, f). A select can't have an
-// infinite value, so if t or f is infinite, we loosen the bound instead: an infinity in the direction of the bound
-// means that side is unbounded, and an infinity in the opposite direction means that interval is empty, so we can use
-// the other value.
-expr select_bound(const expr& c, expr t, expr f, int sign) {
-  int inf_t = is_infinity(t);
-  int inf_f = is_infinity(f);
-  if (inf_t == sign || inf_f == sign) return infinity(sign);
-  if (inf_t) return f;
-  if (inf_f) return t;
+// Returns a bound of select(c, t, f). A constant condition selects the active arm; otherwise, if either side is
+// unbounded (undefined), the result is unbounded.
+expr select_bound(const expr& c, expr t, expr f) {
+  if (is_true(c)) return t;
+  if (is_false(c)) return f;
+  if (!c.defined() || !t.defined() || !f.defined()) return expr();
   return select(c, std::move(t), std::move(f));
 }
 
 }  // namespace
 
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
-  if (t.is_point() && f.is_point() && !is_infinity(t.min) && !is_infinity(f.min)) {
+  if (t.is_point() && f.is_point()) {
     return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
-        select_bound(c, std::move(t.min), std::move(f.min), -1),
-        select_bound(c, std::move(t.max), std::move(f.max), 1),
+        select_bound(c, std::move(t.min), std::move(f.min)),
+        select_bound(c, std::move(t.max), std::move(f.max)),
     };
   }
 }
 
 box_expr operator|(box_expr a, const box_expr& b) {
-  a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < b.size(); ++i) {
+  const std::size_t old_a = a.size();
+  const std::size_t n = std::min(old_a, b.size());
+  a.resize(std::max(old_a, b.size()));
+  for (std::size_t i = 0; i < n; ++i) {
     a[i] |= b[i];
+  }
+  for (std::size_t i = n; i < old_a; ++i) {
+    a[i] = interval_expr();
   }
   return a;
 }
 
 box_expr operator&(box_expr a, const box_expr& b) {
   a.resize(std::max(a.size(), b.size()));
-  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
+  for (std::size_t i = 0; i < b.size(); ++i) {
     a[i] &= b[i];
-  }
-  for (std::size_t i = b.size(); i < a.size(); ++i) {
-    a[i] = b[i];
   }
   return a;
 }
@@ -655,6 +658,11 @@ expr select::make(expr condition, expr true_value, expr false_value) {
 }
 
 expr call::make(slinky::intrinsic i, callable target, std::vector<expr> args) {
+  if (i == intrinsic::abs) {
+    assert(args.size() == 1);
+    if (!args[0].defined()) return expr();
+  }
+
   auto n = make_node<call>(size_of(args));
   n->intrinsic = i;
   n->target = std::move(target);
@@ -932,58 +940,26 @@ stmt check::make(expr condition) {
   return stmt(n);
 }
 
-namespace {
-
-// Make `e` a static expression, which avoids contention on its reference count when it is shared by many threads.
-expr make_static(expr e) {
-  e.get()->make_static();
-  return e;
-}
-
-}  // namespace
-
-const expr& positive_infinity() {
-  static expr e = make_static(call::make(intrinsic::positive_infinity, {}));
-  return e;
-}
-const expr& negative_infinity() {
-  static expr e = make_static(call::make(intrinsic::negative_infinity, {}));
-  return e;
-}
-const expr& infinity(int sign) {
-  assert(sign != 0);
-  return sign < 0 ? negative_infinity() : positive_infinity();
-}
-const expr& indeterminate() {
-  static expr e = make_static(call::make(intrinsic::indeterminate, {}));
-  return e;
-}
-
 bool is_positive(expr_ref x) {
-  if (is_positive_infinity(x)) return true;
-  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
-    assert(c->args.size() == 1);
-    return is_positive(c->args[0]);
-  }
   auto c = as_constant(x);
   return c ? *c > 0 : false;
 }
 
 bool is_non_negative(expr_ref x) {
-  if (is_positive_infinity(x)) return true;
-  if (as_intrinsic(x, intrinsic::abs)) return true;
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return c->args[0].defined();
+  }
   auto c = as_constant(x);
   return c ? *c >= 0 : false;
 }
 
 bool is_negative(expr_ref x) {
-  if (is_negative_infinity(x)) return true;
   auto c = as_constant(x);
   return c ? *c < 0 : false;
 }
 
 bool is_non_positive(expr_ref x) {
-  if (is_negative_infinity(x)) return true;
   auto c = as_constant(x);
   return c ? *c <= 0 : false;
 }
@@ -1007,8 +983,14 @@ interval_expr align(interval_expr x, const expr& a) {
   }
 }
 
-expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
-expr or_else(expr a, expr b) { return call::make(intrinsic::or_else, {std::move(a), std::move(b)}); }
+expr and_then(expr a, expr b) {
+  if (is_false(a)) return expr(0);
+  return call::make(intrinsic::and_then, {std::move(a), std::move(b)});
+}
+expr or_else(expr a, expr b) {
+  if (is_true(a)) return expr(1);
+  return call::make(intrinsic::or_else, {std::move(a), std::move(b)});
+}
 
 expr buffer_rank(var buf) { return variable::make(buf, buffer_field::rank); }
 expr buffer_elem_size(var buf) { return variable::make(buf, buffer_field::elem_size); }
@@ -1085,30 +1067,6 @@ bool is_finite(expr_ref x) {
     return c->intrinsic == intrinsic::buffer_at;
   }
   return false;
-}
-
-namespace {
-
-class non_finite_finder : public recursive_node_visitor {
-public:
-  bool found = false;
-
-  void visit(const call* op) override {
-    if (is_infinity(op) || is_indeterminate(op)) {
-      found = true;
-    } else {
-      recursive_node_visitor::visit(op);
-    }
-  }
-};
-
-}  // namespace
-
-bool contains_non_finite(expr_ref x) {
-  if (!x.defined()) return false;
-  non_finite_finder finder;
-  x.accept(&finder);
-  return finder.found;
 }
 
 expr boolean(expr x) {

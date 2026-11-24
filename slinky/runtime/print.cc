@@ -41,9 +41,6 @@ const char* to_string(buffer_field m) {
 
 const char* to_string(intrinsic fn) {
   switch (fn) {
-  case intrinsic::positive_infinity: return "oo";
-  case intrinsic::negative_infinity: return "-oo";
-  case intrinsic::indeterminate: return "indeterminate";
   case intrinsic::abs: return "abs";
   case intrinsic::and_then: return "and_then";
   case intrinsic::or_else: return "or_else";

@@ -70,13 +70,22 @@ TEST(evaluate, arithmetic) {
 
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 
+  bool called = false;
+  expr fail = call::make(
+      [&called](const call*, eval_context&) -> index_t {
+        called = true;
+        return 0;
+      },
+      {x});
   ASSERT_EQ(evaluate(and_then(expr(true), expr(true))), true);
   ASSERT_EQ(evaluate(and_then(expr(true), expr(false))), false);
-  ASSERT_EQ(evaluate(and_then(expr(false), indeterminate())), false);
+  ASSERT_EQ(evaluate(and_then(expr(false), fail)), false);
+  ASSERT_FALSE(called);
   ASSERT_EQ(evaluate(or_else(expr(true), expr(true))), true);
   ASSERT_EQ(evaluate(or_else(expr(false), expr(true))), true);
   ASSERT_EQ(evaluate(or_else(expr(false), expr(false))), false);
-  ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
+  ASSERT_EQ(evaluate(or_else(expr(true), fail)), true);
+  ASSERT_FALSE(called);
 }
 
 TEST(evaluate, buffer_fields) {
@@ -532,6 +541,73 @@ TEST(evaluate, init_context_async) {
   // `async` runs its task and its body in new contexts.
   ASSERT_EQ(evaluate(async::make(x, c, c), ctx), 0);
   ASSERT_EQ(contexts, 2);
+}
+
+TEST(evaluate, box_intersection) {
+  auto expect_bounds = [](const interval_expr& actual, index_t min, index_t max) {
+    ASSERT_TRUE(actual.min.defined());
+    ASSERT_TRUE(actual.max.defined());
+    EXPECT_EQ(evaluate(actual.min), min);
+    EXPECT_EQ(evaluate(actual.max), max);
+  };
+
+  // Equal sizes.
+  {
+    box_expr a = {bounds(0, 10), bounds(5, 15)};
+    box_expr b = {bounds(2, 8), bounds(3, 20)};
+    box_expr c = a & b;
+    ASSERT_EQ(c.size(), 2u);
+    expect_bounds(c[0], 2, 8);
+    expect_bounds(c[1], 5, 15);
+  }
+
+  // a.size() > b.size(): trailing dimensions of a are preserved without reading past b.
+  {
+    box_expr a = {bounds(0, 10), bounds(5, 15), bounds(20, 30)};
+    box_expr b = {bounds(2, 8)};
+    box_expr c = a & b;
+    ASSERT_EQ(c.size(), 3u);
+    expect_bounds(c[0], 2, 8);
+    expect_bounds(c[1], 5, 15);
+    expect_bounds(c[2], 20, 30);
+
+    box_expr d = a & box_expr{};
+    ASSERT_EQ(d.size(), 3u);
+    expect_bounds(d[0], 0, 10);
+    expect_bounds(d[1], 5, 15);
+    expect_bounds(d[2], 20, 30);
+  }
+
+  // a.size() < b.size(): trailing dimensions of b are preserved.
+  {
+    box_expr a = {bounds(2, 8)};
+    box_expr b = {bounds(0, 10), bounds(5, 15), bounds(20, 30)};
+    box_expr c = a & b;
+    ASSERT_EQ(c.size(), 3u);
+    expect_bounds(c[0], 2, 8);
+    expect_bounds(c[1], 5, 15);
+    expect_bounds(c[2], 20, 30);
+
+    box_expr d = box_expr{} & b;
+    ASSERT_EQ(d.size(), 3u);
+    expect_bounds(d[0], 0, 10);
+    expect_bounds(d[1], 5, 15);
+    expect_bounds(d[2], 20, 30);
+  }
+
+  // Partially defined intervals with mismatched sizes.
+  {
+    box_expr a = {interval_expr{expr(), 10}, interval_expr{5, expr()}};
+    box_expr b = {interval_expr{2, expr()}};
+
+    for (const box_expr& c : {a & b, b & a}) {
+      ASSERT_EQ(c.size(), 2u);
+      expect_bounds(c[0], 2, 10);
+      ASSERT_TRUE(c[1].min.defined());
+      EXPECT_EQ(evaluate(c[1].min), 5);
+      EXPECT_FALSE(c[1].max.defined());
+    }
+  }
 }
 
 }  // namespace slinky

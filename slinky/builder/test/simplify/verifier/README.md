@@ -86,14 +86,8 @@ the `int64` range:
 (assert (in64 x))
 ```
 
-That wildcards are finite is an invariant of the simplifier, not an assumption about the programs it simplifies. The
-only values in slinky that aren't finite are the literals `positive_infinity()`, `negative_infinity()` and
-`indeterminate()`, which are used as the endpoints of unbounded intervals. Every other expression (a variable, buffer
-metadata, or any compound expression) denotes a finite value. The `simplify()` functions in
-[`simplify_exprs.cc`](../../../simplify_exprs.cc) eliminate operands that are infinities or indeterminate before they
-apply any rule: the result is an infinity, a constant, or indeterminate when it can't be represented (e.g. `+inf * y` or
-`select(c, +inf, y)`). So a wildcard never matches one of these literals, and they never appear inside another
-expression. No rule mentions them either. Debug builds assert this whenever the rules match an expression.
+Every defined expression in slinky denotes a finite value (unbounded interval endpoints are represented by an undefined
+`expr()`), so wildcards are always finite `int64` values.
 
 ### Operations
 

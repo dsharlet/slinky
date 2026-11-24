@@ -36,12 +36,25 @@ expr simplify(op_simplified, const T* op, expr a, expr b) {
   }
 }
 
-// Simplifying a bound can produce indeterminate, e.g. the upper bound of x*y is oo*y if x is unbounded. Indeterminate
-// means that we don't know anything about the bound, so we replace it with an infinity, which is always a valid bound.
-interval_expr unbounded_if_indeterminate(interval_expr x) {
-  if (is_indeterminate(x.min)) x.min = slinky::negative_infinity();
-  if (is_indeterminate(x.max)) x.max = slinky::positive_infinity();
-  return x;
+// The min or max of two lower bounds or two upper bounds, where an undefined lower bound is -infinity and an undefined
+// upper bound is +infinity.
+expr min_lower(expr a, expr b, const class min* op = nullptr) {
+  if (!a.defined() || !b.defined()) return expr();
+  return simplify(op_simplified(), op, std::move(a), std::move(b));
+}
+expr max_upper(expr a, expr b, const class max* op = nullptr) {
+  if (!a.defined() || !b.defined()) return expr();
+  return simplify(op_simplified(), op, std::move(a), std::move(b));
+}
+expr max_lower(expr a, expr b, const class max* op = nullptr) {
+  if (!a.defined()) return b;
+  if (!b.defined()) return a;
+  return simplify(op_simplified(), op, std::move(a), std::move(b));
+}
+expr min_upper(expr a, expr b, const class min* op = nullptr) {
+  if (!a.defined()) return b;
+  if (!b.defined()) return a;
+  return simplify(op_simplified(), op, std::move(a), std::move(b));
 }
 
 template <typename T>
@@ -50,8 +63,8 @@ interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     return {
-        simplify(op_simplified(), op, std::move(a.min), std::move(b.min)),
-        simplify(op_simplified(), op, std::move(a.max), std::move(b.max)),
+        a.min.defined() && b.min.defined() ? simplify(op_simplified(), op, std::move(a.min), std::move(b.min)) : expr(),
+        a.max.defined() && b.max.defined() ? simplify(op_simplified(), op, std::move(a.max), std::move(b.max)) : expr(),
     };
   }
 }
@@ -64,8 +77,10 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
     // This bit of genius comes from
     // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
     return {
-        simplify(op_simplified(), op, std::move(a.max), std::move(b.min)),
-        simplify(op_simplified(), op, std::move(a.min), std::move(b.max)),
+        a.max.defined() && b.min.defined() ? simplify(op_simplified(), op, std::move(a.max), std::move(b.min))
+                                           : expr(0),
+        a.min.defined() && b.max.defined() ? simplify(op_simplified(), op, std::move(a.min), std::move(b.max))
+                                           : expr(1),
     };
   }
 }
@@ -96,10 +111,10 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
     return std::numeric_limits<index_t>::min() <= x && x <= std::numeric_limits<index_t>::max();
   };
   if (sb.min && fits(*sb.min)) {
-    bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, static_cast<index_t>(*sb.min));
+    bounds.min = max_lower(std::move(bounds.min), static_cast<index_t>(*sb.min));
   }
   if (sb.max && fits(*sb.max)) {
-    bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, static_cast<index_t>(*sb.max));
+    bounds.max = min_upper(std::move(bounds.max), static_cast<index_t>(*sb.max));
   }
 }
 
@@ -122,7 +137,7 @@ void tighten_correlated_bounds_min_max(interval_expr& bounds, const expr& a, con
   expr bounds_max = simplify(min(min(aa_ba, ab_bb), min(aa_bb, ab_ba)));
 
   // TODO: This might be blowing expressions up ridiculously... we might only want to do this in `constant_upper_bound`.
-  bounds.max = simplify(static_cast<const class min*>(nullptr), bounds_max, bounds.max);
+  bounds.max = min_upper(std::move(bounds_max), std::move(bounds.max));
 }
 
 // Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
@@ -135,7 +150,7 @@ void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr&
 }  // namespace
 
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
-  interval_expr result = unbounded_if_indeterminate(bounds_of_linear(op, std::move(a), std::move(b)));
+  interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
   if (op) {
     tighten_correlated_bounds(result, op->a, op->b, 1);
   }
@@ -144,7 +159,7 @@ interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
 interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
   // -b => bounds are {-max, -min}.
   std::swap(b.min, b.max);
-  interval_expr result = unbounded_if_indeterminate(bounds_of_linear(op, std::move(a), std::move(b)));
+  interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
   if (op) {
     tighten_correlated_bounds(result, op->a, op->b, -1);
   }
@@ -160,8 +175,8 @@ namespace {
 // but this is a pretty lame heuristic.
 interval_expr simple_or_unbounded(expr min, expr max) {
   auto is_simple = [](const expr& x) { return x.as<variable>() || x.as<constant>(); };
-  if (!is_simple(min)) min = slinky::negative_infinity();
-  if (!is_simple(max)) max = slinky::positive_infinity();
+  if (!is_simple(min)) min = expr();
+  if (!is_simple(max)) max = expr();
   return {min, max};
 }
 
@@ -180,8 +195,44 @@ struct constant_interval {
   bool is_non_positive() const { return max && *max <= 0; }
 };
 
-interval_expr bounds_of_mul(const mul* op, interval_expr a, interval_expr b) {
+expr mul_or_unbounded(const mul* op, const expr& a, const expr& b) {
+  if (!a.defined() || !b.defined()) return expr();
+  return simplify(op_simplified(), op, a, b);
+}
+
+expr negate(expr a) { return a.defined() ? simplify(static_cast<const sub*>(nullptr), 0, std::move(a)) : a; }
+interval_expr negate(interval_expr x) {
+  if (x.is_point()) {
+    return point(negate(x.min));
+  } else {
+    return {negate(x.max), negate(x.min)};
+  }
+}
+
+interval_expr union_x_negate_x(interval_expr x) {
+  return {
+      min_lower(x.min, negate(x.max)),
+      max_upper(x.max, negate(x.min)),
+  };
+}
+
+expr div_or_unbounded(const div* op, const expr& a, const expr& b) {
+  if (!a.defined()) return expr();
+  if (!b.defined()) return expr(0);
+  return simplify(op_simplified(), op, a, b);
+}
+
+expr abs_or_unbounded(const call* op, expr a) {
+  return a.defined() ? simplify(op, intrinsic::abs, {std::move(a)}) : expr();
+}
+
+}  // namespace
+
+interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
+  if (is_zero(a.as_point()) || is_zero(b.as_point())) {
+    return point(0);
+  }
   if (a.is_point() && b.is_point()) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   }
@@ -191,15 +242,21 @@ interval_expr bounds_of_mul(const mul* op, interval_expr a, interval_expr b) {
 
   if (a_const.is_non_negative() && b_const.is_non_negative()) {
     // Both are >= 0, neither intervals flip.
-    return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.max)};
+    return {mul_or_unbounded(op, a.min, b.min), mul_or_unbounded(op, a.max, b.max)};
   } else if (a_const.is_non_positive() && b_const.is_non_positive()) {
     // Both are <= 0, both intervals flip.
-    return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.min)};
+    return {mul_or_unbounded(op, a.max, b.max), mul_or_unbounded(op, a.min, b.min)};
+  } else if (a_const.is_non_negative() && b_const.is_non_positive()) {
+    return {mul_or_unbounded(op, a.max, b.min), mul_or_unbounded(op, a.min, b.max)};
+  } else if (a_const.is_non_positive() && b_const.is_non_negative()) {
+    return {mul_or_unbounded(op, a.min, b.max), mul_or_unbounded(op, a.max, b.min)};
   } else if (b.is_point()) {
     if (b_const.is_non_negative()) {
-      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
+      return {mul_or_unbounded(op, a.min, b.min), mul_or_unbounded(op, a.max, b.min)};
     } else if (b_const.is_non_positive()) {
-      return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.min)};
+      return {mul_or_unbounded(op, a.max, b.min), mul_or_unbounded(op, a.min, b.min)};
+    } else if (!a.min.defined() || !a.max.defined()) {
+      return interval_expr::all();
     } else {
       expr corners[] = {
           simplify(op_simplified(), op, a.min, b.min),
@@ -210,9 +267,11 @@ interval_expr bounds_of_mul(const mul* op, interval_expr a, interval_expr b) {
     }
   } else if (a.is_point()) {
     if (a_const.is_non_negative()) {
-      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.min, b.max)};
+      return {mul_or_unbounded(op, a.min, b.min), mul_or_unbounded(op, a.min, b.max)};
     } else if (a_const.is_non_positive()) {
-      return {simplify(op_simplified(), op, a.min, b.max), simplify(op_simplified(), op, a.min, b.min)};
+      return {mul_or_unbounded(op, a.min, b.max), mul_or_unbounded(op, a.min, b.min)};
+    } else if (!b.min.defined() || !b.max.defined()) {
+      return interval_expr::all();
     } else {
       expr corners[] = {
           simplify(op_simplified(), op, a.min, b.min),
@@ -221,6 +280,8 @@ interval_expr bounds_of_mul(const mul* op, interval_expr a, interval_expr b) {
       return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
           simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]));
     }
+  } else if (!a.min.defined() || !a.max.defined() || !b.min.defined() || !b.max.defined()) {
+    return interval_expr::all();
   } else {
     // We don't know anything. The results is the union of all 4 possible intervals.
     expr corners[] = {
@@ -238,23 +299,7 @@ interval_expr bounds_of_mul(const mul* op, interval_expr a, interval_expr b) {
   }
 }
 
-expr negate(expr a) { return simplify(static_cast<const sub*>(nullptr), 0, std::move(a)); }
-interval_expr negate(interval_expr x) {
-  if (x.is_point()) {
-    return point(negate(x.min));
-  } else {
-    return {negate(x.max), negate(x.min)};
-  }
-}
-
-interval_expr union_x_negate_x(interval_expr x) {
-  return {
-      simplify(static_cast<const class min*>(nullptr), x.min, negate(x.max)),
-      simplify(static_cast<const class max*>(nullptr), x.max, negate(x.min)),
-  };
-}
-
-interval_expr bounds_of_div(const div* op, interval_expr a, interval_expr b) {
+interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
@@ -267,42 +312,34 @@ interval_expr bounds_of_div(const div* op, interval_expr a, interval_expr b) {
     } else if (a.is_point()) {
       return point(simplify(op_simplified(), op, a.min, b.min));
     } else if (b_const.is_non_negative()) {
-      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
+      return {div_or_unbounded(op, a.min, b.min), div_or_unbounded(op, a.max, b.min)};
     } else if (b_const.is_non_positive()) {
-      return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.min)};
+      return {div_or_unbounded(op, a.max, b.min), div_or_unbounded(op, a.min, b.min)};
     }
   } else if (b_const.is_positive()) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
     if (a_const.is_non_negative()) {
-      return {simplify(op_simplified(), op, a.min, b.max), simplify(op_simplified(), op, a.max, b.min)};
+      return {div_or_unbounded(op, a.min, b.max), div_or_unbounded(op, a.max, b.min)};
     } else if (a_const.is_non_positive()) {
-      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.max)};
+      return {div_or_unbounded(op, a.min, b.min), div_or_unbounded(op, a.max, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
-      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
+      return {div_or_unbounded(op, a.min, b.min), div_or_unbounded(op, a.max, b.min)};
     }
   } else if (b_const.is_negative()) {
     // b < 0 => the biggest result in absolute value occurs at the max of b.
     if (a_const.is_non_negative()) {
-      return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.min)};
+      return {div_or_unbounded(op, a.max, b.max), div_or_unbounded(op, a.min, b.min)};
     } else if (a_const.is_non_positive()) {
-      return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.max)};
+      return {div_or_unbounded(op, a.max, b.min), div_or_unbounded(op, a.min, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
-      return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.max)};
+      return {div_or_unbounded(op, a.max, b.max), div_or_unbounded(op, a.min, b.max)};
     }
   }
   return union_x_negate_x(std::move(a));
 }
 
-}  // namespace
-
-interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
-  return unbounded_if_indeterminate(bounds_of_mul(op, std::move(a), std::move(b)));
-}
-interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
-  return unbounded_if_indeterminate(bounds_of_div(op, std::move(a), std::move(b)));
-}
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   if (a.is_point() && b.is_point()) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
@@ -313,16 +350,12 @@ interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
     max_b = b.max;
   } else if (b.is_point()) {
     assert(!b_const.is_non_negative());
-    max_b = simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max});
+    max_b = abs_or_unbounded(nullptr, b.max);
   } else {
-    if (b_const.is_non_negative()) {
-      max_b = simplify(static_cast<const class max*>(nullptr),
-          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}), b.max);
-    } else {
-      max_b = simplify(static_cast<const class max*>(nullptr),
-          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
-          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}));
-    }
+    max_b = max_upper(abs_or_unbounded(nullptr, b.min), abs_or_unbounded(nullptr, b.max));
+  }
+  if (!max_b.defined()) {
+    return {0, expr()};
   }
   // The bounds here are weird. The bounds of a % b are [0, max(abs(b))), note the open interval at the max.
   // So, we need to subtract 1 from the max value of b, but we need a special case for b = 0, where we define a % 0 to
@@ -332,10 +365,24 @@ interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
 }
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  } else {
+    return {
+        min_lower(std::move(a.min), std::move(b.min), op),
+        min_upper(std::move(a.max), std::move(b.max), op),
+    };
+  }
 }
 interval_expr bounds_of(const class max* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  } else {
+    return {
+        max_lower(std::move(a.min), std::move(b.min), op),
+        max_upper(std::move(a.max), std::move(b.max), op),
+    };
+  }
 }
 
 interval_expr bounds_of(const less* op, interval_expr a, interval_expr b) {
@@ -353,9 +400,13 @@ interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
     //   max(a.min, b.min) <= min(a.max, b.max)
     //   a.min <= a.max && b.min <= a.max && b.min <= a.max && b.min <= b.max
     //   true && b.min <= a.max && b.min <= a.max && true
-    return {0, simplify(static_cast<const logical_and*>(nullptr),
-                   simplify(static_cast<const less_equal*>(nullptr), a.min, b.max),
-                   simplify(static_cast<const less_equal*>(nullptr), b.min, a.max))};
+    expr le1 = a.min.defined() && b.max.defined()
+                   ? simplify(static_cast<const less_equal*>(nullptr), a.min, b.max)
+                   : expr(1);
+    expr le2 = b.min.defined() && a.max.defined()
+                   ? simplify(static_cast<const less_equal*>(nullptr), b.min, a.max)
+                   : expr(1);
+    return {0, simplify(static_cast<const logical_and*>(nullptr), std::move(le1), std::move(le2))};
   }
 }
 interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
@@ -363,17 +414,46 @@ interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
     return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     // This can only be false if the intervals a and b do not overlap.
-    return {simplify(static_cast<const logical_or*>(nullptr), simplify(static_cast<const less*>(nullptr), a.max, b.min),
-                simplify(static_cast<const less*>(nullptr), b.max, a.min)),
-        1};
+    expr lt1 =
+        a.max.defined() && b.min.defined() ? simplify(static_cast<const less*>(nullptr), a.max, b.min) : expr(0);
+    expr lt2 =
+        b.max.defined() && a.min.defined() ? simplify(static_cast<const less*>(nullptr), b.max, a.min) : expr(0);
+    return {simplify(static_cast<const logical_or*>(nullptr), std::move(lt1), std::move(lt2)), 1};
   }
 }
 
+namespace {
+
+// Coerce an arbitrary integer interval to a [0, 1] truthiness interval.
+// If the interval is already a point or has boolean endpoints, returns it unchanged.
+interval_expr bounds_of_boolean(interval_expr a) {
+  if (a.is_point() || (is_boolean(a.min) && is_boolean(a.max))) {
+    return a;
+  }
+  expr neg = a.max.defined() ? simplify(static_cast<const less*>(nullptr), a.max, 0) : expr(0);
+  expr pos = a.min.defined() ? simplify(static_cast<const less*>(nullptr), 0, a.min) : expr(0);
+  expr min_bool = simplify(static_cast<const logical_or*>(nullptr), std::move(neg), std::move(pos));
+  expr max_bool = (a.min.defined() && a.max.defined())
+                      ? simplify(static_cast<const logical_or*>(nullptr),
+                            simplify(static_cast<const not_equal*>(nullptr), a.min, 0),
+                            simplify(static_cast<const not_equal*>(nullptr), a.max, 0))
+                      : expr(1);
+  return {std::move(min_bool), std::move(max_bool)};
+}
+
+}  // namespace
+
 interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  }
+  return bounds_of_linear(op, bounds_of_boolean(std::move(a)), bounds_of_boolean(std::move(b)));
 }
 interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
+  }
+  return bounds_of_linear(op, bounds_of_boolean(std::move(a)), bounds_of_boolean(std::move(b)));
 }
 interval_expr bounds_of(const logical_not* op, interval_expr a) {
   if (a.is_point(op)) {
@@ -381,6 +461,7 @@ interval_expr bounds_of(const logical_not* op, interval_expr a) {
   } else if (a.is_point()) {
     return point(simplify(op, std::move(a.min)));
   } else {
+    a = bounds_of_boolean(std::move(a));
     return {simplify(op, std::move(a.max)), simplify(op, std::move(a.min))};
   }
 }
@@ -392,16 +473,16 @@ interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t
     } else {
       return point(simplify(op, std::move(c.min), std::move(t.min), std::move(f.min)));
     }
-  } else if (is_true(c.min)) {
+  } else if (is_positive(c.min) || is_negative(c.max)) {
     return t;
-  } else if (is_false(c.max)) {
+  } else if (is_zero(c.min) && is_zero(c.max)) {
     return f;
   } else if (c.is_point()) {
     return select(c.min, std::move(t), std::move(f));
   } else {
     return {
-        simplify(static_cast<const class min*>(nullptr), std::move(t.min), std::move(f.min)),
-        simplify(static_cast<const class max*>(nullptr), std::move(t.max), std::move(f.max)),
+        min_lower(std::move(t.min), std::move(f.min)),
+        max_upper(std::move(t.max), std::move(f.max)),
     };
   }
 }
@@ -417,9 +498,7 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
     } else if (args[0].is_point()) {
       return {0, simplify(op, intrinsic::abs, {std::move(args[0].min)})};
     } else {
-      expr abs_min = simplify(op, intrinsic::abs, {args[0].min});
-      expr abs_max = simplify(op, intrinsic::abs, {args[0].max});
-      return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
+      return {0, max_upper(abs_or_unbounded(op, args[0].min), abs_or_unbounded(op, args[0].max))};
     }
   default: return point(expr(op));
   }
