@@ -219,6 +219,18 @@ cc_test(
 )
 
 cc_test(
+    name = "slide_and_fold_storage",
+    srcs = ["slide_and_fold_storage.cc"],
+    deps = [
+        "//slinky/base",
+        "//slinky/builder",
+        "//slinky/runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "stencil",
     srcs = ["stencil.cc"],
     deps = [
