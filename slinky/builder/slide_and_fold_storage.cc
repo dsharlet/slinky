@@ -22,6 +22,7 @@
 #include "slinky/runtime/depends_on.h"
 #include "slinky/runtime/evaluate.h"
 #include "slinky/runtime/expr.h"
+#include "slinky/runtime/stmt.h"
 
 namespace slinky {
 
@@ -127,28 +128,68 @@ void substitute_bounds(symbol_map<box_expr>& buffers, var buffer_id, const box_e
   }
 }
 
-// Check if the given buffer is produced inside of the statement.
+// Check if the given buffer is produced inside of the statement, collect any
+// sibling outputs written by the same `call_stmt`, and record buffers whose
+// bounds are modified inside the statement.
 class check_if_produced : public recursive_node_visitor {
   var v;
+
+  void record_modified(var sym) {
+    if (std::find(modified.begin(), modified.end(), sym) == modified.end()) {
+      modified.push_back(sym);
+    }
+  }
 
 public:
   check_if_produced(var v) : v(v) {}
   bool found = false;
+  std::vector<var> siblings;
+  std::vector<var> modified;
 
+  void visit(const allocate* op) override {
+    record_modified(op->sym);
+    recursive_node_visitor::visit(op);
+  }
+  void visit(const make_buffer* op) override {
+    record_modified(op->sym);
+    recursive_node_visitor::visit(op);
+  }
+  void visit(const crop_buffer* op) override {
+    record_modified(op->sym);
+    recursive_node_visitor::visit(op);
+  }
+  void visit(const crop_dim* op) override {
+    record_modified(op->sym);
+    recursive_node_visitor::visit(op);
+  }
+  void visit(const slice_buffer* op) override {
+    record_modified(op->sym);
+    recursive_node_visitor::visit(op);
+  }
+  void visit(const slice_dim* op) override {
+    record_modified(op->sym);
+    recursive_node_visitor::visit(op);
+  }
   void visit(const call_stmt* op) override {
-    for (const auto& o : op->outputs) {
-      found = found || (o == v);
+    if (std::find(op->outputs.begin(), op->outputs.end(), v) !=
+        op->outputs.end()) {
+      found = true;
+      for (const auto& o : op->outputs) {
+        if (o != v &&
+            std::find(siblings.begin(), siblings.end(), o) == siblings.end()) {
+          siblings.push_back(o);
+        }
+      }
     }
   }
   void visit(const copy_stmt* op) override { found = found || (op->dst == v); }
 };
 
-bool is_produced_by(var v, const stmt& body) {
-  scoped_trace trace("is_produced_by");
-  if (!body.defined()) return false;
+check_if_produced find_produced_info(var v, const stmt& body) {
+  scoped_trace trace("find_produced_info");
   check_if_produced f(v);
-  body.accept(&f);
-  return f.found;
+  if (body.defined()) body.accept(&f);
+  return f;
 }
 
 // Find a maximum value of x which makes `condition` expression true. The search goes
@@ -307,8 +348,17 @@ public:
       bounds.push_back(d.bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    // Initialize the fold factors.
-    auto set_fold_factors = set_value_in_scope(fold_factors, op->sym, get_dim_fold_info(op->dims));
+    // Initialize the fold factors. Zero-element-size buffers carry only domain
+    // metadata (no backing storage), so mark them unfolded to skip folding and
+    // sliding.
+    std::vector<dim_fold_info> fold_info_init = get_dim_fold_info(op->dims);
+    if (is_constant(op->elem_size, 0)) {
+      for (dim_fold_info& f : fold_info_init) {
+        f.factor = dim::unfolded;
+      }
+    }
+    auto set_fold_factors =
+        set_value_in_scope(fold_factors, op->sym, std::move(fold_info_init));
     stmt body = mutate(op->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -319,6 +369,7 @@ public:
     // TODO: Is this actually a good design...?
     const std::vector<dim_fold_info>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
+    replacements.reserve(op->dims.size());
     for (int d = 0; d < static_cast<int>(op->dims.size()); ++d) {
       replacements.emplace_back(buffer_fold_factor(op->sym, d), fold_info[d].factor);
     }
@@ -342,7 +393,9 @@ public:
     scoped_trace trace("slide_and_fold_buffer");
     // We only want to fold if we are inside of the loop and the cropped buffer
     // is produced there.
-    if (loops.size() < 2 || !is_produced_by(output, body)) return;
+    if (loops.size() < 2) return;
+    check_if_produced produced = find_produced_info(output, body);
+    if (!produced.found) return;
 
     bool did_overlapped_fold = false;
 
@@ -362,6 +415,41 @@ public:
     if (!bounds) return;
 
     expr loop_var = variable::make(loop.sym);
+
+    // Returns true if every dimension of `box` (except `skip_dim`) in the
+    // current loop iteration is covered by the previous iteration's bounds.
+    // Sliding along dimension `d` reuses elements in `prev[d] & cur[d]`, which
+    // is only sound when no other dimension (nor any sibling output of the same
+    // call) exposes elements that were not produced in the previous iteration.
+    // Drop `loop.sym`'s lower bound and alignment during this check because
+    // sliding (here or in a later stage of the same loop) may shift
+    // `loop.bounds.min` backwards for warmup iterations.
+    std::optional<interval_expr> loop_upper_only = expr_bounds[loop.sym];
+    if (loop_upper_only) {
+      loop_upper_only->min = expr();
+    }
+    auto box_covered_by_prev = [&](const box_expr& box, int skip_dim) -> bool {
+      auto set_loop_bounds =
+          set_value_in_scope(expr_bounds, loop.sym, loop_upper_only);
+      auto set_loop_alignment =
+          set_value_in_scope(expr_alignment, loop.sym, std::nullopt);
+      for (int other = 0; other < static_cast<int>(box.size()); ++other) {
+        if (other == skip_dim) continue;
+        interval_expr cur = box[other];
+        if (!depends_on(cur, loop.sym).any()) continue;
+        cur = simplify(cur, expr_bounds, expr_alignment);
+        if (!depends_on(cur, loop.sym).any()) continue;
+        interval_expr prev = {
+            substitute(cur.min, loop.sym, loop_var - loop.step),
+            substitute(cur.max, loop.sym, loop_var - loop.step),
+        };
+        if (!prove_true(prev.min <= cur.min && cur.max <= prev.max, expr_bounds,
+                        expr_alignment)) {
+          return false;
+        }
+      }
+      return true;
+    };
 
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
       if (fold_factors[output] && (d < static_cast<int>(fold_factors[output]->size()))) {
@@ -396,6 +484,21 @@ public:
         }
         continue;
       }
+
+      bool can_slide = box_covered_by_prev(*bounds, d);
+      if (can_slide) {
+        for (var sib : produced.siblings) {
+          const bool sib_modified_in_body =
+              std::find(produced.modified.begin(), produced.modified.end(),
+                        sib) != produced.modified.end();
+          if (sib_modified_in_body || !buffer_bounds[sib] ||
+              !box_covered_by_prev(*buffer_bounds[sib], -1)) {
+            can_slide = false;
+            break;
+          }
+        }
+      }
+      if (!can_slide) continue;
 
       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
